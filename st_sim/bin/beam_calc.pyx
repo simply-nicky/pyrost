@@ -3,6 +3,7 @@ import numpy as np
 from cython_gsl cimport *
 from libc.math cimport sqrt, cos, sin, exp, pi, tanh
 from cython.parallel import prange
+cimport openmp
 
 ctypedef cnp.complex128_t complex_t
 ctypedef cnp.float64_t float_t
@@ -240,11 +241,15 @@ cdef uint_t wirthselect_uint(uint_t[:] array, int k) nogil:
 def make_whitefield(uint_t[:, :, ::1] data, uint8_t[:, ::1] mask):
     cdef:
         int_t a = data.shape[0], b = data.shape[1], c = data.shape[2], i, j, k
+        int_t max_threads = openmp.omp_get_max_threads()
         uint_t[:, ::1] wf = np.empty((b, c), dtype=np.uint64)
+        uint_t[:, ::1] array = np.empty((max_threads, a), dtype=np.uint64)
     for j in prange(b, schedule='guided', nogil=True):
+        i = openmp.omp_get_thread_num()
         for k in range(c):
             if mask[j, k]:
-                wf[j, k] = wirthselect_uint(data[:, j, k], a // 2)
+                array[i] = data[:, j, k]
+                wf[j, k] = wirthselect_uint(array[i], a // 2)
             else:
                 wf[j, k] = 0
     return np.asarray(wf)

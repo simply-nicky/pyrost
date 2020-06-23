@@ -10,7 +10,10 @@ import argparse
 import h5py
 import numpy as np
 from scipy import constants
-from .bin import *
+from .bin import lens_wf, aperture_wf, fraunhofer_1d, barcode_steps
+from .bin import barcode, fraunhofer_2d, make_frames, make_whitefield
+
+ROOT_PATH = os.path.dirname(__file__)
 
 class INIParser():
     """
@@ -20,17 +23,9 @@ class INIParser():
     attr_dict = {}
 
     def __init__(self, **kwargs):
-        self.param_dict = {}
         for section in self.attr_dict:
             for option, _ in self.attr_dict[section]:
-                self.param_dict[option] = kwargs[option]
-
-    @classmethod
-    def ini_parser(cls):
-        """
-        Return config parser
-        """
-        return configparser.ConfigParser()
+                self.__dict__[option] = kwargs[option]
 
     @classmethod
     def read_ini(cls, ini_file):
@@ -39,7 +34,7 @@ class INIParser():
         """
         if not os.path.isfile(ini_file):
             raise ValueError("File {:s} doesn't exist".format(ini_file))
-        ini_parser = cls.ini_parser()
+        ini_parser = configparser.ConfigParser()
         ini_parser.read(ini_file)
         return ini_parser
 
@@ -63,8 +58,8 @@ class INIParser():
         return param_dict
 
     def __getattr__(self, attr):
-        if attr in self.param_dict:
-            return self.param_dict[attr]
+        if attr in self.__dict__:
+            return self.__dict__[attr]
 
     def save_ini(self, filename):
         """
@@ -72,7 +67,7 @@ class INIParser():
         """
         ini_parser = self.ini_parser()
         for section in self.attr_dict:
-            ini_parser[section] = {option: self.param_dict[option]
+            ini_parser[section] = {option: self.__dict__[option]
                                    for option, fmt in self.attr_dict[section]}
         with open(filename, 'w') as ini_file:
             ini_parser.write(ini_file)
@@ -105,13 +100,13 @@ class STSim(INIParser):
     random_dev - bar random deviation
     """
     attr_dict = {'exp_geom': {('defoc', 'float'), ('det_dist', 'float'),
-                            ('step_size', 'float'), ('n_frames', 'int'),
-                            ('frame_size', 'int')},
-                'source':   {('i0', 'float'), ('wl', 'float')},
-                'lens':     {('ap_x', 'float'), ('ap_y', 'float'),
-                            ('focus', 'float'), ('alpha', 'float')},
-                'barcode':  {('bar_size', 'float'), ('bar_sigma', 'float'),
-                            ('attenuation', 'float'), ('random_dev', 'float')}}
+                              ('step_size', 'float'), ('n_frames', 'int'),
+                              ('frame_size', 'int')},
+                 'source':   {('i0', 'float'), ('wl', 'float')},
+                 'lens':     {('ap_x', 'float'), ('ap_y', 'float'),
+                              ('focus', 'float'), ('alpha', 'float')},
+                 'barcode':  {('bar_size', 'float'), ('bar_sigma', 'float'),
+                              ('attenuation', 'float'), ('random_dev', 'float')}}
 
     def __init__(self, **kwargs):
         super(STSim, self).__init__(**kwargs)
@@ -164,37 +159,103 @@ class STSim(INIParser):
         Return intensity frames at the detector plane
         """
         return make_frames(wf_x=self.wf1_x * self.det_c, wf_y=self.wf1_y)
-    
+
+    def ptychograph(self):
+        """
+        Return a ptychograph
+        """
+        return np.abs(self.det_c * self.wf1_x * self.wf1_y.max())**2
+
     def cxi_converter(self):
         """
         Return CXI Converter
         """
-        return CXIConverter(self)
+        return STConverter(st_sim=self)
 
-class CXIConverter():
+
+class STConverter():
     """
-    CXI converter class
+    Converter class to Andrew's speckle-tracking software data format
 
-    st_sim - STSim class object
+    for more info, open the url:
+    https://github.com/andyofmelbourne/speckle-tracking
     """
     unit_vector_fs = np.array([0, -1, 0])
     unit_vector_ss = np.array([-1, 0, 0])
+    templates_dir = os.path.join(ROOT_PATH, 'ini_templates')
 
-    def __init__(self, st_sim):
+    defaults = {'data_path': '/entry_1/data_1/data',
+                'whitefield_path': '/speckle_tracking/whitefield',
+                'mask_path': '/speckle_tracking/mask', 'roi': (950, 1050, 400, 1600),
+                'roi_path': '/speckle_tracking/roi',
+                'defocus_path': '/speckle_tracking/defocus',
+                'translations_path': '/entry_1/sample_1/geometry/translations',
+                'good_frames_path': '/frame_selector/good_frames',
+                'y_pixel_size_path': '/entry_1/instrument_1/detector_1/y_pixel_size',
+                'x_pixel_size_path': '/entry_1/instrument_1/detector_1/x_pixel_size',
+                'distance_path': '/entry_1/instrument_1/detector_1/distance',
+                'energy_path': '/entry_1/instrument_1/source_1/energy',
+                'wavelength_path': '/entry_1/instrument_1/source_1/wavelength',
+                'basis_vectors_path': '/entry_1/instrument_1/detector_1/basis_vectors'}
+
+    attr_set = {'data_path', 'whitefield_path', 'mask_path', 'translations_path',
+                'good_frames_path', 'y_pixel_size_path', 'x_pixel_size_path',
+                'distance_path', 'energy_path', 'wavelength_path', 'basis_vectors_path',
+                'roi', 'roi_path', 'defocus_path'}
+
+    def __init__(self, st_sim, **kwargs):
+        for attr in self.attr_set:
+            if attr in kwargs:
+                self.__dict__[attr] = kwargs[attr]
+            elif attr in self.defaults:
+                self.__dict__[attr] = self.defaults[attr]
+            else:
+                raise ValueError("Parameter '{:s}' has not been provided".format(attr))
         self._init_params(st_sim)
+        self._init_parsers()
         self._init_data(st_sim)
-    
+
     def _init_params(self, st_sim):
-        self.step_size, self.n_frames = st_sim.step_size, st_sim.n_frames
-        self.dist, self.wl = st_sim.det_dist, st_sim.wl
-        self.energy = constants.c * constants.h / st_sim.wl / constants.e
-        self.pixel_vector = np.array([(st_sim.xx_arr[-1] - st_sim.xx_arr[0]) / st_sim.frame_size,
-                                      (st_sim.y_arr[-1] - st_sim.y_arr[0]) / st_sim.frame_size, 0])
+        self.step_size, self.n_frames = st_sim.step_size * 1e-6, st_sim.n_frames
+        self.dist, self.defoc = st_sim.det_dist * 1e-6, st_sim.defoc * 1e-6
+        self.wavelength = st_sim.wl * 1e-6
+        self.energy = constants.h * constants.c / self.wavelength / constants.e
+        self.pixel_vector = 1e-6 * np.array([(st_sim.xx_arr[-1] - st_sim.xx_arr[0]) / st_sim.frame_size,
+                                             (st_sim.y_arr[-1] - st_sim.y_arr[0]) / st_sim.frame_size, 0])
 
     def _init_data(self, st_sim):
         self.data = st_sim.det_frames()
         self.mask = np.ones((st_sim.frame_size, st_sim.frame_size), dtype=np.uint8)
         self.whitefield = make_whitefield(data=self.data, mask=self.mask)
+
+    def _init_parsers(self):
+        self.templates = []
+        for filename in os.listdir(self.templates_dir):
+            path = os.path.join(self.templates_dir, filename)
+            if os.path.isfile(path) and filename.endswith('.ini'):
+                template = os.path.splitext(filename)[0]
+                self.__dict__[template] = self.parser_from_template(path)
+                self.templates.append(template)
+            else:
+                raise RuntimeError("Wrong template file: {:s}".format(path))
+
+    def __getattr__(self, attr):
+        if attr in self.__dict__:
+            return self.__dict__[attr]
+
+    def parser_from_template(self, template):
+        """
+        Return parser object using an ini file template
+
+        template - path to the template file
+        """
+        ini_template = configparser.ConfigParser()
+        ini_template.read(template)
+        parser = configparser.ConfigParser()
+        for section in ini_template:
+            parser[section] = {option: ini_template[section][option].format(self)
+                               for option in ini_template[section]}
+        return parser
 
     def basis_vectors(self):
         """
@@ -204,7 +265,7 @@ class CXIConverter():
         _vec_ss = np.tile(self.pixel_vector * self.unit_vector_ss, (self.n_frames, 1))
         return np.stack((_vec_ss, _vec_fs), axis=1)
 
-    def translation(self):
+    def translations(self):
         """
         Translate detector coordinates
         """
@@ -212,34 +273,41 @@ class CXIConverter():
         t_arr[:, 0] = np.arange(0, self.n_frames) * self.step_size
         return t_arr
 
-    def save(self, filename):
+    def save(self, dir_path):
         """
-        Save data to a cxi file with the given filename
+        Save the data at the given folder
         """
-        with h5py.File(filename, 'w') as cxi_file:
-            detector_1 = cxi_file.create_group('entry_1/instrument_1/detector_1')
-            detector_1.create_dataset('basis_vectors', data=self.basis_vectors())
-            detector_1.create_dataset('distance', data=self.dist)
-            detector_1.create_dataset('x_pixel_size', data=self.pixel_vector[0])
-            detector_1.create_dataset('y_pixel_size', data=self.pixel_vector[1])
-            source_1 = cxi_file.create_group('entry_1/instrument_1/source_1')
-            source_1.create_dataset('energy', data=self.energy)
-            source_1.create_dataset('wavelength', data=self.wl)
-            cxi_file.create_dataset('entry_1/sample_3/geometry/translation', data=self.translation())
-            cxi_file.create_dataset('frame_selector/good_frames', data=np.ones(self.n_frames, dtype=np.uint8))
-            cxi_file.create_dataset('mask_maker/mask', data=self.mask)
-            cxi_file.create_dataset('make_whitefield/whitefield', data=self.whitefield)
-            cxi_file.create_dataset('entry_1/data_1/data', data=self.data)
+        os.makedirs(dir_path, exist_ok=True)
+        for template in self.templates:
+            ini_path = os.path.join(dir_path, template + '.ini')
+            with open(ini_path, 'w') as ini_file:
+                self.__getattribute__(template).write(ini_file)
+        with h5py.File(os.path.join(dir_path, 'data.cxi'), 'w') as cxi_file:
+            cxi_file.create_dataset(self.basis_vectors_path, data=self.basis_vectors())
+            cxi_file.create_dataset(self.distance_path, data=self.dist)
+            cxi_file.create_dataset(self.roi_path, data=np.array(self.roi))
+            cxi_file.create_dataset(self.defocus_path, data=self.defoc)
+            cxi_file.create_dataset(self.x_pixel_size_path, data=self.pixel_vector[0])
+            cxi_file.create_dataset(self.y_pixel_size_path, data=self.pixel_vector[1])
+            cxi_file.create_dataset(self.energy_path, data=self.energy)
+            cxi_file.create_dataset(self.wavelength_path, data=self.wavelength)
+            cxi_file.create_dataset(self.translations_path, data=self.translations())
+            cxi_file.create_dataset(self.good_frames_path, data=np.ones(self.n_frames, dtype=np.uint8))
+            cxi_file.create_dataset(self.mask_path, data=self.mask)
+            cxi_file.create_dataset(self.whitefield_path, data=self.whitefield)
+            cxi_file.create_dataset(self.data_path, data=self.data)
 
 def main():
     """
     Main fuction to run Speckle Tracking simulation and save the data to a cxi file
     """
     parser = argparse.ArgumentParser(description="Run Speckle Tracking simulation")
-    parser.add_argument('out_path', type=str, help="Outpu t cxi file path")
-    parser.add_argument('-f', '--ini_file', type=str, help="Path to an INI file to fetch all of the simulation parameters")
+    parser.add_argument('out_path', type=str, help="Output folder path")
+    parser.add_argument('-f', '--ini_file', type=str,
+                        help="Path to an INI file to fetch all of the simulation parameters")
     parser.add_argument('--defoc', type=float, default=1e2, help="Lens defocus distance, [um]")
-    parser.add_argument('--det_dist', type=float, default=1.5e6, help="Distance between the barcode and the detector [um]")
+    parser.add_argument('--det_dist', type=float, default=1.5e6,
+                        help="Distance between the barcode and the detector [um]")
     parser.add_argument('--step_size', type=float, default=5e-2, help="Scan step size [um]")
     parser.add_argument('--n_frames', type=int, default=300, help="Number of frames")
     parser.add_argument('--frame_size', type=int, default=2000, help="Frames size in pixels")
@@ -248,7 +316,8 @@ def main():
     parser.add_argument('--ap_x', type=float, default=30, help="Lens size along the x axis [um]")
     parser.add_argument('--ap_y', type=float, default=60, help="Lens size along the y axis [um]")
     parser.add_argument('--focus', type=float, default=2e3, help="Focal distance [um]")
-    parser.add_argument('--alpha', type=float, default=0.1, help="Third order abberations [rad/mrad^3]")
+    parser.add_argument('--alpha', type=float, default=0.1,
+                        help="Third order abberations [rad/mrad^3]")
     parser.add_argument('--bar_size', type=float, default=3, help="Average bar size [um]")
     parser.add_argument('--bar_sigma', type=float, default=1e-1, help="Bar haziness width [um]")
     parser.add_argument('--attenuation', type=float, default=0.3, help="Bar attenuation")
