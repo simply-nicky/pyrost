@@ -81,7 +81,8 @@ class STSim(INIParser):
     det_dist - distance between the barcode and the detector [um]
     step_size - scan step size [um]
     n_frames - number of frames
-    frame_size - frames size in pixels
+    fs_size - fast axis frames size in pixels
+    ss_size - slow axis frames size in pixels
 
     [source - source parameters]
     i0 - Source intensity [cnt]
@@ -101,7 +102,7 @@ class STSim(INIParser):
     """
     attr_dict = {'exp_geom': {('defoc', 'float'), ('det_dist', 'float'),
                               ('step_size', 'float'), ('n_frames', 'int'),
-                              ('frame_size', 'int')},
+                              ('fs_size', 'int'), ('ss_size', 'int')},
                  'source':   {('i0', 'float'), ('wl', 'float')},
                  'lens':     {('ap_x', 'float'), ('ap_y', 'float'),
                               ('focus', 'float'), ('alpha', 'float')},
@@ -113,13 +114,14 @@ class STSim(INIParser):
         self._init_data()
 
     def _init_data(self):
+
         self.x_arr = np.linspace(-0.8 * self.ap_x / self.focus * self.defoc,
                                  0.8 * self.ap_x / self.focus * self.defoc,
-                                 self.frame_size)
+                                 1.6**2 * self.ap_x**2 * self.defoc / self.focus**2 / self.wl)
         self.xx_arr = np.linspace(-0.8 * self.ap_x / self.focus * self.det_dist,
                                   0.8 * self.ap_x / self.focus * self.det_dist,
-                                  self.frame_size)
-        self.y_arr = np.linspace(-0.6 * self.ap_y, 0.6 * self.ap_y, self.frame_size)
+                                  self.fs_size)
+        self.y_arr = np.linspace(-0.6 * self.ap_y, 0.6 * self.ap_y, self.ss_size)
         self.wf0_x = lens_wf(x_arr=self.x_arr, defoc=self.defoc, f=self.focus,
                              wl=self.wl, alpha=self.alpha, ap=self.ap_x)
         self.wf0_y = aperture_wf(x_arr=self.y_arr, z=self.focus + self.defoc,
@@ -186,7 +188,7 @@ class STConverter():
 
     defaults = {'data_path': '/entry_1/data_1/data',
                 'whitefield_path': '/speckle_tracking/whitefield',
-                'mask_path': '/speckle_tracking/mask', 'roi': (950, 1050, 400, 1600),
+                'mask_path': '/speckle_tracking/mask', 'roi': (490, 510, 400, 1600),
                 'roi_path': '/speckle_tracking/roi',
                 'defocus_path': '/speckle_tracking/defocus',
                 'translations_path': '/entry_1/sample_1/geometry/translations',
@@ -220,12 +222,12 @@ class STConverter():
         self.dist, self.defoc = st_sim.det_dist * 1e-6, st_sim.defoc * 1e-6
         self.wavelength = st_sim.wl * 1e-6
         self.energy = constants.h * constants.c / self.wavelength / constants.e
-        self.pixel_vector = 1e-6 * np.array([(st_sim.xx_arr[-1] - st_sim.xx_arr[0]) / st_sim.frame_size,
-                                             (st_sim.y_arr[-1] - st_sim.y_arr[0]) / st_sim.frame_size, 0])
+        self.pixel_vector = 1e-6 * np.array([(st_sim.xx_arr[-1] - st_sim.xx_arr[0]) / st_sim.fs_size,
+                                             (st_sim.y_arr[-1] - st_sim.y_arr[0]) / st_sim.ss_size, 0])
 
     def _init_data(self, st_sim):
         self.data = st_sim.det_frames()
-        self.mask = np.ones((st_sim.frame_size, st_sim.frame_size), dtype=np.uint8)
+        self.mask = np.ones((self.data.shape[1], self.data.shape[2]), dtype=np.uint8)
         self.whitefield = make_whitefield(data=self.data, mask=self.mask)
 
     def _init_parsers(self):
@@ -292,10 +294,10 @@ class STConverter():
             cxi_file.create_dataset(self.energy_path, data=self.energy)
             cxi_file.create_dataset(self.wavelength_path, data=self.wavelength)
             cxi_file.create_dataset(self.translations_path, data=self.translations())
-            cxi_file.create_dataset(self.good_frames_path, data=np.ones(self.n_frames, dtype=np.uint8))
-            cxi_file.create_dataset(self.mask_path, data=self.mask)
-            cxi_file.create_dataset(self.whitefield_path, data=self.whitefield)
-            cxi_file.create_dataset(self.data_path, data=self.data)
+            cxi_file.create_dataset(self.good_frames_path, data=np.arange(self.n_frames))
+            cxi_file.create_dataset(self.mask_path, data=self.mask.astype(bool))
+            cxi_file.create_dataset(self.whitefield_path, data=self.whitefield.astype(np.float32))
+            cxi_file.create_dataset(self.data_path, data=self.data.astype(np.float32))
 
 def main():
     """
@@ -305,27 +307,34 @@ def main():
     parser.add_argument('out_path', type=str, help="Output folder path")
     parser.add_argument('-f', '--ini_file', type=str,
                         help="Path to an INI file to fetch all of the simulation parameters")
-    parser.add_argument('--defoc', type=float, default=1e2, help="Lens defocus distance, [um]")
-    parser.add_argument('--det_dist', type=float, default=1.5e6,
-                        help="Distance between the barcode and the detector [um]")
-    parser.add_argument('--step_size', type=float, default=5e-2, help="Scan step size [um]")
-    parser.add_argument('--n_frames', type=int, default=300, help="Number of frames")
-    parser.add_argument('--frame_size', type=int, default=2000, help="Frames size in pixels")
-    parser.add_argument('--i0', type=float, default=1e4, help="Source intensity [cnt]")
-    parser.add_argument('--wl', type=float, default=7.29e-5, help="Wavelength [um]")
-    parser.add_argument('--ap_x', type=float, default=30, help="Lens size along the x axis [um]")
-    parser.add_argument('--ap_y', type=float, default=60, help="Lens size along the y axis [um]")
-    parser.add_argument('--focus', type=float, default=2e3, help="Focal distance [um]")
-    parser.add_argument('--alpha', type=float, default=0.1,
-                        help="Third order abberations [rad/mrad^3]")
-    parser.add_argument('--bar_size', type=float, default=3, help="Average bar size [um]")
-    parser.add_argument('--bar_sigma', type=float, default=1e-1, help="Bar haziness width [um]")
-    parser.add_argument('--attenuation', type=float, default=0.3, help="Bar attenuation")
-    parser.add_argument('--random_dev', type=float, default=0.3, help="Bar random deviation")
+    parser.add_argument('--defoc', type=float, help="Lens defocus distance, [um]")
+    parser.add_argument('--det_dist', type=float, help="Distance between the barcode and the detector [um]")
+    parser.add_argument('--step_size', type=float, help="Scan step size [um]")
+    parser.add_argument('--n_frames', type=int, help="Number of frames")
+    parser.add_argument('--fs_size', type=int, help="Fast axis frames size in pixels")
+    parser.add_argument('--ss_size', type=int, help="Slow axis frames size in pixels")
+    parser.add_argument('--i0', type=float, help="Source intensity [cnt]")
+    parser.add_argument('--wl', type=float, help="Wavelength [um]")
+    parser.add_argument('--ap_x', type=float, help="Lens size along the x axis [um]")
+    parser.add_argument('--ap_y', type=float, help="Lens size along the y axis [um]")
+    parser.add_argument('--focus', type=float, help="Focal distance [um]")
+    parser.add_argument('--alpha', type=float, help="Third order abberations [rad/mrad^3]")
+    parser.add_argument('--bar_size', type=float, help="Average bar size [um]")
+    parser.add_argument('--bar_sigma', type=float, help="Bar haziness width [um]")
+    parser.add_argument('--attenuation', type=float, help="Bar attenuation")
+    parser.add_argument('--random_dev', type=float, help="Bar random deviation")
 
-    params = vars(parser.parse_args())
-    if params['ini_file']:
-        params.update(STSim.import_ini(params['ini_file']))
+    default_path = os.path.join(ROOT_PATH, 'default.ini')
+    if os.path.isfile(default_path):
+        params = STSim.import_ini(default_path)
+        args_dict = vars(parser.parse_args())
+        for param in args_dict:
+            if args_dict[param] is not None:
+                params[param] = args_dict[param]
+        if 'ini_file' in params:
+            params.update(STSim.import_ini(params['ini_file']))
 
-    st_sim = STSim(**params)
-    st_sim.cxi_converter().save(params['out_path'])
+        st_sim = STSim(**params)
+        st_sim.cxi_converter().save(params['out_path'])
+    else:
+        raise RuntimeError("Default ini file doesn't exist")

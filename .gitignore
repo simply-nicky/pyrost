@@ -130,3 +130,6 @@ dmypy.json
 #VS Code project settings
 .vscode/
 *.code-workspace
+
+#OS X temp files
+.DS_Store
