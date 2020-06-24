@@ -117,7 +117,7 @@ class STSim(INIParser):
 
         self.x_arr = np.linspace(-0.8 * self.ap_x / self.focus * self.defoc,
                                  0.8 * self.ap_x / self.focus * self.defoc,
-                                 1.6**2 * self.ap_x**2 * self.defoc / self.focus**2 / self.wl)
+                                 int(1.6**2 * self.ap_x**2 * self.defoc / self.focus**2 / self.wl))
         self.xx_arr = np.linspace(-0.8 * self.ap_x / self.focus * self.det_dist,
                                   0.8 * self.ap_x / self.focus * self.det_dist,
                                   self.fs_size)
