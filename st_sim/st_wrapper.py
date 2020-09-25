@@ -12,7 +12,6 @@ import argparse
 from sys import stdout
 import h5py
 import numpy as np
-from scipy import constants
 from .bin import aperture, barcode_steps, barcode, lens
 from .bin import make_frames, make_whitefield
 from .bin import fraunhofer_1d, fraunhofer_2d
@@ -58,12 +57,15 @@ class INIParser():
     INI files parser class
     """
     err_txt = "Wrong format key '{0:s}' of option '{1:s}'"
-    attr_dict = {}
+    attr_dict, fmt_dict = {}, {}
 
     def __init__(self, **kwargs):
         for section in self.attr_dict:
-            for option, _ in self.attr_dict[section]:
-                self.__dict__[option] = kwargs[option]
+            if 'ALL' in self.attr_dict[section]:
+                self.__dict__[section] = kwargs[section]
+            else:
+                self.__dict__[section] = {option: kwargs[section][option]
+                                          for option in self.attr_dict[section]}
 
     @classmethod
     def read_ini(cls, ini_file):
@@ -77,6 +79,25 @@ class INIParser():
         return ini_parser
 
     @classmethod
+    def get_value(cls, ini_parser, section, option):
+        fmt = cls.fmt_dict.get(os.path.join(section, option))
+        if not fmt:
+            fmt = cls.fmt_dict.get(section)
+        if fmt == 'float':
+            val = ini_parser.getfloat(section, option)
+        elif fmt == 'int':
+            val = ini_parser.getint(section, option)
+        elif fmt == 'bool':
+            val = ini_parser.getboolean(section, option)
+        elif fmt == 'str':
+            val = ini_parser.get(section, option)
+        elif fmt == 'list':
+            val = set(ini_parser.get(section, option).split(', '))
+        else:
+            raise ValueError(cls.err_txt.format(fmt, option))
+        return val
+
+    @classmethod
     def import_ini(cls, ini_file):
         """
         Initialize an object class with the ini file
@@ -86,22 +107,25 @@ class INIParser():
         ini_parser = cls.read_ini(ini_file)
         param_dict = {}
         for section in cls.attr_dict:
-            for option, fmt in cls.attr_dict[section]:
-                if fmt == 'float':
-                    param_dict[option] = ini_parser.getfloat(section, option)
-                elif fmt == 'int':
-                    param_dict[option] = ini_parser.getint(section, option)
-                elif fmt == 'bool':
-                    param_dict[option] = ini_parser.getboolean(section, option)
-                elif fmt == 'str':
-                    param_dict[option] = ini_parser.get(section, option)
-                else:
-                    raise ValueError(cls.err_txt.format(fmt, option))
-        return param_dict
+            param_dict[section] = {}
+            if 'ALL' in cls.attr_dict[section]:
+                for option in ini_parser[section]:
+                    val = cls.get_value(ini_parser, section, option)
+                    param_dict[section][option] = val
+            else:
+                for option in cls.attr_dict[section]:
+                    val = cls.get_value(ini_parser, section, option)
+                    param_dict[section][option] = val
+        return cls(**param_dict)
 
-    def __getattr__(self, attr):
-        if attr in self.__dict__:
-            return self.__dict__[attr]
+    def __str__(self):
+        return self.export_dict().__str__()
+
+    def export_dict(self):
+        """
+        Return dict object
+        """
+        return {section: self.__dict__[section] for section in self.attr_dict}
 
     @hybridmethod
     def export_ini(cls, **kwargs):
@@ -112,8 +136,11 @@ class INIParser():
         """
         ini_parser = configparser.ConfigParser()
         for section in cls.attr_dict:
-            ini_parser[section] = {option: kwargs[option]
-                                   for option, fmt in cls.attr_dict[section]}
+            if 'ALL' in cls.attr_dict[section]:
+                ini_parser[section] = kwargs[section]
+            else:
+                ini_parser[section] = {option: kwargs[section][option]
+                                       for option in cls.attr_dict[section]}
         return ini_parser
 
     @export_ini.instancemethod
@@ -125,9 +152,9 @@ class INIParser():
         """
         return type(self).export_ini(**self.__dict__)
 
-class STSim(INIParser):
+class STParams(INIParser):
     """
-    Speckle Tracking Scan simulation (STSim)
+    Speckle Tracking parameters class (STParams)
 
     [exp_geom - experimental geometry parameters]
     defoc - lens defocus distance [um]
@@ -157,20 +184,126 @@ class STSim(INIParser):
     attenuation - bar attenuation
     random_dev - bar random deviation
     """
-    log_dir = os.path.join(ROOT_PATH, '../logs')
-    attr_dict = {'exp_geom': {('defoc', 'float'), ('det_dist', 'float'),
-                              ('step_size', 'float'), ('n_frames', 'int')},
-                 'detector': {('fs_size', 'int'), ('ss_size', 'int'),
-                              ('pix_size', 'float')},
-                 'source':   {('p0', 'float'), ('wl', 'float'), ('th_s', 'float')},
-                 'lens':     {('ap_x', 'float'), ('ap_y', 'float'),
-                              ('focus', 'float'), ('alpha', 'float')},
-                 'barcode':  {('bar_size', 'float'), ('bar_sigma', 'float'),
-                              ('attenuation', 'float'), ('random_dev', 'float')},
-                 'system':   {('verbose', 'bool')}}
+    attr_dict = {'exp_geom': ('defoc', 'det_dist', 'step_size', 'n_frames'),
+                 'detector': ('fs_size', 'ss_size', 'pix_size'),
+                 'source':   ('p0', 'wl', 'th_s'),
+                 'lens':     ('ap_x', 'ap_y', 'focus', 'alpha'),
+                 'barcode':  ('bar_size', 'bar_sigma', 'attenuation', 'random_dev'),
+                 'system':   ('verbose',)}
+
+    fmt_dict = {'exp_geom': 'float', 'exp_geom/n_frames': 'int',
+                'detector': 'int', 'detector/pix_size': 'float',
+                'source': 'float', 'lens': 'float', 'barcode': 'float',
+                'system/verbose': 'bool'}
 
     def __init__(self, **kwargs):
-        super(STSim, self).__init__(**kwargs)
+        super(STParams, self).__init__(**kwargs)
+        self._parameters = self.export_dict()
+
+    def __getattr__(self, attr):
+        if attr in self._parameters:
+            return self._parameters[attr]
+
+    @classmethod
+    def import_dict(cls, **kwargs):
+        init_dict = {}
+        for section in cls.attr_dict:
+            init_dict[section] = {}
+            for option in cls.attr_dict[section]:
+                init_dict[section][option] = kwargs[option]
+        return cls(**init_dict)
+
+    def beam_span(self, dist):
+        """
+        Return beam span in x coordinate at the given distance from the focal plane
+
+        dist - distance from focal plane
+        """
+        fx_max = 0.5 * self.ap_x / self.focus
+        fx_lim = np.array([-fx_max, fx_max])
+        th_lim = fx_lim + self.wl / 2 / np.pi * self.alpha * 3e9 * fx_lim**2 / dist
+        return np.tan(th_lim) * dist
+
+    def roi(self, dist, x_min, x_max, dx):
+        """
+        Return ROI for the given coordinate array based on incident beam span
+
+        dist - distance from focal plane
+        x_min, x_max - coordinate array extremities
+        dx - coordinate array step
+        """
+        beam_span = np.clip(self.beam_span(dist), x_min, x_max)
+        return ((beam_span - x_min) // dx).astype(np.int)
+
+    def export_dict(self):
+        """
+        Return Speckle Tracking parameters dictionary
+        """
+        param_dict = {}
+        for section in self.attr_dict:
+            for option in self.attr_dict[section]:
+                param_dict[option] = self.__dict__[section][option]
+        return param_dict
+
+    def log(self, logger):
+        """
+        Log Speckle Tracking parameters
+        """
+        for section in self.attr_dict:
+            logger.info('[{:s}]'.format(section))
+            for option in self.attr_dict[section]:
+                log_txt = '\t{0:s}: {1:s}, [{2:s}]'
+                log_msg = log_txt.format(option, str(self.__dict__[section][option]),
+                                         self.fmt_dict[os.path.join(section, option)])
+                logger.info(log_msg)
+
+def parameters(**kwargs):
+    """
+    Return default parameters, if not superseded by parameters parsed in argument
+
+    [exp_geom - experimental geometry parameters]
+    defoc - lens defocus distance [um]
+    det_dist - distance between the barcode and the detector [um]
+    step_size - scan step size [um]
+    n_frames - number of frames
+
+    [detector - detector parameters]
+    fs_size - fast axis frames size in pixels
+    ss_size - slow axis frames size in pixels
+    pix_size - detector pixel size [um]
+
+    [source - source parameters]
+    p0 - Source beam flux [cnt / s]
+    wl - wavelength [um]
+    th_s - source rocking curve width [rad]
+
+    [lens - lens parameters]
+    ap_x - lens size along the x axis [um]
+    ap_y - lens size along the y axis [um]
+    focus - focal distance [um]
+    alpha - third order abberations [rad/mrad^3]
+
+    [barcode - barcode parameters]
+    bar_size - average bar size [um]
+    bar_sigma - bar haziness width [um]
+    attenuation - bar attenuation
+    random_dev - bar random deviation 
+    """
+    st_params = STParams.import_ini(os.path.join(ROOT_PATH, 'parameters.ini')).export_dict()
+    st_params.update(**kwargs)
+    return STParams.import_dict(**st_params)
+
+class STSim():
+    """
+    Speckle Tracking simulation class (STSim)
+
+    st_params - STParams class object
+    """
+    log_dir = os.path.join(ROOT_PATH, '../logs')
+
+    def __init__(self, st_params):
+        self.parameters = st_params
+        self.__dict__.update(**self.parameters.export_dict())
         self._init_logging()
         self._init_sample_data()
         self._init_det_data()
@@ -186,44 +319,53 @@ class STSim(INIParser):
             handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
         self.logger.info('Initializing')
         self.logger.info('Current parameters')
-        for section in self.attr_dict:
-            self.logger.info('[{:s}]'.format(section))
-            for option, fmt in self.attr_dict[section]:
-                log_txt = '\t{0:s}: {1:s}, [{2:s}]'.format(option, str(self.__dict__[option]), fmt)
-                self.logger.info(log_txt)
 
     def _init_sample_data(self):
-        x_span = self.det_beam_span(self.defoc + self.det_dist)
-        det_beam_dx = max(x_span[1] - x_span[0], self.pix_size * self.fs_size)
-        n_x = int(1.6 * self.ap_x / self.focus * self.defoc * det_beam_dx / self.wl / self.det_dist)
-        n_y = int(1.2 * self.ap_y * self.ss_size * self.pix_size / self.wl / self.det_dist)
+        # Initializing coordinate parameters
+        xx_span = self.fs_size * self.pix_size
+        yy_span = self.ss_size * self.pix_size
+
+        x_span = 1.6 * self.ap_x / self.focus * self.defoc
+        y_span = 1.2 * self.ap_y
+        n_x = int(x_span * xx_span / self.wl / self.det_dist)
+        n_y = int(y_span * yy_span / self.wl / self.det_dist)
+
+        # Initializing coordinate arrays
         self.logger.info("Initializing coordinate arrays at the sample's plane")
         self.logger.info('Number of points in x axis: {:d}'.format(n_x))
         self.logger.info('Number of points in y axis: {:d}'.format(n_y))
-        self.x_arr = np.linspace(-0.8 * self.ap_x / self.focus * self.defoc,
-                                 0.8 * self.ap_x / self.focus * self.defoc, n_x)
-        self.y_arr = np.linspace(-0.6 * self.ap_y, 0.6 * self.ap_y, n_y)
-        self.xx_arr = self.pix_size * np.arange(-self.fs_size // 2, self.fs_size // 2)
-        self.yy_arr = self.pix_size * np.arange(-self.ss_size // 2, self.ss_size // 2)
+
+        self.x_arr = np.linspace(-x_span / 2, x_span / 2, n_x)
+        self.y_arr = np.linspace(-y_span / 2, y_span / 2, n_y)
+        self.xx_arr = np.linspace(-xx_span / 2, xx_span / 2, self.fs_size, endpoint=False)
+        self.yy_arr = np.linspace(-yy_span / 2, yy_span / 2, self.ss_size, endpoint=False)
+        x_roi = self.parameters.roi(dist=self.det_dist + self.defoc, dx=self.pix_size,
+                                    x_min=-self.fs_size // 2 * self.pix_size,
+                                    x_max=(self.fs_size // 2 - 1) * self.pix_size)
+        self.roi = np.concatenate((self.ss_size // 2 + np.arange(2), x_roi))
+
+        #Initializing wavefields at the sample's plane
         self.logger.info("Generating wavefields at the sample's plane")
-        self.wf0_x = lens(x_arr=self.x_arr, wl=self.wl, ap=self.ap_x, focus=self.focus,
-                          defoc=self.defoc, alpha=self.alpha)
+        self.wf0_x = lens(x_arr=self.x_arr, wl=self.wl, ap=self.ap_x,
+                          focus=self.focus, defoc=self.defoc, alpha=self.alpha)
         self.wf0_y = aperture(x_arr=self.y_arr, z=self.focus + self.defoc,
                               wl=self.wl, ap=self.ap_y)
-        self.i0, self.smp_c = self.p0 / self.ap_x / self.ap_y, 1 / self.wl / (self.focus + self.defoc)
+        self.i0 = self.p0 / self.ap_x / self.ap_y
+        self.smp_c = 1 / self.wl / (self.focus + self.defoc)
         self.logger.info("Wavefields generated")
 
     def _init_det_data(self):
         self.logger.info("Generating wavefields at the detector's plane")
         self.wf1_y = fraunhofer_1d(wf0=self.wf0_y, x_arr=self.y_arr, xx_arr=self.yy_arr,
                                    dist=self.det_dist, wl=self.wl)
-        self.bsteps = barcode_steps(beam_dx=self.x_arr[-1] - self.x_arr[0],
-                                    bar_size=self.bar_size, rnd_div=self.random_dev,
+        self.bsteps = barcode_steps(beam_span=self.x_arr[-1] - self.x_arr[0],
+                                    bar_size=self.bar_size, rnd_dev=self.random_dev,
                                     step_size=self.step_size, n_frames=self.n_frames)
         self.bs_t = barcode(x_arr=self.x_arr, bsteps=self.bsteps, b_sigma=self.bar_sigma,
-                            atn=self.attenuation, step_size=self.step_size, n_frames=self.n_frames)
-        self.wf1_x = fraunhofer_2d(wf0=self.wf0_x * self.bs_t, x_arr=self.x_arr, xx_arr=self.xx_arr,
-                                   dist=self.det_dist, wl=self.wl)
+                            atn=self.attenuation, step_size=self.step_size,
+                            n_frames=self.n_frames)
+        self.wf1_x = fraunhofer_2d(wf0=self.wf0_x * self.bs_t, x_arr=self.x_arr,
+                                   xx_arr=self.xx_arr, dist=self.det_dist, wl=self.wl)
         self.det_c = self.smp_c / self.wl / self.det_dist
         self.logger.info("Wavefields generated")
 
@@ -239,35 +381,16 @@ class STSim(INIParser):
         s_arr = np.exp(-x_arr**2 / 2 / sigma**2)
         return s_arr / s_arr.sum()
 
-    def det_beam_span(self, dist):
-        """
-        Return beam span in x coordinate at the detector's plane at the given distance from the focal plane
-        """
-        fx_lim = np.array([-0.5 * self.ap_x / self.focus, 0.5 * self.ap_x / self.focus])
-        th_lim = fx_lim + self.wl / 2 / np.pi * self.alpha * 3e9 * fx_lim**2 / dist
-        return np.tan(th_lim) * dist
-
     def lens_phase(self):
         """
         Return lens wavefront at the sample plane, defocus, and abberations coefficient
         """
-        beam_span = np.clip(self.det_beam_span(self.defoc), self.x_arr[0], self.x_arr[-1])
-        roi = ((beam_span - self.x_arr[0]) // (self.x_arr[1] - self.x_arr[0])).astype(np.int)
+        roi = self.parameters.roi(self.defoc, self.x_arr[0], self.x_arr[-1], self.x_arr[1] - self.x_arr[0])
         phase = np.unwrap(np.angle(self.wf0_x))
         ph_fit = np.polyfit(self.x_arr[roi[0]:roi[1]], phase[roi[0]:roi[1]], 3)
         defoc = np.pi / self.wl / ph_fit[1]
         res = {'phase': phase, 'defocus': defoc, 'alpha': -ph_fit[0] * defoc**3 * 1e-9}
         return res
-
-    def snr(self):
-        """
-        Return SNR of intensity frames at the deetector plane
-        """
-        pdet = self.p0 * (1 - self.attenuation / 2)
-        beam_span = np.clip(self.det_beam_span(self.defoc + self.det_dist), self.xx_arr[0], self.xx_arr[-1])
-        ppix = pdet * self.pix_size / (beam_span[1] - beam_span[0])
-        sigma_s = self.attenuation / 2 * np.sqrt((1 - 4 * self.bar_sigma / self.bar_size * np.tanh(self.bar_size / 4 / self.bar_sigma)))
-        return sigma_s * np.sqrt(ppix)
 
     def sample_wavefronts(self):
         """
@@ -307,18 +430,6 @@ class STSim(INIParser):
         self.logger.info("The ptychograph is generated, data shape: {:s}".format(str(ptych.shape)))
         return ptych
 
-    def frames_cxi(self):
-        """
-        Return CXI Converter
-        """
-        return STConverter(st_sim=self, data=self.frames())
-
-    def ptych_cxi(self):
-        """
-        Return CXI Converter
-        """
-        return STConverter(st_sim=self, data=self.ptychograph())
-
     def close(self):
         """
         Close logging handlers
@@ -327,6 +438,54 @@ class STSim(INIParser):
         for handler in handlers:
             handler.close()
             self.logger.removeHandler(handler)
+
+class CXIProtocol(INIParser):
+    """
+    CXI protocol class
+    Contains a cxi file hierarchy and corresponding data types
+    """
+    attr_dict = {'default_paths': ('ALL',), 'dtypes': ('ALL',)}
+    fmt_dict = {'default_paths': 'str', 'dtypes': 'str'}
+    log_txt = "{attr:s} [{fmt:s}]: '{path:s}' "
+
+    def parser_from_template(self, path):
+        """
+        Return parser object using an ini file template
+
+        template - path to the template file
+        """
+        ini_template = configparser.ConfigParser()
+        ini_template.read(path)
+        parser = configparser.ConfigParser()
+        for section in ini_template:
+            parser[section] = {option: ini_template[section][option].format(**self.default_paths)
+                               for option in ini_template[section]}
+        return parser
+
+    def log(self, logger):
+        """
+        Log the protocol
+        """
+        for attr in self.default_paths:
+            logger.info(self.log_txt.format(attr=attr, fmt=self.dtypes[attr],
+                                            path=self.default_paths[attr]))
+
+    def create_dataset(self, attr, data, cxi_file):
+        """
+        Save the dataset as specified by the protocol
+
+        attribute - attribute to save
+        data - attribute data
+        cxi_file - h5py File object
+        """
+        cxi_file.create_dataset(self.default_paths[attr],
+                                data=np.asarray(data, dtype=self.dtypes[attr]))
+
+def cxi_protocol():
+    """
+    Return default cxi protocol
+    """
+    return CXIProtocol.import_ini(os.path.join(ROOT_PATH, 'st_protocol.ini'))
 
 class STConverter():
     """
@@ -338,138 +497,111 @@ class STConverter():
     unit_vector_fs = np.array([1, 0, 0])
     unit_vector_ss = np.array([0, -1, 0])
     templates_dir = os.path.join(ROOT_PATH, 'ini_templates')
+    e_to_wl = 1.2398419843320026e-06
 
-    defaults = {'data_path': '/entry_1/data_1/data',
-                'whitefield_path': '/speckle_tracking/whitefield',
-                'mask_path': '/speckle_tracking/mask',
-                'roi_path': '/speckle_tracking/roi',
-                'defocus_path': '/speckle_tracking/defocus',
-                'translations_path': '/entry_1/sample_1/geometry/translations',
-                'good_frames_path': '/frame_selector/good_frames',
-                'y_pixel_size_path': '/entry_1/instrument_1/detector_1/y_pixel_size',
-                'x_pixel_size_path': '/entry_1/instrument_1/detector_1/x_pixel_size',
-                'distance_path': '/entry_1/instrument_1/detector_1/distance',
-                'energy_path': '/entry_1/instrument_1/source_1/energy',
-                'wavelength_path': '/entry_1/instrument_1/source_1/wavelength',
-                'basis_vectors_path': '/entry_1/instrument_1/detector_1/basis_vectors'}
+    write_attrs = {'basis_vectors', 'data', 'defocus', 'distance',
+                   'energy', 'good_frames', 'mask', 'roi', 'translations',
+                   'wavelength', 'whitefield', 'x_pixel_size', 'y_pixel_size'}
 
-    def __init__(self, st_sim, data, **kwargs):
-        for attr in self.defaults:
-            if attr in kwargs:
-                self.__dict__[attr] = kwargs[attr]
-            else:
-                self.__dict__[attr] = self.defaults[attr]
-        self._init_params(st_sim)
-        self._init_parsers(st_sim)
-        self._init_data(st_sim, data)
+    def __init__(self, protocol=cxi_protocol(), coord_ratio=1e-6):
+        self.protocol, self.crd_rat = protocol, coord_ratio
 
-    def _init_params(self, st_sim):
-        self.logger = st_sim.logger
-        self.logger.info('Initializing a cxi file')
-        self.logger.info("The file's data tree:")
-        for attr in self.attr_set:
-            self.logger.info("{0:s}: '{1:s}'".format(attr, str(self.__dict__[attr])))
-        self.step_size, self.n_frames = st_sim.step_size * 1e-6, st_sim.n_frames
-        self.dist, self.defoc = st_sim.det_dist * 1e-6, st_sim.defoc * 1e-6
-        self.wavelength = st_sim.wl * 1e-6
-        self.energy = constants.h * constants.c / self.wavelength / constants.e
-        self.pixel_vector = 1e-6 * np.array([st_sim.pix_size, st_sim.pix_size, 0])
+    def ini_parsers(self, st_params):
+        """
+        Return ini parsers based on the cxi protocol
 
-    def _init_parsers(self, st_sim):
-        self.logger.info("Initializing speckle_tracking gui ini files")
-        self.templates = []
+        st_params - STParams class object
+        """
+        ini_parsers = {}
         for filename in os.listdir(self.templates_dir):
             path = os.path.join(self.templates_dir, filename)
             if os.path.isfile(path) and filename.endswith('.ini'):
                 template = os.path.splitext(filename)[0]
-                self.__dict__[template] = self.parser_from_template(path)
-                self.templates.append(template)
+                ini_parsers[template] = self.protocol.parser_from_template(path)
             else:
                 raise RuntimeError("Wrong template file: {:s}".format(path))
-        self.__dict__['parameters'] = st_sim.export_ini()
-        self.templates.append('parameters')
-        self.logger.info("The ini file parsers are initialized: {:s}".format(str(self.templates)))
+        ini_parsers['parameters'] = st_params.export_ini()
+        return ini_parsers
 
-    def _init_data(self, st_sim, data):
-        self.logger.info("Making speckle tracking data...")
-        self.data = data
-        self.mask = np.ones((self.data.shape[1], self.data.shape[2]), dtype=np.uint8)
-        self.whitefield = make_whitefield(data=self.data, mask=self.mask)
-        beam_span = st_sim.det_beam_span(st_sim.defoc + st_sim.det_dist)
-        x_roi = np.clip((beam_span - st_sim.xx_arr.min()) // st_sim.pix_size,
-                        0, st_sim.fs_size)
-        self.roi = (data.shape[1] // 2, data.shape[1] // 2 + 1, x_roi[0], x_roi[1])
-        log_txt = "The data is generated, mask shape: {0:s}, whitefield shape: {1:s}".format(str(self.mask.shape),
-                                                                                             str(self.whitefield.shape))
-        self.logger.info(log_txt)
+    def _pixel_vector(self, st_params):
+        return self.crd_rat * np.array([st_params.pix_size, st_params.pix_size, 0])
 
-    def __getattr__(self, attr):
-        if attr in self.__dict__:
-            return self.__dict__[attr]
-
-    def parser_from_template(self, template):
-        """
-        Return parser object using an ini file template
-
-        template - path to the template file
-        """
-        ini_template = configparser.ConfigParser()
-        ini_template.read(template)
-        parser = configparser.ConfigParser()
-        for section in ini_template:
-            parser[section] = {option: ini_template[section][option].format(self)
-                               for option in ini_template[section]}
-        return parser
-
-    def basis_vectors(self):
-        """
-        Return detector fast and slow axis basis vectors
-        """
-        _vec_fs = np.tile(self.pixel_vector * self.unit_vector_fs, (self.n_frames, 1))
-        _vec_ss = np.tile(self.pixel_vector * self.unit_vector_ss, (self.n_frames, 1))
+    def _basis_vectors(self, st_params):
+        pix_vec = self._pixel_vector(st_params)
+        _vec_fs = np.tile(pix_vec * self.unit_vector_fs, (st_params.n_frames, 1))
+        _vec_ss = np.tile(pix_vec * self.unit_vector_ss, (st_params.n_frames, 1))
         return np.stack((_vec_ss, _vec_fs), axis=1)
 
-    def translations(self):
-        """
-        Translate detector coordinates
-        """
-        t_arr = np.zeros((self.n_frames, 3), dtype=np.float64)
-        t_arr[:, 0] = -np.arange(0, self.n_frames) * self.step_size
-        return t_arr
+    def _defocus(self, st_params):
+        return self.crd_rat * st_params.defoc
 
-    def save(self, dir_path):
+    def _distance(self, st_params):
+        return self.crd_rat * st_params.det_dist
+
+    def _energy(self, st_params):
+        return self.e_to_wl / self._wavelength(st_params)
+
+    def _translations(self, st_params):
+        t_arr = np.zeros((st_params.n_frames, 3), dtype=np.float64)
+        t_arr[:, 0] = -np.arange(0, st_params.n_frames) * st_params.step_size
+        return self.crd_rat * t_arr
+
+    def _wavelength(self, st_params):
+        return self.crd_rat * st_params.wl
+
+    def _x_pixel_size(self, st_params):
+        return self._pixel_vector(st_params)[0]
+
+    def _y_pixel_size(self, st_params):
+        return self._pixel_vector(st_params)[1]
+
+    def save_sim(self, data, st_sim, dir_path):
         """
-        Save the data at the given folder
+        Save STSim object at the given folder
         """
-        self.logger.info("Saving data in the directory: {:s}".format(dir_path))
+        self.save(data=data, st_params=st_sim.parameters, dir_path=dir_path,
+                  logger=st_sim.logger, roi=st_sim.roi)
+
+    def save(self, data, st_params, dir_path, logger=None, roi=None):
+        """
+        Save speckle tracking data at the given folder
+
+        data - data to be saved
+        st_params - STParams object
+        dir_path - output path
+        logger - logger object
+        roi - data region of interest
+        """
+        if logger:
+            logger.info("Saving data in the directory: {:s}".format(dir_path))
+            logger.info("Making ini files...")
         os.makedirs(dir_path, exist_ok=True)
-        for template in self.templates:
-            ini_path = os.path.join(dir_path, template + '.ini')
+        for name, parser in self.ini_parsers(st_params).items():
+            ini_path = os.path.join(dir_path, name + '.ini')
             with open(ini_path, 'w') as ini_file:
-                self.__getattribute__(template).write(ini_file)
-            self.logger.info('{:s} saved'.format(ini_path))
-        self.logger.info("Making a cxi file...")
+                parser.write(ini_file)
+            if logger:
+                logger.info('{:s} saved'.format(ini_path))
+        if logger:
+            logger.info("Making a cxi file...")
+            logger.info("Using the following cxi protocol:")
+            self.protocol.log(logger)
+        data_dict = {'data': data, 'mask': np.ones(data.shape[1:], dtype=np.uint8),
+                     'good_frames': np.arange(data.shape[0])}
+        data_dict['whitefield'] = make_whitefield(mask=data_dict['mask'], data=data)
+        if roi:
+            data_dict['roi'] = np.asarray(roi)
+        else:
+            data_dict['roi'] = np.array([0, data.shape[1], 0, data.shape[2]])
         with h5py.File(os.path.join(dir_path, 'data.cxi'), 'w') as cxi_file:
-            cxi_file.create_dataset(self.basis_vectors_path, data=self.basis_vectors())
-            cxi_file.create_dataset(self.distance_path, data=self.dist)
-            cxi_file.create_dataset(self.roi_path, data=np.array(self.roi, dtype=np.int64))
-            cxi_file.create_dataset(self.defocus_path, data=self.defoc)
-            cxi_file.create_dataset(self.x_pixel_size_path, data=self.pixel_vector[1])
-            cxi_file.create_dataset(self.y_pixel_size_path, data=self.pixel_vector[0])
-            cxi_file.create_dataset(self.energy_path, data=self.energy)
-            cxi_file.create_dataset(self.wavelength_path, data=self.wavelength)
-            cxi_file.create_dataset(self.translations_path, data=self.translations())
-            cxi_file.create_dataset(self.good_frames_path, data=np.arange(self.n_frames))
-            cxi_file.create_dataset(self.mask_path, data=self.mask.astype(bool))
-            cxi_file.create_dataset(self.whitefield_path, data=self.whitefield.astype(np.float32))
-            cxi_file.create_dataset(self.data_path, data=self.data.astype(np.float32))
-        self.logger.info("{:s} saved".format(os.path.join(dir_path, 'data.cxi')))
-
-def defaults():
-    """
-    Return default parameters
-    """
-    return STSim.import_ini(os.path.join(ROOT_PATH, 'default.ini'))
+            for attr in self.write_attrs:
+                if attr in data_dict:
+                    self.protocol.create_dataset(attr, data_dict[attr], cxi_file)
+                else:
+                    dset = self.__getattribute__('_' + attr)(st_params)
+                    self.protocol.create_dataset(attr, dset, cxi_file)
+        if logger:
+            logger.info("{:s} saved".format(os.path.join(dir_path, 'data.cxi')))
 
 def main():
     """
@@ -499,20 +631,20 @@ def main():
     parser.add_argument('-v', '--verbose', action='store_true', help="Turn on verbosity")
     parser.add_argument('-p', '--ptych', action='store_true', help="Generate ptychograph data")
 
-    default_path = os.path.join(ROOT_PATH, 'default.ini')
-    if os.path.isfile(default_path):
-        params = STSim.import_ini(default_path)
-        args_dict = vars(parser.parse_args())
-        for param in args_dict:
-            if args_dict[param] is not None:
-                params[param] = args_dict[param]
-        if 'ini_file' in params:
-            params.update(STSim.import_ini(params['ini_file']))
-
-        st_sim = STSim(**params)
-        if params['ptych']:
-            st_sim.ptych_cxi().save(params['out_path'])
-        else:
-            st_sim.frames_cxi().save(params['out_path'])
+    params = parameters().export_dict()
+    args_dict = vars(parser.parse_args())
+    for param in args_dict:
+        if args_dict[param] is not None:
+            params[param] = args_dict[param]
+    if 'ini_file' in params:
+        st_params = STParams.import_ini(args_dict['ini_file'])
     else:
-        raise RuntimeError("Default ini file doesn't exist")
+        st_params = STParams.import_dict(**params)
+
+    st_sim = STSim(st_params)
+    st_converter = STConverter()
+    if params['ptych']:
+        data = st_sim.ptychograph()
+    else:
+        data = st_sim.frames()
+    st_converter.save_sim(data, st_sim, params['out_path'])

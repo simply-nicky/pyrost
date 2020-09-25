@@ -7,9 +7,11 @@ cimport openmp
 
 ctypedef cnp.complex128_t complex_t
 ctypedef cnp.float64_t float_t
+ctypedef cnp.float32_t float32_t
 ctypedef cnp.int64_t int_t
 ctypedef cnp.uint64_t uint_t
 ctypedef cnp.uint8_t uint8_t
+DEF X_TOL = 4.320005384913445 # Y_TOL = 1e-9
 
 cdef float_t lens_re(float_t xx, void* params) nogil:
     cdef:
@@ -219,55 +221,81 @@ def lens(float_t[::1] x_arr, float_t wl, float_t ap, float_t focus,
         wave_arr[i] = lens_wp(x_arr[i], wl, ap, focus, defoc, alpha) 
     return np.asarray(wave_arr)
 
-def barcode_steps(float_t beam_dx, float_t bar_size, float_t rnd_div, float_t step_size, int_t n_frames):
+def barcode_steps(float_t bm_dx, float_t br_dx, float_t rd, float_t ss, int_t nf):
     """
     Barcode bars' coordinates generation with random deviation
 
-    beam_dx - incident beam size [um]
-    bar_size - mean bar size [um]
-    rnd_div - random deviation (0.0 - 1.0)
-    step_size - scan step size [um]
-    n_frames - number of frames of a scan
+    bm_dx - incident beam size [um]
+    br_dx - mean bar size [um]
+    rd - random deviation (0.0 - 1.0)
+    ss - scan step size [um]
+    nf - number of frames of a scan
     """
     cdef:
-        int_t bs_n = (<int_t>((beam_dx + step_size * n_frames) / bar_size) // 2 + 1) * 2, i
+        int_t br_n = (<int_t>((bm_dx + ss * nf) / br_dx) // 2 + 1) * 2, i
         gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937)
-        float_t bs_min = max(1 - rnd_div, 0), bs_max = 1 + rnd_div
-        float_t[::1] bs = np.empty(bs_n, dtype=np.float64)
-    bs[0] = bar_size * (0.5 + bs_min + (bs_max - bs_min) * gsl_rng_uniform_pos(r))
-    for i in range(1, bs_n):
-        bs[i] = bs[i - 1] + bar_size * (bs_min + (bs_max - bs_min) * gsl_rng_uniform_pos(r))
-    return np.asarray(bs)
+        float_t bs_min = max(1 - rd, 0), bs_max = 1 + rd
+        float_t[::1] bx_arr = np.empty(br_n, dtype=np.float64)
+    bx_arr[0] = br_dx * (0.5 + bs_min + (bs_max - bs_min) * gsl_rng_uniform_pos(r))
+    for i in range(1, br_n):
+        bx_arr[i] = bx_arr[i - 1] + br_dx * (bs_min + (bs_max - bs_min) * gsl_rng_uniform_pos(r))
+    return np.asarray(bx_arr)
 
-cdef void bc_1d(float_t[::1] bc_t, float_t[::1] x_arr, float_t[::1] bsteps,
-                float_t b_sigma, float_t atn, float_t step) nogil:
+cdef int_t binary_search(float_t[::1] values, int_t l, int_t r, float_t x) nogil:
+    cdef int_t m = l + (r - l) // 2
+    if l <= r:
+        if x == values[m]:
+            return m
+        elif x > values[m] and x <= values[m + 1]:
+            return m + 1
+        elif x < values[m]:
+            return binary_search(values, l, m, x)
+        else:
+            return binary_search(values, m + 1, r, x)
+
+cdef int_t searchsorted(float_t[::1] values, float_t x) nogil:
+    cdef int_t r = values.shape[0]
+    if x < values[0]:
+        return 0
+    elif x > values[r - 1]:
+        return r
+    else:
+        return binary_search(values, 0, r, x)
+
+cdef void barcode_1d(float_t[::1] br_tr, float_t[::1] x_arr, float_t[::1] bx_arr,
+                     float_t sgm, float_t atn, float_t step) nogil:
     cdef:
-        int_t a = x_arr.shape[0], aa = bsteps.shape[0], i, ii
-        float_t tr, bs_x0, bs_x1, t
+        int_t a = x_arr.shape[0], b = bx_arr.shape[0], i, j0, j
+        float_t br_dx = (bx_arr[b - 1] - bx_arr[0]) / b
+        int_t bb = <int_t>(X_TOL * sqrt(2) * sgm / br_dx + 1)
+        float_t tr, xx, x0, x1
     for i in range(a):
+        xx = x_arr[i] - x_arr[0] + step
+        j0 = searchsorted(bx_arr, xx) # even '-', odd '+'
         tr = 0
-        for ii in range(aa / 2):
-            bs_x0 = ((x_arr[i] - x_arr[0]) - bsteps[2 * ii] + step) / 2 / b_sigma
-            bs_x1 = -((x_arr[i] - x_arr[0]) - bsteps[2 * ii + 1] + step) / 2 / b_sigma
-            tr += 0.5 * erf(bs_x0) * erf(bs_x1) + 0.5
-        bc_t[i] = sqrt(1 - atn + atn * tr)
+        for j in range(j0 - bb, j0 + bb + 1):
+            if j >= 1 and j < b:
+                x0 = (xx - bx_arr[j - 1]) / sqrt(2) / sgm
+                x1 = (xx - bx_arr[j]) / sqrt(2) / sgm
+                tr += 0.5 * (0.5 - j % 2) * (erf(x0) - erf(x1))
+        br_tr[i] = sqrt(1 - atn / 2 + atn * tr)
 
-def barcode(float_t[::1] x_arr, float_t[::1] bsteps, float_t b_sigma, float_t atn, float_t step_size, int_t n_frames):
+def barcode(float_t[::1] x_arr, float_t[::1] bx_arr, float_t sgm, float_t atn, float_t ss, int_t nf):
     """
     Barcode transmission array for a scan
 
     x_arr - coordinates [um]
-    bsteps - bar coordinates array [um]
-    b_sigma - bar haziness width [um]
+    bx_arr - bar coordinates array [um]
+    sgm - bar haziness width [um]
     atn - bar attenuation (0.0 - 1.0)
-    step_size - scan step size [um]
-    n_frames - number of frames of a scan
+    ss - scan step size [um]
+    nf - number of frames of a scan
     """
     cdef:
         int_t a = x_arr.shape[0], i
-        float_t[:, ::1] bc_t = np.empty((n_frames, a), dtype=np.float64)
-    for i in prange(n_frames, schedule='guided', nogil=True):
-        bc_1d(bc_t[i], x_arr, bsteps, b_sigma, atn, i * step_size)
+        float_t[:, ::1] bc_t = np.empty((nf, a), dtype=np.float64)
+    for i in prange(nf, schedule='guided', nogil=True):
+        barcode_1d(bc_t[i], x_arr, bx_arr, sgm, atn, i * ss)
     return np.asarray(bc_t)
 
 cdef float_t convolve_c(float_t[::1] a1, float_t[::1] a2, int_t k) nogil:

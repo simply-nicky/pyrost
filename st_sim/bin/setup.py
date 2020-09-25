@@ -17,6 +17,12 @@ if USE_CYTHON:
                             extra_link_args=['-lomp'],
                             libraries=cython_gsl.get_libraries(),
                             library_dirs=[cython_gsl.get_library_dir(), '/usr/local/lib'],
+                            include_dirs=[numpy.get_include(), cython_gsl.get_cython_include_dir()]),
+                  Extension(name='st_utils', sources=["st_utils.pyx"], language="c",
+                            extra_compile_args=['-fopenmp'],
+                            extra_link_args=['-lomp'],
+                            libraries=cython_gsl.get_libraries(),
+                            library_dirs=[cython_gsl.get_library_dir(), '/usr/local/lib'],
                             include_dirs=[numpy.get_include(), cython_gsl.get_cython_include_dir()])]
     extensions = cythonize(extensions, annotate=False, language_level="3",
                            compiler_directives={'cdivision': True,
