@@ -10,9 +10,10 @@ import logging
 import datetime
 import argparse
 from sys import stdout
+import re
 import h5py
 import numpy as np
-from .bin import aperture, barcode_steps, barcode, lens
+from .bin import aperture, barcode_steps, barcode_2d, lens
 from .bin import make_frames, make_whitefield
 from .bin import fraunhofer_1d, fraunhofer_2d
 
@@ -57,20 +58,32 @@ class INIParser():
     INI files parser class
     """
     err_txt = "Wrong format key '{0:s}' of option '{1:s}'"
+    known_types = {'int': int, 'float': float, 'bool': bool, 'str': str}
     attr_dict, fmt_dict = {}, {}
+    LIST_SPLITTER = r'\s*,\s*'
+    LIST_MATCHER = r'^\[([\s\S]*)\]$'
 
     def __init__(self, **kwargs):
         for section in self.attr_dict:
+            self.__dict__[section] = {}
             if 'ALL' in self.attr_dict[section]:
-                self.__dict__[section] = kwargs[section]
+                for option in kwargs[section]:
+                    self._init_value(section, option, kwargs)
             else:
-                self.__dict__[section] = {option: kwargs[section][option]
-                                          for option in self.attr_dict[section]}
+                for option in self.attr_dict[section]:
+                    self._init_value(section, option, kwargs)
+
+    def _init_value(self, section, option, kwargs):
+        fmt = self.get_format(section, option)
+        if isinstance(kwargs[section][option], list):
+            self.__dict__[section][option] = [fmt(part) for part in kwargs[section][option]]
+        else:
+            self.__dict__[section][option] = fmt(kwargs[section][option])
 
     @classmethod
     def read_ini(cls, ini_file):
         """
-        Read ini file
+        Read the ini_file
         """
         if not os.path.isfile(ini_file):
             raise ValueError("File {:s} doesn't exist".format(ini_file))
@@ -79,23 +92,28 @@ class INIParser():
         return ini_parser
 
     @classmethod
-    def get_value(cls, ini_parser, section, option):
+    def get_format(cls, section, option):
+        """
+        Return the attribute's format
+        """
         fmt = cls.fmt_dict.get(os.path.join(section, option))
         if not fmt:
             fmt = cls.fmt_dict.get(section)
-        if fmt == 'float':
-            val = ini_parser.getfloat(section, option)
-        elif fmt == 'int':
-            val = ini_parser.getint(section, option)
-        elif fmt == 'bool':
-            val = ini_parser.getboolean(section, option)
-        elif fmt == 'str':
-            val = ini_parser.get(section, option)
-        elif fmt == 'list':
-            val = set(ini_parser.get(section, option).split(', '))
+        return cls.known_types[fmt]
+
+    @classmethod
+    def get_value(cls, ini_parser, section, option):
+        """
+        Return an attribute from the ini_parser
+        """
+        fmt = cls.get_format(section, option)
+        string = ini_parser.get(section, option)
+        is_list = re.search(cls.LIST_MATCHER, string)
+        if is_list:
+            return [fmt(part.strip())
+                    for part in re.split(cls.LIST_SPLITTER, is_list.group(1))]
         else:
-            raise ValueError(cls.err_txt.format(fmt, option))
-        return val
+            return fmt(string.strip())
 
     @classmethod
     def import_ini(cls, ini_file):
@@ -177,18 +195,22 @@ class STParams(INIParser):
     ap_y - lens size along the y axis [um]
     focus - focal distance [um]
     alpha - third order abberations [rad/mrad^3]
+    x0 - lens' abberation center point [0.0 - 1.0]
 
     [barcode - barcode parameters]
     bar_size - average bar size [um]
     bar_sigma - bar haziness width [um]
-    attenuation - bar attenuation
+    bar_atn - bar attenuation
+    bulk_atn - bulk attenuation
     random_dev - bar random deviation
+    offset - sample's offset at the beginning and the end of the scan [um]
     """
     attr_dict = {'exp_geom': ('defoc', 'det_dist', 'step_size', 'n_frames'),
                  'detector': ('fs_size', 'ss_size', 'pix_size'),
                  'source':   ('p0', 'wl', 'th_s'),
-                 'lens':     ('ap_x', 'ap_y', 'focus', 'alpha'),
-                 'barcode':  ('bar_size', 'bar_sigma', 'attenuation', 'random_dev'),
+                 'lens':     ('ap_x', 'ap_y', 'focus', 'alpha', 'x0'),
+                 'barcode':  ('bar_size', 'bar_sigma', 'bar_atn',
+                              'bulk_atn', 'random_dev', 'offset'),
                  'system':   ('verbose',)}
 
     fmt_dict = {'exp_geom': 'float', 'exp_geom/n_frames': 'int',
@@ -196,13 +218,33 @@ class STParams(INIParser):
                 'source': 'float', 'lens': 'float', 'barcode': 'float',
                 'system/verbose': 'bool'}
 
+    @classmethod
+    def lookup_dict(cls):
+        """
+        Return the look-up table
+        """
+        lookup = {}
+        for section in cls.attr_dict:
+            for option in cls.attr_dict[section]:
+                lookup[option] = section
+        return lookup
+
     def __init__(self, **kwargs):
         super(STParams, self).__init__(**kwargs)
-        self._parameters = self.export_dict()
+        self.__dict__['_lookup'] = self.lookup_dict()
 
     def __getattr__(self, attr):
-        if attr in self._parameters:
-            return self._parameters[attr]
+        if attr in self._lookup:
+            return self.__dict__[self._lookup[attr]][attr]
+        else:
+            raise AttributeError(attr + " doesn't exist")
+
+    def __setattr__(self, attr, value):
+        if attr in self._lookup:
+            fmt = self.get_format(self._lookup[attr], attr)
+            self.__dict__[self._lookup[attr]][attr] = fmt(value)
+        else:
+            raise AttributeError(attr + ' not allowed')
 
     @classmethod
     def import_dict(cls, **kwargs):
@@ -224,7 +266,7 @@ class STParams(INIParser):
         th_lim = fx_lim + self.wl / 2 / np.pi * self.alpha * 3e9 * fx_lim**2 / dist
         return np.tan(th_lim) * dist
 
-    def roi(self, dist, x_min, x_max, dx):
+    def roi(self, shape):
         """
         Return ROI for the given coordinate array based on incident beam span
 
@@ -232,8 +274,11 @@ class STParams(INIParser):
         x_min, x_max - coordinate array extremities
         dx - coordinate array step
         """
-        beam_span = np.clip(self.beam_span(dist), x_min, x_max)
-        return ((beam_span - x_min) // dx).astype(np.int)
+        beam_span = np.clip(self.beam_span(self.det_dist),
+                            -shape[-1] // 2 * self.pix_size,
+                            (shape[-1] // 2 - 1) * self.pix_size)
+        fs_roi = (beam_span // self.pix_size + shape[-1] // 2).astype(np.int)
+        return np.array([0, shape[1], fs_roi[0], fs_roi[1]])
 
     def export_dict(self):
         """
@@ -282,12 +327,15 @@ def parameters(**kwargs):
     ap_y - lens size along the y axis [um]
     focus - focal distance [um]
     alpha - third order abberations [rad/mrad^3]
+    x0 - lens' abberation center point [0.0 - 1.0]
 
     [barcode - barcode parameters]
     bar_size - average bar size [um]
     bar_sigma - bar haziness width [um]
-    attenuation - bar attenuation
-    random_dev - bar random deviation 
+    bar_atn - bar attenuation
+    bulk_atn - bulk attenuation
+    random_dev - bar random deviation
+    offset - sample's offset at the beginning and the end of the scan [um]
     """
     st_params = STParams.import_ini(os.path.join(ROOT_PATH, 'parameters.ini')).export_dict()
     st_params.update(**kwargs)
@@ -298,15 +346,18 @@ class STSim():
     Speckle Tracking simulation class (STSim)
 
     st_params - STParams class object
+    bsteps - coordinates of each sample's bar
     """
     log_dir = os.path.join(ROOT_PATH, '../logs')
 
-    def __init__(self, st_params):
+    def __init__(self, st_params, bsteps=None):
         self.parameters = st_params
         self.__dict__.update(**self.parameters.export_dict())
         self._init_logging()
-        self._init_sample_data()
-        self._init_det_data()
+        self._init_coord()
+        self._init_lens()
+        self._init_barcode(bsteps)
+        self._init_detector()
 
     def _init_logging(self):
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -320,7 +371,7 @@ class STSim():
         self.logger.info('Initializing')
         self.logger.info('Current parameters')
 
-    def _init_sample_data(self):
+    def _init_coord(self):
         # Initializing coordinate parameters
         xx_span = self.fs_size * self.pix_size
         yy_span = self.ss_size * self.pix_size
@@ -339,35 +390,39 @@ class STSim():
         self.y_arr = np.linspace(-y_span / 2, y_span / 2, n_y)
         self.xx_arr = np.linspace(-xx_span / 2, xx_span / 2, self.fs_size, endpoint=False)
         self.yy_arr = np.linspace(-yy_span / 2, yy_span / 2, self.ss_size, endpoint=False)
-        x_roi = self.parameters.roi(dist=self.det_dist + self.defoc, dx=self.pix_size,
-                                    x_min=-self.fs_size // 2 * self.pix_size,
-                                    x_max=(self.fs_size // 2 - 1) * self.pix_size)
-        self.roi = np.concatenate((self.ss_size // 2 + np.arange(2), x_roi))
 
+    def _init_lens(self):
         #Initializing wavefields at the sample's plane
         self.logger.info("Generating wavefields at the sample's plane")
         self.wf0_x = lens(x_arr=self.x_arr, wl=self.wl, ap=self.ap_x,
-                          focus=self.focus, defoc=self.defoc, alpha=self.alpha)
+                          focus=self.focus, defoc=self.defoc, alpha=self.alpha,
+                          x0=(self.x0 - 0.5) * self.ap_x)
         self.wf0_y = aperture(x_arr=self.y_arr, z=self.focus + self.defoc,
                               wl=self.wl, ap=self.ap_y)
         self.i0 = self.p0 / self.ap_x / self.ap_y
         self.smp_c = 1 / self.wl / (self.focus + self.defoc)
-        self.logger.info("Wavefields generated")
+        self.logger.info("The wavefields have been generated")
 
-    def _init_det_data(self):
+    def _init_barcode(self, bsteps):
+        self.logger.info("Generating barcode's transmission coefficients")
+        if bsteps is None:
+            bsteps = barcode_steps(x0=self.x_arr[0] + self.offset, x1=self.x_arr[-1] + \
+                                   self.n_frames * self.step_size - self.offset,
+                                   br_dx=self.bar_size, rd=self.random_dev)
+        self.bsteps = bsteps
+        self.bs_t = barcode_2d(x_arr=self.x_arr, bx_arr=self.bsteps, sgm=self.bar_sigma,
+                               atn0=self.bulk_atn, atn=self.bar_atn, ss=self.step_size,
+                               nf=self.n_frames)
+        self.logger.info("The coefficients have been generated")
+
+    def _init_detector(self):
         self.logger.info("Generating wavefields at the detector's plane")
         self.wf1_y = fraunhofer_1d(wf0=self.wf0_y, x_arr=self.y_arr, xx_arr=self.yy_arr,
                                    dist=self.det_dist, wl=self.wl)
-        self.bsteps = barcode_steps(beam_span=self.x_arr[-1] - self.x_arr[0],
-                                    bar_size=self.bar_size, rnd_dev=self.random_dev,
-                                    step_size=self.step_size, n_frames=self.n_frames)
-        self.bs_t = barcode(x_arr=self.x_arr, bsteps=self.bsteps, b_sigma=self.bar_sigma,
-                            atn=self.attenuation, step_size=self.step_size,
-                            n_frames=self.n_frames)
         self.wf1_x = fraunhofer_2d(wf0=self.wf0_x * self.bs_t, x_arr=self.x_arr,
                                    xx_arr=self.xx_arr, dist=self.det_dist, wl=self.wl)
         self.det_c = self.smp_c / self.wl / self.det_dist
-        self.logger.info("Wavefields generated")
+        self.logger.info("The wavefields have been generated")
 
     def source_curve(self, dist, dx):
         """
@@ -381,16 +436,16 @@ class STSim():
         s_arr = np.exp(-x_arr**2 / 2 / sigma**2)
         return s_arr / s_arr.sum()
 
-    def lens_phase(self):
-        """
-        Return lens wavefront at the sample plane, defocus, and abberations coefficient
-        """
-        roi = self.parameters.roi(self.defoc, self.x_arr[0], self.x_arr[-1], self.x_arr[1] - self.x_arr[0])
-        phase = np.unwrap(np.angle(self.wf0_x))
-        ph_fit = np.polyfit(self.x_arr[roi[0]:roi[1]], phase[roi[0]:roi[1]], 3)
-        defoc = np.pi / self.wl / ph_fit[1]
-        res = {'phase': phase, 'defocus': defoc, 'alpha': -ph_fit[0] * defoc**3 * 1e-9}
-        return res
+    # def lens_phase(self):
+    #     """
+    #     Return lens wavefront at the sample plane, defocus, and abberations coefficient
+    #     """
+    #     roi = self.parameters.roi(self.defoc, self.x_arr[0], self.x_arr[-1], self.x_arr[1] - self.x_arr[0])
+    #     phase = np.unwrap(np.angle(self.wf0_x))
+    #     ph_fit = np.polyfit(self.x_arr[roi[0]:roi[1]], phase[roi[0]:roi[1]], 3)
+    #     defoc = np.pi / self.wl / ph_fit[1]
+    #     res = {'phase': phase, 'defocus': defoc, 'alpha': -ph_fit[0] * defoc**3 * 1e-9}
+    #     return res
 
     def sample_wavefronts(self):
         """
@@ -559,8 +614,8 @@ class STConverter():
         """
         Save STSim object at the given folder
         """
-        self.save(data=data, st_params=st_sim.parameters, dir_path=dir_path,
-                  logger=st_sim.logger, roi=st_sim.roi)
+        self.save(data=data, st_params=st_sim.parameters,
+                  dir_path=dir_path, logger=st_sim.logger)
 
     def save(self, data, st_params, dir_path, logger=None, roi=None):
         """
@@ -589,10 +644,9 @@ class STConverter():
         data_dict = {'data': data, 'mask': np.ones(data.shape[1:], dtype=np.uint8),
                      'good_frames': np.arange(data.shape[0])}
         data_dict['whitefield'] = make_whitefield(mask=data_dict['mask'], data=data)
-        if roi:
-            data_dict['roi'] = np.asarray(roi)
-        else:
-            data_dict['roi'] = np.array([0, data.shape[1], 0, data.shape[2]])
+        if roi is None:
+            roi = st_params.roi(data.shape)
+        data_dict['roi'] = np.asarray(roi)
         with h5py.File(os.path.join(dir_path, 'data.cxi'), 'w') as cxi_file:
             for attr in self.write_attrs:
                 if attr in data_dict:
@@ -624,10 +678,13 @@ def main():
     parser.add_argument('--ap_y', type=float, help="Lens size along the y axis [um]")
     parser.add_argument('--focus', type=float, help="Focal distance [um]")
     parser.add_argument('--alpha', type=float, help="Third order abberations [rad/mrad^3]")
+    parser.add_argument('--x0', type=float, help="Lens' abberations center point [0.0 - 1.0]")
     parser.add_argument('--bar_size', type=float, help="Average bar size [um]")
     parser.add_argument('--bar_sigma', type=float, help="Bar haziness width [um]")
-    parser.add_argument('--attenuation', type=float, help="Bar attenuation")
+    parser.add_argument('--bar_atn', type=float, help="Bar attenuation")
+    parser.add_argument('--bulk_atn', type=float, help="Bulk attenuation")
     parser.add_argument('--random_dev', type=float, help="Bar random deviation")
+    parser.add_argument('--offset', type=float, help="sample's offset at the beginning and the end of the scan [um]")
     parser.add_argument('-v', '--verbose', action='store_true', help="Turn on verbosity")
     parser.add_argument('-p', '--ptych', action='store_true', help="Generate ptychograph data")
 
@@ -648,3 +705,4 @@ def main():
     else:
         data = st_sim.frames()
     st_converter.save_sim(data, st_sim, params['out_path'])
+    st_sim.close()

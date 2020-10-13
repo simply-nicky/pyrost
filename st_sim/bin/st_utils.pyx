@@ -7,17 +7,16 @@ cimport openmp
 
 ctypedef cnp.complex128_t complex_t
 ctypedef cnp.float64_t float_t
-ctypedef cnp.float32_t float32_t
 ctypedef cnp.int64_t int_t
 ctypedef cnp.uint64_t uint_t
 ctypedef cnp.uint8_t uint8_t
 ctypedef cnp.npy_bool bool_t
 DEF FLOAT_MAX = 1.7976931348623157e+308
 
-cdef float32_t wirthselect_float(float32_t[:] array, int k) nogil:
+cdef float_t wirthselect_float(float_t[:] array, int k) nogil:
     cdef:
         int_t l = 0, m = array.shape[0] - 1, i, j
-        float32_t x, tmp 
+        float_t x, tmp 
     while l < m: 
         x = array[k] 
         i = l; j = m 
@@ -32,7 +31,7 @@ cdef float32_t wirthselect_float(float32_t[:] array, int k) nogil:
         if k < i: m = j 
     return array[k]
 
-def make_whitefield_st(float32_t[:, :, ::1] data, bool_t[:, ::1] mask):
+def make_whitefield_st(float_t[:, :, ::1] data, bool_t[:, ::1] mask):
     """
     Return whitefield based on median filtering of the stack of frames
 
@@ -42,8 +41,8 @@ def make_whitefield_st(float32_t[:, :, ::1] data, bool_t[:, ::1] mask):
     cdef:
         int_t a = data.shape[0], b = data.shape[1], c = data.shape[2], i, j, k
         int_t max_threads = openmp.omp_get_max_threads()
-        float32_t[:, ::1] wf = np.empty((b, c), dtype=np.float32)
-        float32_t[:, ::1] array = np.empty((max_threads, a), dtype=np.float32)
+        float_t[:, ::1] wf = np.empty((b, c), dtype=np.float64)
+        float_t[:, ::1] array = np.empty((max_threads, a), dtype=np.float64)
     for j in prange(b, schedule='guided', nogil=True):
         i = openmp.omp_get_thread_num()
         for k in range(c):
@@ -199,9 +198,9 @@ cdef void search_2d(float_t[:] I, float_t[:, ::1] I0, float_t[::1] di, float_t[:
                     mse_min = mse; i_min = i; j_min = j
     u[0] += i_min; u[1] += j_min
 
-def update_pixel_map_search(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0,
-                            float_t[:, :, ::1] u0, float_t[::1] di, float_t[::1] dj,
-                            float_t dss, float_t dfs, uint_t wss=1, uint_t wfs=100):
+def update_pixel_map(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0,
+                     float_t[:, :, ::1] u0, float_t[::1] di, float_t[::1] dj,
+                     float_t dss, float_t dfs, uint_t wss=1, uint_t wfs=100):
     """
     Update the pixel map
 
@@ -221,7 +220,7 @@ def update_pixel_map_search(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:
         float_t i0, i1, j0, j1
         float_t[:, :, ::1] u = np.empty((2, b, c), dtype=np.float64)
     u[...] = u0
-    for j in range(b):
+    for j in prange(b, schedule='guided', nogil=True):
         for k in range(c):
             # Define window search bounds
             i0 = -<float_t>(wss) if wss < u[0, j, k] - di0 else di0 - u[0, j, k]

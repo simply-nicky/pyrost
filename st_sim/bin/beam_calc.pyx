@@ -7,41 +7,10 @@ cimport openmp
 
 ctypedef cnp.complex128_t complex_t
 ctypedef cnp.float64_t float_t
-ctypedef cnp.float32_t float32_t
 ctypedef cnp.int64_t int_t
 ctypedef cnp.uint64_t uint_t
 ctypedef cnp.uint8_t uint8_t
 DEF X_TOL = 4.320005384913445 # Y_TOL = 1e-9
-
-cdef float_t lens_re(float_t xx, void* params) nogil:
-    cdef:
-        float_t x = (<float_t*> params)[0], wl = (<float_t*> params)[1]
-        float_t f = (<float_t*> params)[2], df = (<float_t*> params)[3]
-        float_t a = (<float_t*> params)[4]
-        float_t ph, ph_ab
-    ph = -pi * xx**2 / wl * df / f / (f + df) - 2 * pi / wl / (f + df) * x * xx
-    ph_ab = -a * 1e9 * (xx / f)**3
-    return cos(ph + ph_ab)
-
-cdef float_t lens_im(float_t xx, void* params) nogil:
-    cdef:
-        float_t x = (<float_t*> params)[0], wl = (<float_t*> params)[1]
-        float_t f = (<float_t*> params)[2], df = (<float_t*> params)[3]
-        float_t a = (<float_t*> params)[4]
-        float_t ph, ph_ab
-    ph = -pi * xx**2 / wl * df / f / (f + df) - 2 * pi / wl / (f + df) * x * xx
-    ph_ab = -a * 1e9 * (xx / f)**3
-    return sin(ph + ph_ab)
-
-cdef float_t aperture_re(float_t xx, void* params) nogil:
-    cdef:
-        float_t x = (<float_t*> params)[0], z = (<float_t*> params)[1], wl = (<float_t*> params)[2]
-    return cos(pi / wl / z * (x - xx)**2)
-
-cdef float_t aperture_im(float_t xx, void* params) nogil:
-    cdef:
-        float_t x = (<float_t*> params)[0], z = (<float_t*> params)[1], wl = (<float_t*> params)[2]
-    return sin(pi / wl / z * (x - xx)**2)
 
 cdef float_t gsl_quad(gsl_function func, float_t a, float_t b, float_t eps_abs, float_t eps_rel, int_t limit) nogil:
     cdef:
@@ -52,19 +21,72 @@ cdef float_t gsl_quad(gsl_function func, float_t a, float_t b, float_t eps_abs, 
     gsl_integration_workspace_free(W)
     return result
 
-cdef complex_t lens_wp(float_t x, float_t wl, float_t ap, float_t f, float_t df, float_t a) nogil:
+cdef float_t lens_re(float_t xx, void* params) nogil:
+    cdef:
+        float_t x = (<float_t*> params)[0], wl = (<float_t*> params)[1]
+        float_t f = (<float_t*> params)[2], df = (<float_t*> params)[3]
+        float_t a = (<float_t*> params)[4], x0 = (<float_t*> params)[5]
+        float_t ph, ph_ab
+    ph = -pi * xx**2 / wl * df / f / (f + df) - 2 * pi / wl / (f + df) * x * xx
+    ph_ab = -a * 1e9 * ((xx - x0) / f)**3
+    return cos(ph + ph_ab)
+
+cdef float_t lens_im(float_t xx, void* params) nogil:
+    cdef:
+        float_t x = (<float_t*> params)[0], wl = (<float_t*> params)[1]
+        float_t f = (<float_t*> params)[2], df = (<float_t*> params)[3]
+        float_t a = (<float_t*> params)[4], x0 = (<float_t*> params)[5]
+        float_t ph, ph_ab
+    ph = -pi * xx**2 / wl * df / f / (f + df) - 2 * pi / wl / (f + df) * x * xx
+    ph_ab = -a * 1e9 * ((xx - x0) / f)**3
+    return sin(ph + ph_ab)
+
+cdef complex_t lens_wp(float_t x, float_t wl, float_t ap, float_t f,
+                       float_t df, float_t a, float_t x0) nogil:
     cdef:
         float_t re, im, ph = pi / wl / (f + df) * x**2
-        float_t params[5]
+        float_t params[6]
         int_t fn = <int_t> (ap**2 / wl / (f + df))
         gsl_function func
     params[0] = x; params[1] = wl; params[2] = f
-    params[3] = df; params[4] = a
+    params[3] = df; params[4] = a; params[5] = x0
     func.function = &lens_re; func.params = params
     re = gsl_quad(func, -ap / 2, ap / 2, 1e-9, 1e-7, 1000 * fn)
     func.function = &lens_im
     im = gsl_quad(func, -ap / 2, ap / 2, 1e-9, 1e-7, 1000 * fn)
     return (re + 1j * im) * (cos(ph) + 1j * sin(ph))
+
+
+def lens(float_t[::1] x_arr, float_t wl, float_t ap, float_t focus,
+         float_t defoc, float_t alpha, float_t x0):
+    """
+    Lens wavefront calculation by dint of Fresnel diffraction (without the coefficient)
+    with third order polinomial abberations
+
+    x_arr - coordinates at the plane downstream [um]
+    wl - wavelength [um]
+    ap - lens' size [um]
+    focus - focal distance [um]
+    defoc - defocus [um]
+    alpha - abberations coefficient [rad/mrad^3]
+    x0 - center point of the lens' abberations [um]
+    """
+    cdef:
+        int_t a = x_arr.shape[0], i
+        complex_t[::1] wave_arr = np.empty((a,), dtype=np.complex128)
+    for i in prange(a, schedule='guided', nogil=True, chunksize=10):
+        wave_arr[i] = lens_wp(x_arr[i], wl, ap, focus, defoc, alpha, x0) 
+    return np.asarray(wave_arr)
+
+cdef float_t aperture_re(float_t xx, void* params) nogil:
+    cdef:
+        float_t x = (<float_t*> params)[0], z = (<float_t*> params)[1], wl = (<float_t*> params)[2]
+    return cos(pi / wl / z * (x - xx)**2)
+
+cdef float_t aperture_im(float_t xx, void* params) nogil:
+    cdef:
+        float_t x = (<float_t*> params)[0], z = (<float_t*> params)[1], wl = (<float_t*> params)[2]
+    return sin(pi / wl / z * (x - xx)**2)
     
 cdef complex_t aperture_wp(float_t x, float_t z, float_t wl, float_t ap) nogil:
     cdef:
@@ -78,6 +100,22 @@ cdef complex_t aperture_wp(float_t x, float_t z, float_t wl, float_t ap) nogil:
     func.function = &aperture_im
     im = gsl_quad(func, -ap / 2, ap / 2, 1e-9, 1e-7, 1000 * fn)
     return re + 1j * im
+
+def aperture(float_t[::1] x_arr, float_t z, float_t wl, float_t ap):
+    """
+    Aperture wavefront calculation by dint of Fresnel diffraction (without the coefficient)
+
+    x_arr - coordinates at the plane downstream [um]
+    z - propagation distance [um]
+    wl - wavelength [um]
+    ap - aperture's size [um]
+    """
+    cdef:
+        int_t a = x_arr.shape[0], i
+        complex_t[::1] wave_arr = np.empty((a,), dtype=np.complex128)
+    for i in prange(a, schedule='guided', nogil=True, chunksize=10):
+        wave_arr[i] = aperture_wp(x_arr[i], z, wl, ap)
+    return np.asarray(wave_arr)
 
 cdef complex_t fhf_wp(complex_t[::1] wf0, float_t[::1] x_arr, float_t xx, float_t dist, float_t wl) nogil:
     cdef:
@@ -98,26 +136,6 @@ cdef void fhf_1d(complex_t[::1] wf1, complex_t[::1] wf0, float_t[::1] x_arr, flo
         int_t a = xx_arr.shape[0], i
     for i in range(a):
         wf1[i] = fhf_wp(wf0, x_arr, xx_arr[i], dist, wl)
-
-cdef complex_t fnl_wp(complex_t[::1] wf0, float_t[::1] x_arr, float_t xx, float_t dist, float_t wl) nogil:
-    cdef:
-        int_t a = wf0.shape[0], i
-        float_t ph0, ph1
-        complex_t wf
-    ph0 = pi / wl / dist * (x_arr[0] - xx)**2
-    ph1 = pi / wl / dist * (x_arr[1] - xx)**2
-    wf = (wf0[0] * (cos(ph0) + 1j * sin(ph0)) + wf0[1] * (cos(ph1) + 1j * sin(ph1))) / 2 * (x_arr[1] - x_arr[0])
-    for i in range(2, a):
-        ph0 = ph1
-        ph1 = pi / wl / dist * (x_arr[i] - xx)**2
-        wf += (wf0[i - 1] * (cos(ph0) + 1j * sin(ph0)) + wf0[i] * (cos(ph1) + 1j * sin(ph1))) / 2 * (x_arr[i] - x_arr[i - 1])
-    return wf
-
-cdef void fnl_1d(complex_t[::1] wf1, complex_t[::1] wf0, float_t[::1] x_arr, float_t[::1] xx_arr, float_t dist, float_t wl) nogil:
-    cdef:
-        int_t a = xx_arr.shape[0], i
-    for i in range(a):
-        wf1[i] = fnl_wp(wf0, x_arr, xx_arr[i], dist, wl)
 
 def fraunhofer_1d(complex_t[::1] wf0, float_t[::1] x_arr, float_t[::1] xx_arr, float_t dist, float_t wl):
     """
@@ -152,6 +170,26 @@ def fraunhofer_2d(complex_t[:, ::1] wf0, float_t[::1] x_arr, float_t[::1] xx_arr
         fhf_1d(wf[i], wf0[i], x_arr, xx_arr, dist, wl)
     return np.asarray(wf)
 
+cdef complex_t fnl_wp(complex_t[::1] wf0, float_t[::1] x_arr, float_t xx, float_t dist, float_t wl) nogil:
+    cdef:
+        int_t a = wf0.shape[0], i
+        float_t ph0, ph1
+        complex_t wf
+    ph0 = pi / wl / dist * (x_arr[0] - xx)**2
+    ph1 = pi / wl / dist * (x_arr[1] - xx)**2
+    wf = (wf0[0] * (cos(ph0) + 1j * sin(ph0)) + wf0[1] * (cos(ph1) + 1j * sin(ph1))) / 2 * (x_arr[1] - x_arr[0])
+    for i in range(2, a):
+        ph0 = ph1
+        ph1 = pi / wl / dist * (x_arr[i] - xx)**2
+        wf += (wf0[i - 1] * (cos(ph0) + 1j * sin(ph0)) + wf0[i] * (cos(ph1) + 1j * sin(ph1))) / 2 * (x_arr[i] - x_arr[i - 1])
+    return wf
+
+cdef void fnl_1d(complex_t[::1] wf1, complex_t[::1] wf0, float_t[::1] x_arr, float_t[::1] xx_arr, float_t dist, float_t wl) nogil:
+    cdef:
+        int_t a = xx_arr.shape[0], i
+    for i in range(a):
+        wf1[i] = fnl_wp(wf0, x_arr, xx_arr[i], dist, wl)
+
 def fresnel_1d(complex_t[::1] wf0, float_t[::1] x_arr, float_t[::1] xx_arr, float_t dist, float_t wl):
     """
     1D Fresnel diffraction calculation (without the coefficient)
@@ -185,60 +223,23 @@ def fresnel_2d(complex_t[:, ::1] wf0, float_t[::1] x_arr, float_t[::1] xx_arr, f
         fnl_1d(wf[i], wf0[i], x_arr, xx_arr, dist, wl)
     return np.asarray(wf)
 
-def aperture(float_t[::1] x_arr, float_t z, float_t wl, float_t ap):
-    """
-    Aperture wavefront calculation by dint of Fresnel diffraction (without the coefficient)
-
-    x_arr - coordinates at the plane downstream [um]
-    z - propagation distance [um]
-    wl - wavelength [um]
-    ap - aperture's size [um]
-    """
-    cdef:
-        int_t a = x_arr.shape[0], i
-        complex_t[::1] wave_arr = np.empty((a,), dtype=np.complex128)
-    for i in prange(a, schedule='guided', nogil=True, chunksize=10):
-        wave_arr[i] = aperture_wp(x_arr[i], z, wl, ap)
-    return np.asarray(wave_arr)
-
-def lens(float_t[::1] x_arr, float_t wl, float_t ap, float_t focus,
-         float_t defoc, float_t alpha):
-    """
-    Lens wavefront calculation by dint of Fresnel diffraction (without the coefficient)
-    with third order polinomial abberations
-
-    x_arr - coordinates at the plane downstream [um]
-    wl - wavelength [um]
-    ap - lens' size [um]
-    focus - focal distance [um]
-    defoc - defocus [um]
-    alpha - abberations coefficient [rad/mrad^3]
-    """
-    cdef:
-        int_t a = x_arr.shape[0], i
-        complex_t[::1] wave_arr = np.empty((a,), dtype=np.complex128)
-    for i in prange(a, schedule='guided', nogil=True, chunksize=10):
-        wave_arr[i] = lens_wp(x_arr[i], wl, ap, focus, defoc, alpha) 
-    return np.asarray(wave_arr)
-
-def barcode_steps(float_t bm_dx, float_t br_dx, float_t rd, float_t ss, int_t nf):
+def barcode_steps(float_t x0, float_t x1, float_t br_dx, float_t rd):
     """
     Barcode bars' coordinates generation with random deviation
 
-    bm_dx - incident beam size [um]
+    x0, x1 - sample's bounds [um]
     br_dx - mean bar size [um]
     rd - random deviation (0.0 - 1.0)
-    ss - scan step size [um]
-    nf - number of frames of a scan
     """
     cdef:
-        int_t br_n = (<int_t>((bm_dx + ss * nf) / br_dx) // 2 + 1) * 2, i
+        int_t br_n = <int_t>((x1 - x0) / 2 / br_dx) * 2 if x1 - x0 > 0 else 0, i
         gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937)
-        float_t bs_min = max(1 - rd, 0), bs_max = 1 + rd
+        float_t bs_min = max(1 - rd, 0), bs_max = min(1 + rd, 2)
         float_t[::1] bx_arr = np.empty(br_n, dtype=np.float64)
-    bx_arr[0] = br_dx * (0.5 + bs_min + (bs_max - bs_min) * gsl_rng_uniform_pos(r))
-    for i in range(1, br_n):
-        bx_arr[i] = bx_arr[i - 1] + br_dx * (bs_min + (bs_max - bs_min) * gsl_rng_uniform_pos(r))
+    if br_n:
+        bx_arr[0] = x0 + br_dx * ((bs_max - bs_min) * gsl_rng_uniform_pos(r) - 1)
+        for i in range(1, br_n):
+            bx_arr[i] = bx_arr[i - 1] + br_dx * (bs_min + (bs_max - bs_min) * gsl_rng_uniform_pos(r))
     return np.asarray(bx_arr)
 
 cdef int_t binary_search(float_t[::1] values, int_t l, int_t r, float_t x) nogil:
@@ -262,41 +263,61 @@ cdef int_t searchsorted(float_t[::1] values, float_t x) nogil:
     else:
         return binary_search(values, 0, r, x)
 
-cdef void barcode_1d(float_t[::1] br_tr, float_t[::1] x_arr, float_t[::1] bx_arr,
-                     float_t sgm, float_t atn, float_t step) nogil:
+cdef void barcode_c(float_t[::1] br_tr, float_t[::1] x_arr, float_t[::1] bx_arr,
+                     float_t sgm, float_t atn0, float_t atn, float_t step) nogil:
     cdef:
         int_t a = x_arr.shape[0], b = bx_arr.shape[0], i, j0, j
         float_t br_dx = (bx_arr[b - 1] - bx_arr[0]) / b
         int_t bb = <int_t>(X_TOL * sqrt(2) * sgm / br_dx + 1)
         float_t tr, xx, x0, x1
     for i in range(a):
-        xx = x_arr[i] - x_arr[0] + step
+        xx = x_arr[i] + step
         j0 = searchsorted(bx_arr, xx) # even '-', odd '+'
         tr = 0
         for j in range(j0 - bb, j0 + bb + 1):
             if j >= 1 and j < b:
                 x0 = (xx - bx_arr[j - 1]) / sqrt(2) / sgm
                 x1 = (xx - bx_arr[j]) / sqrt(2) / sgm
-                tr += 0.5 * (0.5 - j % 2) * (erf(x0) - erf(x1))
-        br_tr[i] = sqrt(1 - atn / 2 + atn * tr)
+                tr += atn * 0.5 * (0.5 - j % 2) * (erf(x0) - erf(x1))
+        tr -= (0.25 * atn + 0.5 * atn0) * erf((xx - bx_arr[0]) / sqrt(2 + 2 * (atn0 / atn)**2) / sgm)
+        tr += (0.25 * atn + 0.5 * atn0) * erf((xx - bx_arr[b - 1]) / sqrt(2 + 2 * (atn0 / atn)**2) / sgm)
+        br_tr[i] = sqrt(1 + tr)
 
-def barcode(float_t[::1] x_arr, float_t[::1] bx_arr, float_t sgm, float_t atn, float_t ss, int_t nf):
+def barcode_1d(float_t[::1] x_arr, float_t[::1] bx_arr, float_t sgm, float_t atn0, float_t atn):
     """
     Barcode transmission array for a scan
 
     x_arr - coordinates [um]
     bx_arr - bar coordinates array [um]
     sgm - bar haziness width [um]
-    atn - bar attenuation (0.0 - 1.0)
+    atn0, atn - bulk and bar attenuation (0.0 - 1.0)
+    ss - scan step size [um]
+    nf - number of frames of a scan
+    """
+    cdef:
+        int_t a = x_arr.shape[0]
+        float_t[::1] br_tr = np.empty(a, dtype=np.float64)
+    barcode_c(br_tr, x_arr, bx_arr, sgm, atn0, atn, 0)
+    return np.asarray(br_tr)
+        
+def barcode_2d(float_t[::1] x_arr, float_t[::1] bx_arr, float_t sgm,
+               float_t atn0, float_t atn, float_t ss, int_t nf):
+    """
+    Barcode transmission array for a scan
+
+    x_arr - coordinates [um]
+    bx_arr - bar coordinates array [um]
+    sgm - bar haziness width [um]
+    atn0, atn - bulk and bar attenuation (0.0 - 1.0)
     ss - scan step size [um]
     nf - number of frames of a scan
     """
     cdef:
         int_t a = x_arr.shape[0], i
-        float_t[:, ::1] bc_t = np.empty((nf, a), dtype=np.float64)
+        float_t[:, ::1] br_tr = np.empty((nf, a), dtype=np.float64)
     for i in prange(nf, schedule='guided', nogil=True):
-        barcode_1d(bc_t[i], x_arr, bx_arr, sgm, atn, i * ss)
-    return np.asarray(bc_t)
+        barcode_c(br_tr[i], x_arr, bx_arr, sgm, atn0, atn, i * ss)
+    return np.asarray(br_tr)
 
 cdef float_t convolve_c(float_t[::1] a1, float_t[::1] a2, int_t k) nogil:
     cdef:
