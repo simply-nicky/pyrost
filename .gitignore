@@ -1,4 +1,4 @@
-# Diffraction pattern results
+# Diffraction pattern results and temporary development files
 figures/
 results/
 logs/
@@ -6,6 +6,7 @@ logs/
 *.png
 *.eps
 *.mp4
+dev.ipynb
 
 #jupyter checkpoints
 .ipynb_checkpoints/
