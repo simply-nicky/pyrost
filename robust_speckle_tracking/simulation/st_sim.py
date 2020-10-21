@@ -1,345 +1,21 @@
 """
-st_wrapper.py - Speckle Tracking Simulation Python wrapper module
+st_sim.py - Speckle Tracking Simulation Python wrapper module
 """
 from __future__ import division
 from __future__ import absolute_import
 
 import os
-import configparser
 import logging
 import datetime
 import argparse
 from sys import stdout
-import re
 import h5py
 import numpy as np
-from .bin import aperture, barcode_steps, barcode_2d, lens
-from .bin import make_frames, make_whitefield
-from .bin import fraunhofer_1d, fraunhofer_2d
-
-ROOT_PATH = os.path.dirname(__file__)
-
-class hybridmethod:
-    """
-    Hybrid method descriptor supporting two distinct methods bound to class and instance
-
-    fclass - class bound method
-    finstance - instance bound method
-    doc - documentation
-    """
-    def __init__(self, fclass, finstance=None, doc=None):
-        self.fclass, self.finstance = fclass, finstance
-        self.__doc__ = doc or fclass.__doc__
-        self.__isabstractmethod__ = bool(getattr(fclass, '__isabstractmethod__', False))
-
-    def classmethod(self, fclass):
-        """
-        Class method decorator
-
-        fclass - class bound method
-        """
-        return type(self)(fclass, self.finstance, None)
-
-    def instancemethod(self, finstance):
-        """
-        Instance method decorator
-
-        finstance - instance bound method
-        """
-        return type(self)(self.fclass, finstance, self.__doc__)
-
-    def __get__(self, instance, cls):
-        if instance is None or self.finstance is None:
-            return self.fclass.__get__(cls, None)
-        return self.finstance.__get__(instance, cls)
-
-class INIParser():
-    """
-    INI files parser class
-    """
-    err_txt = "Wrong format key '{0:s}' of option '{1:s}'"
-    known_types = {'int': int, 'float': float, 'bool': bool, 'str': str}
-    attr_dict, fmt_dict = {}, {}
-    LIST_SPLITTER = r'\s*,\s*'
-    LIST_MATCHER = r'^\[([\s\S]*)\]$'
-
-    def __init__(self, **kwargs):
-        for section in self.attr_dict:
-            self.__dict__[section] = {}
-            if 'ALL' in self.attr_dict[section]:
-                for option in kwargs[section]:
-                    self._init_value(section, option, kwargs)
-            else:
-                for option in self.attr_dict[section]:
-                    self._init_value(section, option, kwargs)
-
-    def _init_value(self, section, option, kwargs):
-        fmt = self.get_format(section, option)
-        if isinstance(kwargs[section][option], list):
-            self.__dict__[section][option] = [fmt(part) for part in kwargs[section][option]]
-        else:
-            self.__dict__[section][option] = fmt(kwargs[section][option])
-
-    @classmethod
-    def read_ini(cls, ini_file):
-        """
-        Read the ini_file
-        """
-        if not os.path.isfile(ini_file):
-            raise ValueError("File {:s} doesn't exist".format(ini_file))
-        ini_parser = configparser.ConfigParser()
-        ini_parser.read(ini_file)
-        return ini_parser
-
-    @classmethod
-    def get_format(cls, section, option):
-        """
-        Return the attribute's format
-        """
-        fmt = cls.fmt_dict.get(os.path.join(section, option))
-        if not fmt:
-            fmt = cls.fmt_dict.get(section)
-        return cls.known_types[fmt]
-
-    @classmethod
-    def get_value(cls, ini_parser, section, option):
-        """
-        Return an attribute from the ini_parser
-        """
-        fmt = cls.get_format(section, option)
-        string = ini_parser.get(section, option)
-        is_list = re.search(cls.LIST_MATCHER, string)
-        if is_list:
-            return [fmt(part.strip())
-                    for part in re.split(cls.LIST_SPLITTER, is_list.group(1))]
-        else:
-            return fmt(string.strip())
-
-    @classmethod
-    def import_ini(cls, ini_file):
-        """
-        Initialize an object class with the ini file
-
-        ini_file - ini file path
-        """
-        ini_parser = cls.read_ini(ini_file)
-        param_dict = {}
-        for section in cls.attr_dict:
-            param_dict[section] = {}
-            if 'ALL' in cls.attr_dict[section]:
-                for option in ini_parser[section]:
-                    val = cls.get_value(ini_parser, section, option)
-                    param_dict[section][option] = val
-            else:
-                for option in cls.attr_dict[section]:
-                    val = cls.get_value(ini_parser, section, option)
-                    param_dict[section][option] = val
-        return cls(**param_dict)
-
-    def __str__(self):
-        return self.export_dict().__str__()
-
-    def export_dict(self):
-        """
-        Return dict object
-        """
-        return {section: self.__dict__[section] for section in self.attr_dict}
-
-    @hybridmethod
-    def export_ini(cls, **kwargs):
-        """
-        Return ini parser
-
-        kwargs - extra parameters to save
-        """
-        ini_parser = configparser.ConfigParser()
-        for section in cls.attr_dict:
-            if 'ALL' in cls.attr_dict[section]:
-                ini_parser[section] = kwargs[section]
-            else:
-                ini_parser[section] = {option: kwargs[section][option]
-                                       for option in cls.attr_dict[section]}
-        return ini_parser
-
-    @export_ini.instancemethod
-    def export_ini(self):
-        """
-        Return ini parser
-
-        kwargs - extra parameters to save
-        """
-        return type(self).export_ini(**self.__dict__)
-
-class STParams(INIParser):
-    """
-    Speckle Tracking parameters class (STParams)
-
-    [exp_geom - experimental geometry parameters]
-    defoc - lens defocus distance [um]
-    det_dist - distance between the barcode and the detector [um]
-    step_size - scan step size [um]
-    n_frames - number of frames
-
-    [detector - detector parameters]
-    fs_size - fast axis frames size in pixels
-    ss_size - slow axis frames size in pixels
-    pix_size - detector pixel size [um]
-
-    [source - source parameters]
-    p0 - Source beam flux [cnt / s]
-    wl - wavelength [um]
-    th_s - source rocking curve width [rad]
-
-    [lens - lens parameters]
-    ap_x - lens size along the x axis [um]
-    ap_y - lens size along the y axis [um]
-    focus - focal distance [um]
-    alpha - third order abberations [rad/mrad^3]
-    x0 - lens' abberation center point [0.0 - 1.0]
-
-    [barcode - barcode parameters]
-    bar_size - average bar size [um]
-    bar_sigma - bar haziness width [um]
-    bar_atn - bar attenuation
-    bulk_atn - bulk attenuation
-    random_dev - bar random deviation
-    offset - sample's offset at the beginning and the end of the scan [um]
-    """
-    attr_dict = {'exp_geom': ('defoc', 'det_dist', 'step_size', 'n_frames'),
-                 'detector': ('fs_size', 'ss_size', 'pix_size'),
-                 'source':   ('p0', 'wl', 'th_s'),
-                 'lens':     ('ap_x', 'ap_y', 'focus', 'alpha', 'x0'),
-                 'barcode':  ('bar_size', 'bar_sigma', 'bar_atn',
-                              'bulk_atn', 'random_dev', 'offset'),
-                 'system':   ('verbose',)}
-
-    fmt_dict = {'exp_geom': 'float', 'exp_geom/n_frames': 'int',
-                'detector': 'int', 'detector/pix_size': 'float',
-                'source': 'float', 'lens': 'float', 'barcode': 'float',
-                'system/verbose': 'bool'}
-
-    @classmethod
-    def lookup_dict(cls):
-        """
-        Return the look-up table
-        """
-        lookup = {}
-        for section in cls.attr_dict:
-            for option in cls.attr_dict[section]:
-                lookup[option] = section
-        return lookup
-
-    def __init__(self, **kwargs):
-        super(STParams, self).__init__(**kwargs)
-        self.__dict__['_lookup'] = self.lookup_dict()
-
-    def __getattr__(self, attr):
-        if attr in self._lookup:
-            return self.__dict__[self._lookup[attr]][attr]
-        else:
-            raise AttributeError(attr + " doesn't exist")
-
-    def __setattr__(self, attr, value):
-        if attr in self._lookup:
-            fmt = self.get_format(self._lookup[attr], attr)
-            self.__dict__[self._lookup[attr]][attr] = fmt(value)
-        else:
-            raise AttributeError(attr + ' not allowed')
-
-    @classmethod
-    def import_dict(cls, **kwargs):
-        init_dict = {}
-        for section in cls.attr_dict:
-            init_dict[section] = {}
-            for option in cls.attr_dict[section]:
-                init_dict[section][option] = kwargs[option]
-        return cls(**init_dict)
-
-    def beam_span(self, dist):
-        """
-        Return beam span in x coordinate at the given distance from the focal plane
-
-        dist - distance from focal plane
-        """
-        fx_max = 0.5 * self.ap_x / self.focus
-        fx_lim = np.array([-fx_max, fx_max])
-        th_lim = fx_lim + self.wl / 2 / np.pi * self.alpha * 3e9 * fx_lim**2 / dist
-        return np.tan(th_lim) * dist
-
-    def roi(self, shape):
-        """
-        Return ROI for the given coordinate array based on incident beam span
-
-        dist - distance from focal plane
-        x_min, x_max - coordinate array extremities
-        dx - coordinate array step
-        """
-        beam_span = np.clip(self.beam_span(self.det_dist),
-                            -shape[-1] // 2 * self.pix_size,
-                            (shape[-1] // 2 - 1) * self.pix_size)
-        fs_roi = (beam_span // self.pix_size + shape[-1] // 2).astype(np.int)
-        return np.array([0, shape[1], fs_roi[0], fs_roi[1]])
-
-    def export_dict(self):
-        """
-        Return Speckle Tracking parameters dictionary
-        """
-        param_dict = {}
-        for section in self.attr_dict:
-            for option in self.attr_dict[section]:
-                param_dict[option] = self.__dict__[section][option]
-        return param_dict
-
-    def log(self, logger):
-        """
-        Log Speckle Tracking parameters
-        """
-        for section in self.attr_dict:
-            logger.info('[{:s}]'.format(section))
-            for option in self.attr_dict[section]:
-                log_txt = '\t{0:s}: {1:s}, [{2:s}]'
-                log_msg = log_txt.format(option, str(self.__dict__[section][option]),
-                                         self.fmt_dict[os.path.join(section, option)])
-                logger.info(log_msg)
-
-def parameters(**kwargs):
-    """
-    Return default parameters, if not superseded by parameters parsed in argument
-
-    [exp_geom - experimental geometry parameters]
-    defoc - lens defocus distance [um]
-    det_dist - distance between the barcode and the detector [um]
-    step_size - scan step size [um]
-    n_frames - number of frames
-
-    [detector - detector parameters]
-    fs_size - fast axis frames size in pixels
-    ss_size - slow axis frames size in pixels
-    pix_size - detector pixel size [um]
-
-    [source - source parameters]
-    p0 - Source beam flux [cnt / s]
-    wl - wavelength [um]
-    th_s - source rocking curve width [rad]
-
-    [lens - lens parameters]
-    ap_x - lens size along the x axis [um]
-    ap_y - lens size along the y axis [um]
-    focus - focal distance [um]
-    alpha - third order abberations [rad/mrad^3]
-    x0 - lens' abberation center point [0.0 - 1.0]
-
-    [barcode - barcode parameters]
-    bar_size - average bar size [um]
-    bar_sigma - bar haziness width [um]
-    bar_atn - bar attenuation
-    bulk_atn - bulk attenuation
-    random_dev - bar random deviation
-    offset - sample's offset at the beginning and the end of the scan [um]
-    """
-    st_params = STParams.import_ini(os.path.join(ROOT_PATH, 'parameters.ini')).export_dict()
-    st_params.update(**kwargs)
-    return STParams.import_dict(**st_params)
+from ..protocol import cxi_protocol, ROOT_PATH
+from .parameters import STParams, parameters
+from ..bin import aperture, barcode_steps, barcode_2d, lens
+from ..bin import make_frames, make_whitefield
+from ..bin import fraunhofer_1d, fraunhofer_2d
 
 class STSim():
     """
@@ -436,17 +112,6 @@ class STSim():
         s_arr = np.exp(-x_arr**2 / 2 / sigma**2)
         return s_arr / s_arr.sum()
 
-    # def lens_phase(self):
-    #     """
-    #     Return lens wavefront at the sample plane, defocus, and abberations coefficient
-    #     """
-    #     roi = self.parameters.roi(self.defoc, self.x_arr[0], self.x_arr[-1], self.x_arr[1] - self.x_arr[0])
-    #     phase = np.unwrap(np.angle(self.wf0_x))
-    #     ph_fit = np.polyfit(self.x_arr[roi[0]:roi[1]], phase[roi[0]:roi[1]], 3)
-    #     defoc = np.pi / self.wl / ph_fit[1]
-    #     res = {'phase': phase, 'defocus': defoc, 'alpha': -ph_fit[0] * defoc**3 * 1e-9}
-    #     return res
-
     def sample_wavefronts(self):
         """
         Return wavefront profiles along the x axis at the sample plane
@@ -494,54 +159,6 @@ class STSim():
             handler.close()
             self.logger.removeHandler(handler)
 
-class CXIProtocol(INIParser):
-    """
-    CXI protocol class
-    Contains a cxi file hierarchy and corresponding data types
-    """
-    attr_dict = {'default_paths': ('ALL',), 'dtypes': ('ALL',)}
-    fmt_dict = {'default_paths': 'str', 'dtypes': 'str'}
-    log_txt = "{attr:s} [{fmt:s}]: '{path:s}' "
-
-    def parser_from_template(self, path):
-        """
-        Return parser object using an ini file template
-
-        template - path to the template file
-        """
-        ini_template = configparser.ConfigParser()
-        ini_template.read(path)
-        parser = configparser.ConfigParser()
-        for section in ini_template:
-            parser[section] = {option: ini_template[section][option].format(**self.default_paths)
-                               for option in ini_template[section]}
-        return parser
-
-    def log(self, logger):
-        """
-        Log the protocol
-        """
-        for attr in self.default_paths:
-            logger.info(self.log_txt.format(attr=attr, fmt=self.dtypes[attr],
-                                            path=self.default_paths[attr]))
-
-    def create_dataset(self, attr, data, cxi_file):
-        """
-        Save the dataset as specified by the protocol
-
-        attribute - attribute to save
-        data - attribute data
-        cxi_file - h5py File object
-        """
-        cxi_file.create_dataset(self.default_paths[attr],
-                                data=np.asarray(data, dtype=self.dtypes[attr]))
-
-def cxi_protocol():
-    """
-    Return default cxi protocol
-    """
-    return CXIProtocol.import_ini(os.path.join(ROOT_PATH, 'st_protocol.ini'))
-
 class STConverter():
     """
     Converter class to Andrew's speckle-tracking software data format
@@ -576,6 +193,7 @@ class STConverter():
             else:
                 raise RuntimeError("Wrong template file: {:s}".format(path))
         ini_parsers['parameters'] = st_params.export_ini()
+        ini_parsers['protocol'] = self.protocol.export_ini()
         return ini_parsers
 
     def _pixel_vector(self, st_params):
@@ -650,10 +268,10 @@ class STConverter():
         with h5py.File(os.path.join(dir_path, 'data.cxi'), 'w') as cxi_file:
             for attr in self.write_attrs:
                 if attr in data_dict:
-                    self.protocol.create_dataset(attr, data_dict[attr], cxi_file)
+                    self.protocol.write_cxi(attr, data_dict[attr], cxi_file)
                 else:
                     dset = self.__getattribute__('_' + attr)(st_params)
-                    self.protocol.create_dataset(attr, dset, cxi_file)
+                    self.protocol.write_cxi(attr, dset, cxi_file)
         if logger:
             logger.info("{:s} saved".format(os.path.join(dir_path, 'data.cxi')))
 

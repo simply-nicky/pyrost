@@ -1,4 +1,4 @@
-import st_sim
+from robust_speckle_tracking import simulation as st_sim
 import numpy as np
 
 def inv_geomspace(x0, x1, n):

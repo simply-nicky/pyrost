@@ -1,61 +1,12 @@
+"""
+data_processing.py - Robust Speckle Tracking data processing algorithm
+"""
 from __future__ import division
 
-import os
-import h5py
 import numpy as np
 from scipy.ndimage import gaussian_filter
 from scipy.optimize import least_squares
-from .st_wrapper import cxi_protocol, INIParser, ROOT_PATH
 from .bin import make_whitefield_st, make_reference, update_pixel_map, total_mse
-
-class STLoader(INIParser):
-    """
-    Speckle Tracking scan loader class
-    """
-    attr_dict = {'paths': ('ALL',)}
-    fmt_dict = {'paths': 'str'}
-
-    def __init__(self, protocol=cxi_protocol(), **kwargs):
-        super(STLoader, self).__init__(**kwargs)
-        self.protocol = protocol
-
-    def find_path(self, attr, cxi_file):
-        """
-        Find attribute path in a cxi file
-
-        attr - the attribute to be found
-        cxi_file - h5py File object
-        """
-        if self.protocol.default_paths[attr] in cxi_file:
-            return self.protocol.default_paths[attr]
-        elif attr in self.paths:
-            for path in self.paths[attr]:
-                if path in cxi_file:
-                    return path
-        else:
-            return None
-
-    def load(self, path, defocus=None, roi=None):
-        """
-        Load a cxi file and return a object
-        """
-        data_dict = {}
-        if roi:
-            data_dict['roi'] = np.asarray(roi, dtype=self.protocol.dtypes['roi'])
-        if defocus:
-            data_dict['defocus'] = np.asarray(defocus, dtype=self.protocol.dtypes['defocus'])
-        with h5py.File(path, 'r') as cxi_file:
-            for attr in self.protocol.default_paths:
-                cxi_path = self.find_path(attr, cxi_file)
-                if cxi_path:
-                    data_dict[attr] = cxi_file[cxi_path][...].astype(self.protocol.dtypes[attr])
-        return STData(self.protocol, **data_dict)
-
-def loader():
-    """
-    Return the default cxi loader
-    """
-    return STLoader.import_ini(os.path.join(ROOT_PATH, 'st_protocol.ini'))
 
 class dict_to_object:
     def __init__(self, finstance):
@@ -102,26 +53,23 @@ class STData:
     init_dict = {'deviation_angles', 'good_frames', 'mask', 'phase', 'pixel_map',
                  'pixel_translations', 'reference_image', 'roi', 'whitefield'}
 
-    def __init__(self, protocol=cxi_protocol(), **kwargs):
+    def __init__(self, protocol, **kwargs):
         self.protocol = protocol
         self._init_dict(**kwargs)
 
     def _init_dict(self, **kwargs):
         # Initialize configuration attributes
-        for attr in self.attr_dict | self.init_dict:
-            if attr in kwargs:
-                self.__dict__[attr] = np.asarray(kwargs[attr], dtype=self.protocol.dtypes[attr])
-            elif attr in self.init_dict:
-                self.__dict__[attr] = None
-            else:
-                raise ValueError('{0:s} has not been provided'.format(attr))
+        for attr in self.attr_dict:
+            self.__dict__[attr] = kwargs[attr]
+        for attr in self.init_dict:
+            self.__dict__[attr] = kwargs.get(attr)
 
         # Set good frames array and mask
         if self.good_frames is None:
             self.good_frames = np.arange(self.data.shape[0])
         if self.mask is None or self.whitefield is None:
             self.mask = np.ones(self.data.shape[1:],
-                                dtype=self.protocol.dtypes['mask'])
+                                dtype=self.protocol.get_dtype('mask'))
             self.whitefield = make_whitefield_st(data=self.data[self.good_frames], mask=self.mask)
 
         # Set pixel translations
@@ -133,17 +81,17 @@ class STData:
         # Set pixel map, deviation angles, and phase
         if self.pixel_map is None:
             self.pixel_map = np.indices(self.whitefield.shape,
-                                        dtype=self.protocol.dtypes['pixel_map'])
+                                        dtype=self.protocol.get_dtype('pixel_map'))
             self.deviation_angles = np.zeros(self.pixel_map.shape,
-                                             dtype=self.protocol.dtypes['deviation_angles'])
-            self.phase = np.zeros(self.whitefield.shape, dtype=self.protocol.dtypes['phase'])
+                                             dtype=self.protocol.get_dtype('deviation_angles'))
+            self.phase = np.zeros(self.whitefield.shape, dtype=self.protocol.get_dtype('phase'))
 
         # Init list of SpeckleTracking1D objects
         self.st_objects = []
         SpeckleTracking1D.import_data(self)
 
     def _update_pixel_map_1d(self, fs_map):
-        fs_idx = np.indices(self.whitefield.shape, dtype=self.protocol.dtypes['pixel_map'])
+        fs_idx = np.indices(self.whitefield.shape, dtype=self.protocol.get_dtype('pixel_map'))
         fs_idx = fs_idx[1, self.roi[0]:self.roi[1], self.roi[2]:self.roi[3]]
         fs_map = np.tile(fs_map, (self.roi[1] - self.roi[0], 1))
         dev_ang = (fs_map - fs_idx) * self.x_pixel_size / self.distance
@@ -208,6 +156,13 @@ class STData:
         """
         return self.st_objects[-1]
 
+    def write_cxi(self, cxi_file):
+        """
+        Write the data to a cxi file
+        """
+        for attr in self.attr_dict | self.init_dict:
+            self.protocol.write_cxi(attr, self.__dict__[attr], cxi_file)
+
 class SpeckleTracking1D:
     """
     One-dimensional Robust Speckle Tracking Algorithm
@@ -227,13 +182,10 @@ class SpeckleTracking1D:
     MAX_DFS = 40
 
     def __init__(self, **kwargs):
-        for attr in self.attr_dict | self.init_dict:
-            if attr in kwargs:
-                self.__dict__[attr] = kwargs[attr]
-            elif attr in self.init_dict:
-                self.__dict__[attr] = None
-            else:
-                raise ValueError('{0:s} has not been provided'.format(attr))
+        for attr in self.attr_dict:
+            self.__dict__[attr] = kwargs[attr]
+        for attr in self.init_dict:
+            self.__dict__[attr] = kwargs.get(attr)
 
         if self.dss_avg is None or self.dfs_avg is None:
             self.dfs_avg = min(np.mean(np.abs(self.dfs_pix[1:] - self.dfs_pix[:-1])), self.MAX_DFS)
@@ -286,7 +238,7 @@ class SpeckleTracking1D:
         pixel_map = update_pixel_map(I_n=self.data, W=self.whitefield, I0=self.reference_image,
                                      u0=self.pixel_map, di=self.dss_pix, dj=self.dfs_pix,
                                      dss=self.dss_avg, dfs=self.dfs_avg, wss=1, wfs=wfs // 2)
-        pixel_map = gaussian_filter(pixel_map, (0, 0, l_scale))
+        pixel_map = gaussian_filter(pixel_map - self.pixel_map, (0, 0, l_scale)) + self.pixel_map
         return {'pixel_map': pixel_map}
 
     def update_data(self):
@@ -350,95 +302,57 @@ class SpeckleTracking1D:
         N, K = self.data.shape[0], self.data.shape[-1] / (self.dfs_pix[0] - self.dfs_pix[1])
         return var_psn * (1 / N + 1 / N / K) / dref_avg / np.mean(self.whitefield**2)
 
-class AbberationsFit:
-    """
-    Lens abberations model fitting class
-
-    max_order - maximum polinomial order of the model function
-    """
-    def __init__(self, max_order=2):
-        self.max_order = max_order
-
-    def bounds(self, pixels):
+class LeastSquares:
+    @staticmethod
+    def bounds(x, max_order=2):
         """
         Return the bounds of the regression problem
         """
-        lb = -np.inf * np.ones(self.max_order + 2)
-        ub = np.inf * np.ones(self.max_order + 2)
-        lb[-1] = 0; ub[-1] = pixels.shape[0]
+        lb = -np.inf * np.ones(max_order + 2)
+        ub = np.inf * np.ones(max_order + 2)
+        lb[-1] = 0; ub[-1] = x.shape[0]
         return (lb, ub)
 
-    def errors(self, fit, pixels, pixel_ab):
+    @staticmethod
+    def model(fit, x):
         """
-        Return the model errors
+        Return the model values of pixel abberations
         """
-        return self.model(fit, pixels) - pixel_ab
+        return np.polyval(fit[:-1], x - fit[-1])
 
-    def init_x(self, pixels, pixel_ab):
+    @staticmethod
+    def init_x(x, y, max_order=2):
         """
         Return initial fit coefficients
         """
-        x0 = np.zeros(self.max_order + 2)
-        u0 = gaussian_filter(pixel_ab, pixel_ab.shape[0] // 10)
+        x0 = np.zeros(max_order + 2)
+        u0 = gaussian_filter(y, y.shape[0] // 10)
         if np.median(np.gradient(np.gradient(u0))) > 0:
             idx = np.argmin(u0)
         else:
             idx = np.argmax(u0)
-        x0[-1] = pixels[idx]
+        x0[-1] = x[idx]
         return x0
 
-    def model(self, fit, pixels):
+    @classmethod
+    def errors(cls, fit, x, y):
         """
-        Return the model values of pixel abberations
+        Return the model errors
         """
-        return np.polyval(fit[:-1], pixels - fit[-1])
+        return cls.model(fit, x) - y
 
-    def angles_model(self, fit, pixels, st_data):
-        """
-        Return the model values of abberation angles
-        """
-        pix_ap = st_data.x_pixel_size / st_data.distance
-        return self.model(self.to_ang_fit(fit, st_data), pixels * pix_ap)
-
-    def phase_model(self, fit, pixels, st_data):
-        """
-        Return the model values of lens' phase
-        """
-        pix_ap = st_data.x_pixel_size / st_data.distance
-        return self.model(self.to_ph_fit(fit, pixels, st_data), pixels * pix_ap)
-
-    def weighted_errors(self, fit, pixels, pixel_ab, weights):
+    @classmethod
+    def weighted_errors(cls, fit, x, y, w):
         """
         Return the weighted model errors
         """
-        return weights * self.errors(fit, pixels, pixel_ab)
+        return w * cls.errors(fit, x, y)
 
-    def to_ang_fit(self, fit, st_data):
-        """
-        Convert pixel abberations fit to angle abberations fit
-        """
-        pix_ap = st_data.x_pixel_size / st_data.distance
-        ang_fit = fit * pix_ap
-        ang_fit[:-1] /= np.geomspace(pix_ap**self.max_order, 1, self.max_order + 1)
-        return ang_fit
-
-    def to_ph_fit(self, fit, pixels, st_data):
-        """
-        Convert pixel abberations fit to phase fit
-        """
-        pix_ap = st_data.x_pixel_size / st_data.distance
-        ph_fit = np.zeros(self.max_order + 3)
-        ang_fit = self.to_ang_fit(fit, st_data)
-        ph_fit[:-2] = ang_fit[:-1] * 2 * np.pi / st_data.wavelength * st_data.defocus / \
-                      np.linspace(self.max_order + 1, 1, self.max_order + 1)
-        ph_fit[-1] = ang_fit[-1]
-        ph_fit[-2] = np.mean(st_data.get('phase') - self.model(ph_fit, pixels * pix_ap))
-        return ph_fit
-
-    def _fit(self, pixels, pixel_ab, xtol=1e-14, ftol=1e-14, loss='cauchy'):
-        fit = least_squares(self.errors, self.init_x(pixels, pixel_ab),
-                            bounds=self.bounds(pixels), loss=loss,
-                            args=(pixels, pixel_ab), xtol=xtol, ftol=ftol)
+    @classmethod
+    def fit(cls, x, y, max_order=2, xtol=1e-14, ftol=1e-14, loss='cauchy'):
+        fit = least_squares(cls.errors, cls.init_x(x, y, max_order),
+                            bounds=cls.bounds(x, max_order), loss=loss,
+                            args=(x, y), xtol=xtol, ftol=ftol)
         if np.linalg.det(fit.jac.T.dot(fit.jac)):
             cov = np.linalg.inv(fit.jac.T.dot(fit.jac))
             err = np.sqrt(np.sum(fit.fun**2) / (fit.fun.size - fit.x.size) * np.abs(np.diag(cov)))
@@ -446,12 +360,62 @@ class AbberationsFit:
             err = 0
         return fit.x, err
 
-    def fit(self, st_data, xtol=1e-14, ftol=1e-14, loss='cauchy'):
+class AbberationsFit(LeastSquares):
+    """
+    Lens abberations model fitting class
+
+    defocus - defocus distance
+    distance - sample-to-detector distance
+    x_pixel_size - slow axis pixel size
+    wavelength - incoming beam wavelength
+    """
+    attr_dict = {'defocus', 'distance', 'wavelength', 'x_pixel_size'}
+
+    def __init__(self, **kwargs):
+        for attr in self.attr_dict:
+            self.__dict__[attr] = kwargs[attr]
+
+        self.pix_ap = kwargs['distance'] / kwargs['x_pixel_size']
+
+    def angles_model(self, fit, pixels):
+        """
+        Return the model values of abberation angles
+        """
+        return self.model(self.to_ang_fit(fit), pixels * self.pix_ap)
+
+    def phase_model(self, fit, pixels, st_data):
+        """
+        Return the model values of lens' phase
+        """
+        return self.model(self.to_ph_fit(fit, pixels, st_data), pixels * self.pix_ap)
+
+    def to_ang_fit(self, fit):
+        """
+        Convert pixel abberations fit to angle abberations fit
+        """
+        ang_fit, max_order = fit * self.pix_ap, fit.size - 2
+        ang_fit[:-1] /= np.geomspace(self.pix_ap**max_order, 1, max_order + 1)
+        return ang_fit
+
+    def to_ph_fit(self, fit, pixels, phase):
+        """
+        Convert pixel abberations fit to phase fit
+        """
+        ph_fit, max_order = np.zeros(fit.size + 1), fit.size - 2
+        ang_fit = self.to_ang_fit(fit)
+        ph_fit[:-2] = ang_fit[:-1] * 2 * np.pi / self.wavelength * self.defocus / \
+                      np.linspace(max_order + 1, 1, max_order + 1)
+        ph_fit[-1] = ang_fit[-1]
+        ph_fit[-2] = np.mean(phase - self.model(ph_fit, pixels * self.pix_ap))
+        return ph_fit
+
+    def fit_pixel_ab(self, pixels, pixel_ab, max_order=2, xtol=1e-14, ftol=1e-14, loss='cauchy'):
         """
         Return pixel abberations fit for the STData object
+
+        pixels - pixels array
+        pixel_ab - pixel abberations along the detector's fast axis
         """
-        pixels = np.arange(st_data.roi[3] - st_data.roi[2])
-        pixel_ab = st_data.get('deviation_angles')[1, 0] / st_data.x_pixel_size * st_data.distance
-        fit, err = self._fit(pixels, pixel_ab, xtol=xtol, ftol=ftol, loss=loss)
+        fit, err = self.fit(pixels, pixel_ab, max_order=max_order, xtol=xtol, ftol=ftol, loss=loss)
         r_sq = 1 - np.sum(self.errors(fit, pixels, pixel_ab)**2) / np.sum((pixel_ab.mean() - pixel_ab)**2)
         return {'fit': fit, 'error': err, 'r_sq': r_sq, 'pixel_ab': pixel_ab, 'pixels': pixels}
