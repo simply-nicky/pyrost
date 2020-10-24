@@ -4,12 +4,14 @@ from cython_gsl cimport *
 from libc.math cimport sqrt, cos, sin, exp, pi, erf
 from cython.parallel import prange
 cimport openmp
+from posix.time cimport clock_gettime, timespec, CLOCK_REALTIME
 
 ctypedef cnp.complex128_t complex_t
 ctypedef cnp.float64_t float_t
 ctypedef cnp.int64_t int_t
 ctypedef cnp.uint64_t uint_t
 ctypedef cnp.uint8_t uint8_t
+
 DEF X_TOL = 4.320005384913445 # Y_TOL = 1e-9
 
 cdef float_t gsl_quad(gsl_function func, float_t a, float_t b, float_t eps_abs, float_t eps_rel, int_t limit) nogil:
@@ -236,10 +238,14 @@ def barcode_steps(float_t x0, float_t x1, float_t br_dx, float_t rd):
         gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937)
         float_t bs_min = max(1 - rd, 0), bs_max = min(1 + rd, 2)
         float_t[::1] bx_arr = np.empty(br_n, dtype=np.float64)
+        timespec ts
+    clock_gettime(CLOCK_REALTIME, &ts)
+    gsl_rng_set(r, ts.tv_sec + ts.tv_nsec)
     if br_n:
         bx_arr[0] = x0 + br_dx * ((bs_max - bs_min) * gsl_rng_uniform_pos(r) - 1)
         for i in range(1, br_n):
             bx_arr[i] = bx_arr[i - 1] + br_dx * (bs_min + (bs_max - bs_min) * gsl_rng_uniform_pos(r))
+    gsl_rng_free(r)
     return np.asarray(bx_arr)
 
 cdef int_t binary_search(float_t[::1] values, int_t l, int_t r, float_t x) nogil:
@@ -354,7 +360,10 @@ def make_frames(float_t[:, ::1] i_x, float_t[::1] i_y, float_t[::1] sc_x, float_
         uint_t[:, :, ::1] frames = np.empty((a, b, c), dtype=np.uint64)
         float_t[::1] i_ys = np.empty(b, dtype=np.float64)
         gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937)
+        timespec ts
         unsigned long seed
+    clock_gettime(CLOCK_REALTIME, &ts)
+    gsl_rng_set(r, ts.tv_sec + ts.tv_nsec)
     for i in range(b):
         i_ys[i] = convolve_c(i_y, sc_y, i)
     for i in prange(a, schedule='guided', nogil=True):

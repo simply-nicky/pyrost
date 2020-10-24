@@ -6,7 +6,7 @@ from __future__ import division
 import numpy as np
 from scipy.ndimage import gaussian_filter
 from scipy.optimize import least_squares
-from .bin import make_whitefield_st, make_reference, update_pixel_map, total_mse
+from .bin import make_whitefield_st, make_reference, upm_search, total_mse
 
 class dict_to_object:
     def __init__(self, finstance):
@@ -172,14 +172,12 @@ class SpeckleTracking1D:
     data - measured frames
     whitefield - whitefield
     dss_pix, dfs_pix - sample translations along the slow adn fast axes in pixels
-    dss_avg, dfs_avg - average sample translation along the slow and fast axes in pixels
     pixel_map - pixel map
     reference_image - reference image
     """
     attr_dict = {'data', 'dref', 'defocus', 'dfs_pix', 'dss_pix', 'pixel_map', 'whitefield'}
-    init_dict = {'dfs_avg', 'dss_avg', 'reference_image'}
+    init_dict = {'reference_image'}
     MIN_WFS = 10
-    MAX_DFS = 40
 
     def __init__(self, **kwargs):
         for attr in self.attr_dict:
@@ -187,9 +185,6 @@ class SpeckleTracking1D:
         for attr in self.init_dict:
             self.__dict__[attr] = kwargs.get(attr)
 
-        if self.dss_avg is None or self.dfs_avg is None:
-            self.dfs_avg = min(np.mean(np.abs(self.dfs_pix[1:] - self.dfs_pix[:-1])), self.MAX_DFS)
-            self.dss_avg = np.mean(np.abs(self.dss_pix[1:] - self.dss_pix[:-1]))
         if self.reference_image is None:
             self.update_reference.inplace_update()
 
@@ -215,7 +210,7 @@ class SpeckleTracking1D:
                    dss_pix=dij_pix[0], pixel_map=pixel_map, whitefield=whitefield)
 
     @dict_to_object
-    def update_reference(self, l_scale=2.5):
+    def update_reference(self, l_scale=5.):
         """
         Return new object with the updated reference image
 
@@ -228,17 +223,17 @@ class SpeckleTracking1D:
         return {'reference_image': reference_image, 'dfs_pix': dfs_pix, 'dss_pix': dss_pix}
 
     @dict_to_object
-    def update_pixel_map(self, wfs, l_scale=2.5):
+    def update_pixel_map(self, wfs, l_scale=5.):
         """
         Return new object with the updated pixel map
 
         wfs - search window size in pixels
         l_scale - length scale in pixels
+        step_size - step size of iterative update
         """
-        pixel_map = update_pixel_map(I_n=self.data, W=self.whitefield, I0=self.reference_image,
-                                     u0=self.pixel_map, di=self.dss_pix, dj=self.dfs_pix,
-                                     dss=self.dss_avg, dfs=self.dfs_avg, wss=1, wfs=wfs // 2)
-        pixel_map = gaussian_filter(pixel_map - self.pixel_map, (0, 0, l_scale)) + self.pixel_map
+        pixel_map = upm_search(I_n=self.data, W=self.whitefield, I0=self.reference_image,
+                               u0=self.pixel_map, di=self.dss_pix, dj=self.dfs_pix,
+                               wss=1, wfs=wfs, ls=l_scale)
         return {'pixel_map': pixel_map}
 
     def update_data(self):
@@ -261,7 +256,7 @@ class SpeckleTracking1D:
             sweep_scan.append(np.mean(np.gradient(reference_image[0])**2))
         return np.array(sweep_scan)
 
-    def iter_update(self, wfs, l_scale=2.5, n_iter=5, verbose=True):
+    def iter_update(self, wfs, l_scale=5., n_iter=5, verbose=True):
         """
         Update the reference image and the pixel map iteratively
 
@@ -284,12 +279,14 @@ class SpeckleTracking1D:
             obj.update_reference.inplace_update(l_scale=l_scale)
         return obj, errors
 
-    def mse(self):
+    def mse(self, l_scale=5.):
         """
         Return mean-squared-error (MSE)
+
+        l_scale - length scale in pixels
         """
         return total_mse(I_n=self.data, W=self.whitefield, I0=self.reference_image,
-                         u=self.pixel_map, di=self.dss_pix, dj=self.dfs_pix)
+                         u=self.pixel_map, di=self.dss_pix, dj=self.dfs_pix, ls=l_scale)
 
     def var_pixel_map(self, l_scale=20):
         """

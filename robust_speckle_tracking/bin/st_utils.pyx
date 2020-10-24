@@ -4,6 +4,7 @@ from cython_gsl cimport *
 from libc.math cimport sqrt, cos, sin, exp, pi, floor
 from cython.parallel import prange
 cimport openmp
+from posix.time cimport clock_gettime, timespec, CLOCK_REALTIME
 
 ctypedef cnp.complex128_t complex_t
 ctypedef cnp.float64_t float_t
@@ -11,7 +12,11 @@ ctypedef cnp.int64_t int_t
 ctypedef cnp.uint64_t uint_t
 ctypedef cnp.uint8_t uint8_t
 ctypedef cnp.npy_bool bool_t
+
 DEF FLOAT_MAX = 1.7976931348623157e+308
+DEF MU_C = 1.681792830507429
+DEF NO_VAR = -1.0
+DEF MIN_VAR = 0.01
 
 cdef float_t wirthselect_float(float_t[:] array, int k) nogil:
     cdef:
@@ -74,6 +79,16 @@ cdef float_t max_float(float_t* array, int_t a) nogil:
 cdef float_t rbf(float_t dx, float_t ls) nogil:
     return exp(-dx**2 / 2 / ls**2) / sqrt(2 * pi) / ls
 
+cdef void rbf_mc(float_t[:, ::1] rm, float_t ls) nogil:
+    cdef:
+        int_t a = rm.shape[0], b = rm.shape[1], i, j
+        float_t dr, rv
+    for i in range(a):
+        for j in range(b):
+            dr = sqrt((a // 2 - i)**2 + (b // 2 - j)**2)
+            rv = rbf(dr, ls)
+            rm[i, j] = rv
+
 cdef void frame_reference(float_t[:, ::1] I0, float_t[:, ::1] w0, float_t[:, ::1] I, float_t[:, ::1] W,
                           float_t[:, :, ::1] u, float_t di, float_t dj, float_t ls) nogil:
     cdef:
@@ -124,12 +139,12 @@ def make_reference(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, :, ::1]
                 I0[i, j] /= w0[i, j]
     return np.asarray(I0), np.asarray(di), np.asarray(dj)
 
-cdef float_t mse_bi(float_t[:] I, float_t[:, ::1] I0, float_t W, float_t[::1] di,
-                    float_t[::1] dj, float_t ux, float_t uy) nogil:
+cdef void mse_bi(float_t* m_ptr, float_t[::1] I, float_t[:, ::1] I0,
+                 float_t W, float_t[::1] di, float_t[::1] dj, float_t ux, float_t uy) nogil:
     cdef:
         int_t a = I.shape[0], aa = I0.shape[0], bb = I0.shape[1]
         int_t i, ss0, ss1, fs0, fs1
-        float_t mse = 0, var = 0, ss, fs, dss, dfs, I0_bi
+        float_t SS_res = 0, SS_tot = 0, ss, fs, dss, dfs, I0_bi, var
     for i in range(a):
         ss = ux - di[i]
         fs = uy - dj[i]
@@ -148,59 +163,69 @@ cdef float_t mse_bi(float_t[:] I, float_t[:, ::1] I0, float_t W, float_t[::1] di
                     (1 - dss) * dfs * I0[ss0, fs1] + \
                     dss * (1 - dfs) * I0[ss1, fs0] + \
                     dss * dfs * I0[ss1, fs1]
-            mse += (I[i] - W * I0_bi)**2
-            var += (I[i] - W)**2
-    return mse / var
-
-cdef float_t mse_nobi(float_t[:] I, float_t[:, ::1] I0, float_t W, float_t[::1] di,
-                      float_t[::1] dj, float_t ux, float_t uy) nogil:
+            SS_res += (I[i] - W * I0_bi)**2
+            SS_tot += (I[i] - W)**2
+    m_ptr[0] = SS_res / SS_tot
+    if m_ptr[1] != NO_VAR:
+        var = 4 * W * (SS_res / SS_tot**2 + SS_res**2 / SS_tot**3)
+        m_ptr[1] = var if var > MIN_VAR else MIN_VAR
+         
+cdef void mse_nobi(float_t* m_ptr, float_t[::1] I, float_t[:, ::1] I0,
+                   float_t W, float_t[::1] di, float_t[::1] dj, float_t ux, float_t uy) nogil:
     cdef:
         int_t a = I.shape[0], aa = I0.shape[0], bb = I0.shape[1]
         int_t i, ss0, fs0
-        float_t mse = 0, var = 0, ss, fs
+        float_t SS_res = 0, SS_tot = 0, ss, fs, var
     for i in range(a):
         ss = ux - di[i]
         fs = uy - dj[i]
         if ss >= 0 and ss <= aa - 1 and fs >= 0 and fs <= bb - 1:
             ss0 = <int_t>(floor(ss))
             fs0 = <int_t>(floor(fs))
-            mse += (I[i] - W * I0[ss0, fs0])**2
-            var += (I[i] - W)**2
-    return mse / var
+            SS_res += (I[i] - W * I0[ss0, fs0])**2
+            SS_tot += (I[i] - W)**2
+    m_ptr[0] = SS_res / SS_tot
+    if m_ptr[1] != NO_VAR:
+        var = 4 * W * (SS_res / SS_tot**2 + SS_res**2 / SS_tot**3)   
+        m_ptr[1] = var if var > MIN_VAR else MIN_VAR
 
-cdef void search_2d(float_t[:] I, float_t[:, ::1] I0, float_t[::1] di, float_t[::1] dj,
-                    float_t[:] u, float_t W, int_t i0, int_t i1, int_t j0, int_t j1,
-                    float_t dss, float_t dfs) nogil:
+cdef void convolve_I(float_t[::1] I, float_t[:, :, ::1] I_n, float_t[:, ::1] rm, int_t j, int_t k) nogil:
     cdef:
-        int_t j = j0, i_min = 0, j_min = 0, i, jj
-        float_t mse_min = FLOAT_MAX, mse = 0, df_ss, df_fs
-    for i in range(i0, i1):
-        if i - i0:
-            df_ss = (mse_bi(I, I0, W, di, dj, u[0] + i - 0.5 + dss, u[1] + j) - \
-                     mse_bi(I, I0, W, di, dj, u[0] + i - 0.5 - dss, u[1] + j)) / 2 / dss
-            mse += df_ss
-            if mse < mse_min:
-                mse_min = mse; i_min = i; j_min = j
-        if (i - i0) % 2:
-            for jj in range(j0 + 1, j1):
-                j = j1 + j0 - jj - 1
-                df_fs = (mse_bi(I, I0, W, di, dj, u[0] + i, u[1] + j - 0.5 + dfs) - \
-                         mse_bi(I, I0, W, di, dj, u[0] + i, u[1] + j - 0.5 - dfs)) / 2 / dfs
-                mse += df_fs
-                if mse < mse_min:
-                    mse_min = mse; i_min = i; j_min = j
-        else:
-            for j in range(j0 + 1, j1):
-                df_fs = (mse_bi(I, I0, W, di, dj, u[0] + i, u[1] + j - 0.5 + dfs) - \
-                         mse_bi(I, I0, W, di, dj, u[0] + i, u[1] + j - 0.5 - dfs)) / 2 / dfs
-                mse += df_fs
-                if mse < mse_min:
-                    mse_min = mse; i_min = i; j_min = j
-    u[0] += i_min; u[1] += j_min
+        int_t a = I_n.shape[0], b = I_n.shape[1], c = I_n.shape[2], dn = rm.shape[0] // 2, i, jj, kk
+        int_t jj0 = j - dn if j - dn > 0 else 0
+        int_t jj1 = j + dn if j + dn < b else b
+        int_t kk0 = k - dn if k - dn > 0 else 0
+        int_t kk1 = k + dn if k + dn < c else c
+        float_t Isum, rsum
+    for i in range(a):
+        Isum = 0; rsum = 0
+        for jj in range(jj0, jj1):
+            for kk in range(kk0, kk1):
+                Isum += I_n[i, jj, kk] * rm[jj - j + dn, kk - k + dn]
+                rsum += rm[jj - j + dn, kk - k + dn]
+        I[i] = Isum / rsum
+        
+cdef void mse_min_c(float_t[::1] I, float_t W, float_t[:, ::1] I0, float_t[:] u,
+                    float_t[::1] di, float_t[::1] dj, int_t* bnds) nogil:
+    cdef:
+        int_t sslb = -bnds[0] if bnds[0] < u[0] - bnds[2] else <int_t>(bnds[2] - u[0])
+        int_t ssub = bnds[0] if bnds[0] < bnds[3] - u[0] else <int_t>(bnds[3] - u[0])
+        int_t fslb = -bnds[1] if bnds[1] < u[1] - bnds[4] else <int_t>(bnds[4] - u[1])
+        int_t fsub = bnds[1] if bnds[1] < bnds[5] - u[1] else <int_t>(bnds[5] - u[1])
+        int_t ss_min = sslb, fs_min = fslb, ss, fs
+        float_t mse_min = FLOAT_MAX
+        float_t mv_ptr[2]
+    mv_ptr[1] = NO_VAR
+    for ss in range(sslb, ssub):
+        for fs in range(fslb, fsub):
+            mse_bi(mv_ptr, I, I0, W, di, dj, u[0] + ss, u[1] + fs)
+            if mv_ptr[0] < mse_min:
+                mse_min = mv_ptr[0]; ss_min = ss; fs_min = fs
+    u[0] += ss_min; u[1] += fs_min
 
-def update_pixel_map(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0,
-                     float_t[:, :, ::1] u0, float_t[::1] di, float_t[::1] dj,
-                     float_t dss, float_t dfs, uint_t wss=1, uint_t wfs=100):
+def upm_search(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0,
+               float_t[:, :, ::1] u0, float_t[::1] di, float_t[::1] dj,
+               uint_t wss, uint_t wfs, float_t ls=5.):
     """
     Update the pixel map
 
@@ -209,32 +234,132 @@ def update_pixel_map(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] 
     I0 - reference image
     u0 - pixel map
     di, dj - sample translations along slow and fast axis in pixels
-    dss, dfs - average sample translations along slow and fast axis in pixels
     wss, wfs - search window size along slow and fast axis
+    ls - length scale in pixels
     """
     cdef:
-        int_t a = I_n.shape[0], b = I_n.shape[1], c = I_n.shape[2], j, k
-        int_t aa = I0.shape[0], bb = I0.shape[1]
-        float_t di0 = min_float(&di[0], a), di1 = max_float(&di[0], a)
-        float_t dj0 = min_float(&dj[0], a), dj1 = max_float(&dj[0], a)
-        float_t i0, i1, j0, j1
+        int_t a = I_n.shape[0], b = I_n.shape[1], c = I_n.shape[2]
+        int_t aa = I0.shape[0], bb = I0.shape[1], j, k, t
+        int_t dn = <int_t>(ceil(2 * ls)), max_threads = openmp.omp_get_max_threads()
         float_t[:, :, ::1] u = np.empty((2, b, c), dtype=np.float64)
+        float_t[:, ::1] I = np.empty((max_threads, a), dtype=np.float64)
+        float_t[:, ::1] rm = np.empty((2 * dn + 1, 2 * dn + 1), dtype=np.float64)
+        int_t bnds[6] # wss, wfs, di0, di1, dj0, dj1
+    bnds[0] = wss; bnds[1] = wfs
+    bnds[2] = <int_t>(min_float(&di[0], a)); bnds[3] = <int_t>(max_float(&di[0], a)) + aa
+    bnds[4] = <int_t>(min_float(&dj[0], a)); bnds[5] = <int_t>(max_float(&dj[0], a)) + bb
     u[...] = u0
-    for j in prange(b, schedule='guided', nogil=True):
-        for k in range(c):
-            # Define window search bounds
-            i0 = -<float_t>(wss) if wss < u[0, j, k] - di0 else di0 - u[0, j, k]
-            i1 = <float_t>(wss) if wss < di1 - u[0, j, k] + aa else di1 - u[0, j, k] + aa
-            j0 = -<float_t>(wfs) if wfs < u[1, j, k] - dj0 else dj0 - u[1, j, k]
-            j1 = <float_t>(wfs) if wfs < dj1 - u[1, j, k] + bb else dj1 - u[1, j, k] + bb
-            
-            # Execute pixel map search
-            search_2d(I_n[:, j, k], I0, di, dj, u[:, j, k], W[j, k],
-                      <int_t>(i0), <int_t>(i1), <int_t>(j0), <int_t>(j1), dss, dfs)
+    rbf_mc(rm, ls)
+    for k in prange(c, schedule='guided', nogil=True):
+        t = openmp.omp_get_thread_num()
+        for j in range(b):
+            convolve_I(I[t], I_n, rm, j, k)
+            mse_min_c(I[t], W[j, k], I0, u[:, j, k], di, dj, bnds)
+    return np.asarray(u)
+
+cdef void init_stars_c(float_t[::1] sptr, float_t[::1] I, float_t W, float_t[:, ::1] I0,
+                       float_t[:] u, float_t[::1] di, float_t[::1] dj, int_t* bnds) nogil:
+    cdef:
+        int_t sslb = -bnds[0] if bnds[0] < u[0] - bnds[2] else <int_t>(bnds[2] - u[0])
+        int_t ssub = bnds[0] if bnds[0] < bnds[3] - u[0] else <int_t>(bnds[3] - u[0])
+        int_t fslb = -bnds[1] if bnds[1] < u[1] - bnds[4] else <int_t>(bnds[4] - u[1])
+        int_t fsub = bnds[1] if bnds[1] < bnds[5] - u[1] else <int_t>(bnds[5] - u[1])
+        int_t ss, fs
+        float_t mse_min = FLOAT_MAX, l1, dist
+        float_t mptr[2]
+    mptr[1] = NO_VAR; sptr[2] = 0
+    for ss in range(sslb, ssub):
+        for fs in range(fslb, fsub):
+            mse_bi(mptr, I, I0, W, di, dj, u[0] + ss, u[1] + fs)
+            if mptr[0] < mse_min:
+                mse_min = mptr[0]; sptr[0] = ss; sptr[1] = fs
+    for ss in range(sslb, ssub):
+        for fs in range(fslb, fsub):
+            dist = (ss - sptr[0])**2 + (fs - sptr[1])**2
+            if dist > 10**2 and dist < 100**2:
+                mse_bi(mptr, I, I0, W, di, dj, u[0] + ss, u[1] + fs)
+                l1 = 2 * (mptr[0] - mse_min) / dist
+                if l1 > sptr[2]:
+                    sptr[2] = l1
+
+cdef void stars_1d_c(float_t[::1] sptr, float_t[::1] I, float_t W, float_t[:, ::1] I0,
+                     float_t[:] u, float_t[::1] di, float_t[::1] dj, int_t* bnds,
+                     float_t x_tol, int_t max_iter, float_t h) nogil:
+    cdef:
+        int_t k
+        float_t ss, fs, vfs, mu, dfs
+        timespec ts
+        gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937)
+        int_t fslb = -bnds[1] if bnds[1] < u[1] - bnds[4] else <int_t>(bnds[4] - u[1])
+        int_t fsub = bnds[1] if bnds[1] < bnds[5] - u[1] else <int_t>(bnds[5] - u[1])
+        float_t mptr0[2]
+        float_t mptr1[2]
+    if sptr[2] <= 0:
+        init_stars_c(sptr, I, W, I0, u, di, dj, bnds)
+    clock_gettime(CLOCK_REALTIME, &ts)
+    gsl_rng_set(r, ts.tv_sec + ts.tv_nsec)
+    ss = sptr[0]; mptr1[1] = NO_VAR; fs = sptr[1]
+    for k in range(1, max_iter):
+        mse_bi(mptr0, I, I0, W, di, dj, u[0] + ss, u[1] + fs)
+        vfs = gsl_ran_gaussian(r, 1.0)
+        mu = MU_C * mptr0[1]**0.25 / sqrt(sptr[2])
+        if fs + vfs * mu >= fsub or fs + vfs * mu < fslb:
+            u[1] += sptr[1]
+            break
+        mse_bi(mptr1, I, I0, W, di, dj, u[0] + ss, u[1] + fs + vfs * mu)
+        dfs = -h * (mptr1[0] - mptr0[0]) / mu * vfs
+        if dfs < x_tol and dfs > -x_tol:
+            u[1] += fs + dfs; sptr[1] = fs + dfs
+            break
+        fs += dfs
+        if fs >= fsub or fs < fslb:
+            u[1] += sptr[1]
+            break
+    else:
+        u[1] += fs; sptr[1] = fs
+    gsl_rng_free(r)
+
+def upm_stars(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0, float_t[:, :, ::1] u0,
+              float_t[::1] di, float_t[::1] dj, int_t wss, int_t wfs, float_t ls=5.,
+              float_t x_tol=1e-12, int_t max_iter=1000, float_t h=3.):
+    """
+    Update the pixel map based on the STARS algorithm
+    https://arxiv.org/abs/1507.03332
+
+    I_n - measured data
+    W - whitefield
+    I0 - reference image
+    u0 - pixel map
+    di, dj - sample translations along slow and fast axis in pixels
+    wss, wfs - search window size along slow and fast axis
+    ls - length scale in pixels
+    x_tol - argument tolerance
+    max_iter - maximum number of iterations
+    h - step size in STARS algorithm
+    """
+    cdef:
+        int_t a = I_n.shape[0], b = I_n.shape[1], c = I_n.shape[2]
+        int_t aa = I0.shape[0], bb = I0.shape[1], j, k, t
+        int_t dn = <int_t>(ceil(2 * ls)), max_threads = openmp.omp_get_max_threads()
+        float_t[:, :, ::1] u = np.empty((2, b, c), dtype=np.float64)
+        float_t[:, ::1] I = np.empty((max_threads, a), dtype=np.float64)
+        float_t[:, ::1] rm = np.empty((2 * dn + 1, 2 * dn + 1), dtype=np.float64)
+        float_t[:, ::1] sptr = np.zeros((max_threads, 3), dtype=np.float64)
+        int_t bnds[6] # wss, wfs, di0, di1, dj0, dj1
+    bnds[0] = wss; bnds[1] = wfs
+    bnds[2] = <int_t>(min_float(&di[0], a)); bnds[3] = <int_t>(max_float(&di[0], a)) + aa
+    bnds[4] = <int_t>(min_float(&dj[0], a)); bnds[5] = <int_t>(max_float(&dj[0], a)) + bb
+    u[...] = u0
+    rbf_mc(rm, ls)
+    for k in prange(c, schedule='static', nogil=True):
+        t = openmp.omp_get_thread_num()
+        for j in range(b):
+            convolve_I(I[t], I_n, rm, j, k)
+            stars_1d_c(sptr[t], I[t], W[j, k], I0, u[:, j, k], di, dj, bnds, x_tol, max_iter, h)
     return np.asarray(u)
 
 def total_mse(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0,
-              float_t[:, :, ::1] u, float_t[::1] di, float_t[::1] dj):
+              float_t[:, :, ::1] u, float_t[::1] di, float_t[::1] dj, float_t ls=5.):
     """
     Return total mean squared error
 
@@ -243,11 +368,20 @@ def total_mse(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0,
     I0 - reference image
     u - pixel map
     di, dj - sample translations along slow and fast axis in pixels
+    ls - length scale in pixels
     """
     cdef:
-        int_t b = I_n.shape[1], c = I_n.shape[2], j, k
+        int_t a = I_n.shape[0], b = I_n.shape[1], c = I_n.shape[2], j, k, t
+        int_t dn = <int_t>(ceil(2 * ls)), max_threads = openmp.omp_get_max_threads()
+        float_t[:, ::1] rm = np.empty((2 * dn + 1, 2 * dn + 1), dtype=np.float64)
+        float_t[:, ::1] I = np.empty((max_threads, a), dtype=np.float64)
+        float_t [:, ::1] mptr = NO_VAR * np.ones((max_threads, 2), dtype=np.float64)
         float_t err = 0
-    for j in range(b):
-        for k in range(c):
-            err += mse_bi(I_n[:, j, k], I0, W[j, k], di, dj, u[0, j, k], u[1, j, k])
+    rbf_mc(rm, ls)
+    for k in prange(c, schedule='static', nogil=True):
+        t = openmp.omp_get_thread_num()
+        for j in range(b):
+            convolve_I(I[t], I_n, rm, j, k)
+            mse_bi(&mptr[t, 0], I[t], I0, W[j, k], di, dj, u[0, j, k], u[1, j, k])
+            err += mptr[t, 0]
     return err / b / c
