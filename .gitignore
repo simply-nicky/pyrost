@@ -6,7 +6,6 @@ logs/
 *.png
 *.eps
 *.mp4
-dev.ipynb
 
 #jupyter checkpoints
 .ipynb_checkpoints/
@@ -18,8 +17,7 @@ __pycache__/
 
 # C extensions
 *.so
-cbc_dp/utils/*.c
-cbc/utils/*.c
+*.c
 
 # Distribution / packaging
 .Python

@@ -309,7 +309,7 @@ def main():
     params = parameters().export_dict()
     args_dict = vars(parser.parse_args())
     for param in args_dict:
-        if args_dict[param] is not None:
+        if not args_dict[param] is None:
             params[param] = args_dict[param]
     if 'ini_file' in params:
         st_params = STParams.import_ini(args_dict['ini_file'])

@@ -219,7 +219,8 @@ class Protocol(INIParser):
         attr - the attribute to read
         cxi_file - an h5py File object
         """
-        cxi_path = self.get_path(attr, cxi_path)
+        if cxi_path is None:
+            cxi_path = self.get_path(attr, cxi_path)
         if cxi_path in cxi_file:
             return cxi_file[cxi_path][...].astype(self.get_dtype(attr, dtype))
         else:
@@ -237,7 +238,8 @@ class Protocol(INIParser):
         if data is None:
             pass
         else:
-            cxi_path = self.get_path(attr, cxi_path)
+            if cxi_path is None:
+                cxi_path = self.get_path(attr, cxi_path)
             if cxi_path in cxi_file:
                 if overwrite:
                     del cxi_file[cxi_path]
@@ -283,6 +285,17 @@ class STLoader(INIParser):
         else:
             return None
 
+    def _load(self, path, **kwargs):
+        data_dict = {}
+        with h5py.File(path, 'r') as cxi_file:
+            for attr in self.protocol:
+                cxi_path = self.find_path(attr, cxi_file)
+                if attr in kwargs and kwargs[attr]:
+                    data_dict[attr] = np.asarray(kwargs[attr], dtype=self.protocol.get_dtype(attr))
+                else:
+                    data_dict[attr] = self.protocol.read_cxi(attr, cxi_file, cxi_path=cxi_path)
+        return data_dict
+
     def load(self, path, **kwargs):
         """
         Load a cxi file and return a object
@@ -290,14 +303,7 @@ class STLoader(INIParser):
         path - path to the cxi file
         kwargs - a dictionary of attributes to override
         """
-        data_dict = {}
-        with h5py.File(path, 'r') as cxi_file:
-            for attr in self.protocol:
-                cxi_path = self.find_path(attr, cxi_file)
-                if attr in kwargs:
-                    data_dict[attr] = np.asarray(kwargs[attr], dtype=self.protocol.get_dtype(attr))
-                else:
-                    data_dict[attr] = self.protocol.read_cxi(attr, cxi_file, cxi_path=cxi_path)
+        data_dict = self._load(path, **kwargs)
         return STData(self.protocol, **data_dict)
 
 def loader():

@@ -60,7 +60,10 @@ class STData:
     def _init_dict(self, **kwargs):
         # Initialize configuration attributes
         for attr in self.attr_dict:
-            self.__dict__[attr] = kwargs[attr]
+            if kwargs.get(attr) is None:
+                raise ValueError('Attribute {:s} has not been provided'.format(attr))
+            else:
+                self.__dict__[attr] = kwargs.get(attr)
         for attr in self.init_dict:
             self.__dict__[attr] = kwargs.get(attr)
 
@@ -124,6 +127,13 @@ class STData:
         return {'whitefield': make_whitefield_st(data=self.data[self.good_frames], mask=self.mask)}
 
     @dict_to_object
+    def make_pixel_map(self):
+        """
+        Return a new object with the default pixel map
+        """
+        return {'pixel_map': None}
+
+    @dict_to_object
     def change_defocus(self, defocus):
         """
         Return a new object with the updated defocus distance
@@ -176,17 +186,20 @@ class SpeckleTracking1D:
     reference_image - reference image
     """
     attr_dict = {'data', 'dref', 'defocus', 'dfs_pix', 'dss_pix', 'pixel_map', 'whitefield'}
-    init_dict = {'reference_image'}
+    init_dict = {'n0', 'm0', 'reference_image'}
     MIN_WFS = 10
 
     def __init__(self, **kwargs):
         for attr in self.attr_dict:
-            self.__dict__[attr] = kwargs[attr]
+            if kwargs.get(attr) is None:
+                raise ValueError('Attribute {:s} has not been provided'.format(attr))
+            else:
+                self.__dict__[attr] = kwargs.get(attr)
         for attr in self.init_dict:
             self.__dict__[attr] = kwargs.get(attr)
 
         if self.reference_image is None:
-            self.update_reference.inplace_update()
+            self.update_reference.inplace_update(update_dij=True)
 
         self.dref.st_objects.append(self)
 
@@ -210,30 +223,29 @@ class SpeckleTracking1D:
                    dss_pix=dij_pix[0], pixel_map=pixel_map, whitefield=whitefield)
 
     @dict_to_object
-    def update_reference(self, l_scale=5.):
+    def update_reference(self, l_scale=10., sw_max=0):
         """
         Return new object with the updated reference image
 
         l_scale - length scale in pixels
         """
-        reference_image, dss_pix, dfs_pix = \
-        make_reference(I_n=self.data, W=self.whitefield,
-                       u=self.pixel_map, di=self.dss_pix,
-                       dj=self.dfs_pix, ls=l_scale)
-        return {'reference_image': reference_image, 'dfs_pix': dfs_pix, 'dss_pix': dss_pix}
+        I0, n0, m0 = make_reference(I_n=self.data, W=self.whitefield,
+                                    u=self.pixel_map, di=self.dss_pix,
+                                    dj=self.dfs_pix, ls=l_scale, sw_max=sw_max)
+        return {'reference_image': I0, 'n0': n0, 'm0': m0}
 
     @dict_to_object
-    def update_pixel_map(self, wfs, l_scale=5.):
+    def update_pixel_map(self, sw_max, l_scale=3.):
         """
         Return new object with the updated pixel map
 
-        wfs - search window size in pixels
+        sw_max - search window size in pixels
         l_scale - length scale in pixels
         step_size - step size of iterative update
         """
         pixel_map = upm_search(I_n=self.data, W=self.whitefield, I0=self.reference_image,
-                               u0=self.pixel_map, di=self.dss_pix, dj=self.dfs_pix,
-                               wss=1, wfs=wfs, ls=l_scale)
+                               u0=self.pixel_map, di=self.dss_pix - self.n0, dj=self.dfs_pix - self.m0,
+                               wss=1, wfs=sw_max, ls=l_scale)
         return {'pixel_map': pixel_map}
 
     def update_data(self):
@@ -256,32 +268,33 @@ class SpeckleTracking1D:
             sweep_scan.append(np.mean(np.gradient(reference_image[0])**2))
         return np.array(sweep_scan)
 
-    def iter_update(self, wfs, l_scale=5., n_iter=5, verbose=True):
+    def iter_update(self, sw_max, ls_pm=3., ls_ri=10., n_iter=5, verbose=True):
         """
         Update the reference image and the pixel map iteratively
 
-        wfs - search window size in pixels
+        sw_max - search window size in pixels
         l_scale - length scale in pixels
         n_iter - number of iteration
         verbose - verbosity
         """
-        obj = self.update_reference(l_scale=l_scale)
+        obj = self.update_reference(l_scale=ls_ri, sw_max=sw_max)
         errors = []
         for it in range(1, n_iter + 1):
-            errors.append(obj.mse())
+            errors.append(obj.total_mse())
             if verbose:
-                print('Iteration No. {:d}: MSE = {:.5f}'.format(it, errors[-1]))
-            u0 = obj.pixel_map
-            obj.update_pixel_map.inplace_update(wfs=wfs, l_scale=l_scale)
-            wfs = max(int(np.abs(obj.pixel_map - u0).max()), self.MIN_WFS)
-            if verbose:
-                print('Iteration No. {:d}: Search window size = {:d}'.format(it, wfs))
-            obj.update_reference.inplace_update(l_scale=l_scale)
+                print('Iteration No. {:d}: Total MSE = {:.5e}'.format(it, errors[-1]))
+            pm = obj.update_pixel_map.dict_func(sw_max=sw_max, l_scale=ls_pm)
+            ri = obj.make_reference.dict_func(l_scale=ls_ri)
+
+            roi = slice(obj.m0 - ri['m0'], ri['reference_image'].shape[1] + obj.m0 - ri['m0'])
+            obj.reference_image[:, roi] += gaussian_filter(ri['reference_image'] - obj.reference_image[:, roi],
+                                                           (0, ls_ri))
+            obj.pixel_map += gaussian_filter(pm['pixel_map'] - obj.pixel_map, (0, 0, ls_pm))
         return obj, errors
 
-    def mse(self, l_scale=5.):
+    def total_mse(self, l_scale=3.):
         """
-        Return mean-squared-error (MSE)
+        Return total mean-squared-error (MSE)
 
         l_scale - length scale in pixels
         """
@@ -300,6 +313,9 @@ class SpeckleTracking1D:
         return var_psn * (1 / N + 1 / N / K) / dref_avg / np.mean(self.whitefield**2)
 
 class LeastSquares:
+    """
+    Basic Least Squares fit class
+    """
     @staticmethod
     def bounds(x, max_order=2):
         """
@@ -370,7 +386,10 @@ class AbberationsFit(LeastSquares):
 
     def __init__(self, **kwargs):
         for attr in self.attr_dict:
-            self.__dict__[attr] = kwargs[attr]
+            if kwargs.get(attr) is None:
+                raise ValueError('Attribute {:s} has not been provided'.format(attr))
+            else:
+                self.__dict__[attr] = kwargs.get(attr)
 
         self.pix_ap = kwargs['distance'] / kwargs['x_pixel_size']
 

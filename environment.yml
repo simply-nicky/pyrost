@@ -1,0 +1,11 @@
+name: rst
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - cython
+  - cythongsl
+  - gsl
+  - h5py
+  - numpy
+  - scipy
