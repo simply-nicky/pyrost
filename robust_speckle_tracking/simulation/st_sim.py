@@ -52,7 +52,7 @@ class STSim():
         xx_span = self.fs_size * self.pix_size
         yy_span = self.ss_size * self.pix_size
 
-        x_span = 1.6 * self.ap_x / self.focus * self.defoc
+        x_span = 1.6 * self.ap_x / self.focus * self.defocus
         y_span = 1.2 * self.ap_y
         n_x = int(x_span * xx_span / self.wl / self.det_dist)
         n_y = int(y_span * yy_span / self.wl / self.det_dist)
@@ -71,12 +71,12 @@ class STSim():
         #Initializing wavefields at the sample's plane
         self.logger.info("Generating wavefields at the sample's plane")
         self.wf0_x = lens(x_arr=self.x_arr, wl=self.wl, ap=self.ap_x,
-                          focus=self.focus, defoc=self.defoc, alpha=self.alpha,
+                          focus=self.focus, defoc=self.defocus, alpha=self.alpha,
                           x0=(self.x0 - 0.5) * self.ap_x)
-        self.wf0_y = aperture(x_arr=self.y_arr, z=self.focus + self.defoc,
+        self.wf0_y = aperture(x_arr=self.y_arr, z=self.focus + self.defocus,
                               wl=self.wl, ap=self.ap_y)
         self.i0 = self.p0 / self.ap_x / self.ap_y
-        self.smp_c = 1 / self.wl / (self.focus + self.defoc)
+        self.smp_c = 1 / self.wl / (self.focus + self.defocus)
         self.logger.info("The wavefields have been generated")
 
     def _init_barcode(self, bsteps):
@@ -206,7 +206,7 @@ class STConverter():
         return np.stack((_vec_ss, _vec_fs), axis=1)
 
     def _defocus(self, st_params):
-        return self.crd_rat * st_params.defoc
+        return self.crd_rat * st_params.defocus
 
     def _distance(self, st_params):
         return self.crd_rat * st_params.det_dist
@@ -283,7 +283,7 @@ def main():
     parser.add_argument('out_path', type=str, help="Output folder path")
     parser.add_argument('-f', '--ini_file', type=str,
                         help="Path to an INI file to fetch all of the simulation parameters")
-    parser.add_argument('--defoc', type=float, help="Lens defocus distance, [um]")
+    parser.add_argument('--defocus', type=float, help="Lens defocus distance, [um]")
     parser.add_argument('--det_dist', type=float, help="Distance between the barcode and the detector [um]")
     parser.add_argument('--step_size', type=float, help="Scan step size [um]")
     parser.add_argument('--n_frames', type=int, help="Number of frames")

@@ -501,3 +501,20 @@ def newton_1d(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0,
             print('max iter achived')
         sptr[1] = fs
     return np.asarray(sptr)
+
+def total_mse(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0,
+              float_t[:, :, ::1] u, float_t[::1] di, float_t[::1] dj, float_t ls):
+    cdef:
+        int_t a = I_n.shape[0], b = I_n.shape[1], c = I_n.shape[2]
+        int_t aa = I0.shape[0], bb = I0.shape[1], j, k, t
+        int_t max_threads = openmp.omp_get_max_threads()
+        float_t err = 0
+        float_t[:, ::1] mptr = NO_VAR * np.ones((max_threads, 2), dtype=np.float64)
+        float_t[:, ::1] I = np.empty((max_threads, a), dtype=np.float64)
+    for k in prange(c, schedule='static', nogil=True):
+        t = openmp.omp_get_thread_num()
+        for j in range(b):
+            krig_data_c(I[t], I_n, W, u, j, k, ls)
+            mse_bi(&mptr[t, 0], I[t], I0, di, dj, u[0, j, k], u[1, j, k])
+            err += mptr[t, 0]
+    return err / b / c

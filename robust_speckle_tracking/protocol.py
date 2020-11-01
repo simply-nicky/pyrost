@@ -176,7 +176,7 @@ class Protocol(INIParser):
         """
         Return parser object using an ini file template
 
-        template - path to the template file
+        path - path to the template file
         """
         ini_template = configparser.ConfigParser()
         ini_template.read(path)
@@ -195,6 +195,8 @@ class Protocol(INIParser):
     def log(self, logger):
         """
         Log the protocol
+
+        logger - a logger object
         """
         for attr in self.default_paths:
             logger.info(self.log_txt.format(attr=attr, fmt=self.dtypes[attr],
@@ -202,19 +204,20 @@ class Protocol(INIParser):
 
     def get_path(self, attr, value=None):
         """
-        Return the atrribute's path
+        Return the atrribute's path in the cxi file, return value if not found
         """
         return self.default_paths.get(attr, value)
 
     def get_dtype(self, attr, value=None):
         """
-        Return the attribute's data-type
+        Return the attribute's data-type, return value if not found
         """
         return self.dtypes.get(attr, value)
 
     def read_cxi(self, attr, cxi_file, cxi_path=None, dtype=None):
         """
-        Read the attribute from the cxi file
+        Read the attribute from the cxi file at the path defined by the protocol
+        If cxi_path argument is provided, it will override the protocol
 
         attr - the attribute to read
         cxi_file - an h5py File object
@@ -229,9 +232,10 @@ class Protocol(INIParser):
     def write_cxi(self, attr, data, cxi_file, overwrite=True, cxi_path=None, dtype=None):
         """
         Write data to the cxi file as specified by the protocol
+        If cxi_path or dtype argument are provided, it will override the protocol
 
-        attribute - the attribute to be written
-        data - attribute's data
+        attr - the attribute to be written
+        data - the attribute's data
         cxi_file - an h5py File object
         overwrite - overwrite the cxi file
         """
@@ -262,7 +266,7 @@ class STLoader(INIParser):
     Search data in the paths provided by the protocol and the paths parsed to the constructor.
 
     protocol - Protocol object
-    paths - dictionary of attributes' paths, where the loader looks for data
+    paths - dictionary of attributes' paths, where the loader looks for the data
     """
     attr_dict = {'paths': ('ALL',)}
     fmt_dict = {'paths': 'str'}
@@ -298,7 +302,7 @@ class STLoader(INIParser):
 
     def load(self, path, **kwargs):
         """
-        Load a cxi file and return a object
+        Load a cxi file and return an STData class object
 
         path - path to the cxi file
         kwargs - a dictionary of attributes to override

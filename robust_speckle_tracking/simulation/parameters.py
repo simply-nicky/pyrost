@@ -10,7 +10,7 @@ class STParams(INIParser):
     Speckle Tracking parameters class (STParams)
 
     [exp_geom - experimental geometry parameters]
-    defoc - lens defocus distance [um]
+    defocus - lens defocus distance [um]
     det_dist - distance between the barcode and the detector [um]
     step_size - scan step size [um]
     n_frames - number of frames
@@ -142,7 +142,7 @@ def parameters(**kwargs):
     Return default parameters, if not superseded by parameters parsed in argument
 
     [exp_geom - experimental geometry parameters]
-    defoc - lens defocus distance [um]
+    defocus - lens defocus distance [um]
     det_dist - distance between the barcode and the detector [um]
     step_size - scan step size [um]
     n_frames - number of frames

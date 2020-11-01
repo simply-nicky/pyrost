@@ -30,24 +30,23 @@ def exp_data(request):
     params['roi'] = request.param['roi']
     return params
 
-@pytest.fixture
+@pytest.fixture(scope='function')
 def ini_path():
     """
     Return a path to the experimental speckle tracking data
     """
     path = 'test.ini'
-    return path
+    yield path
+    os.remove(path)
 
 @pytest.mark.st_sim
 def test_st_params(st_params, ini_path):
-    assert not os.path.isdir(ini_path)
+    assert not os.path.isfile(ini_path)
     ini_parser = st_params.export_ini()
     with open(ini_path, 'w') as ini_file:
         ini_parser.write(ini_file)
-    assert os.path.isfile(ini_path)
     new_params = st_sim.STParams.import_ini(ini_path)
     assert new_params.export_dict() == st_params.export_dict()
-    os.remove(ini_path)
 
 @pytest.mark.st_sim
 def test_st_sim(st_params):
@@ -75,3 +74,18 @@ def test_loader_sim(sim_data):
     data_dict = loader._load(data_path)
     for attr in rst.STData.attr_dict:
         assert not data_dict[attr] is None
+
+@pytest.mark.rst
+def test_iter_update(sim_data):
+    assert os.path.isdir(sim_data)
+    protocol_path = os.path.join(sim_data, 'protocol.ini')
+    assert os.path.isfile(protocol_path)
+    data_path = os.path.join(sim_data, 'data.cxi')
+    assert os.path.isfile(data_path)
+    protocol = rst.Protocol.import_ini(protocol_path)
+    loader = rst.STLoader(protocol=protocol)
+    st_data = loader.load(data_path)
+    st_obj = st_data.get_last_st()
+    pixel_map0 = st_obj.pixel_map.copy()
+    st_obj.iter_update(150, ls_pm=2.5, ls_ri=15, verbose=True, n_iter=5)
+    assert (st_obj.pixel_map == pixel_map0).all()

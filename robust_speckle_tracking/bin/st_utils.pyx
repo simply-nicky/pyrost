@@ -104,14 +104,15 @@ cdef void frame_reference(float_t[:, ::1] I0, float_t[:, ::1] w0, float_t[:, ::1
 def make_reference(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, :, ::1] u, float_t[::1] di,
                    float_t[::1] dj, float_t ls, int_t wfs=0, bool_t return_nm0=True):
     """
-    Return a reference image 
+    Generate a reference image based on the pixel mapping and the measured data using the simple kriging
 
-    I_n - measured data
+    I_n - measured frames
     W - whitefield
-    u - pixel map
+    u - pixel mapping between the data at the detector's plane
+        and the reference image at the reference plane
     di, dj - sample translations along slow and fast axis in pixels
     ls - length scale in pixels
-    return_nm0 - flag to return n0, m0
+    return_nm0 - flag to return n0, m0, lower pixel bounds of the reference image at the reference plane
     sw_max - return extended reference image based on search window size
     """
     cdef:
@@ -250,14 +251,16 @@ def upm_search(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0,
                float_t[:, :, ::1] u0, float_t[::1] di, float_t[::1] dj,
                uint_t wss, uint_t wfs, float_t ls):
     """
-    Update the pixel map
+    Update the pixel map using the brute-force search along the search window
+    The update procedure minimizes the mean-squared-error (MSE) between the measured frames and the reference image
 
-    I_n - measured data
+    I_n - measured frames
     W - whitefield
     I0 - reference image
-    u0 - pixel map
-    di, dj - sample translations along slow and fast axis in pixels
-    wss, wfs - search window size along slow and fast axis
+    u0 - pixel mapping between the data at the detector's plane
+         and the reference image at the reference plane
+    di, dj - the sample translations along the slow and fast axes in pixels
+    wss, wfs - search window size along slow and fast axis in pixels
     ls - length scale in pixels
     """
     cdef:
@@ -341,15 +344,17 @@ def upm_newton_1d(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0,
                   int_t max_iter=500, float_t x_tol=1e-12):
     """
     Update the pixel map based on the Newton's method
+    The update procedure minimizes the mean-squared-error (MSE) between the measured frames and the reference image
 
-    I_n - measured data
+    I_n - measured frames
     W - whitefield
     I0 - reference image
-    u0 - pixel map
+    u0 - pixel mapping between the data at the detector's plane
+         and the reference image at the reference plane
     di, dj - sample translations along slow and fast axis in pixels
     wss, wfs - search window size along slow and fast axis
     ls - length scale in pixels
-    x_tol - argument tolerance
+    x_tol - tolerance for termination by the change of the solution
     max_iter - maximum number of iterations
     """
     cdef:
@@ -374,12 +379,13 @@ def upm_newton_1d(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0,
 def total_mse(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0,
               float_t[:, :, ::1] u, float_t[::1] di, float_t[::1] dj, float_t ls):
     """
-    Return total mean squared error
+    Return the total mean squared error
 
-    I_n - measured data
+    I_n - measured frames
     W - whitefield
     I0 - reference image
-    u - pixel map
+    u - pixel mapping between the data at the detector's plane
+        and the reference image at the reference plane
     di, dj - sample translations along slow and fast axis in pixels
     ls - length scale in pixels
     """
@@ -387,13 +393,13 @@ def total_mse(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0,
         int_t a = I_n.shape[0], b = I_n.shape[1], c = I_n.shape[2]
         int_t aa = I0.shape[0], bb = I0.shape[1], j, k, t
         int_t max_threads = openmp.omp_get_max_threads()
-        float_t err
+        float_t err = 0
         float_t[:, ::1] mptr = NO_VAR * np.ones((max_threads, 2), dtype=np.float64)
         float_t[:, ::1] I = np.empty((max_threads, a), dtype=np.float64)
-    for k in prange(c, schedule='static', nogil=True):
+    for k in prange(c, schedule='guided', nogil=True):
         t = openmp.omp_get_thread_num()
         for j in range(b):
             krig_data_c(I[t], I_n, W, u, j, k, ls)
             mse_bi(&mptr[t, 0], I[t], I0, di, dj, u[0, j, k], u[1, j, k])
-            err = err + mptr[t, 0]
+            err += mptr[t, 0]
     return err / b / c

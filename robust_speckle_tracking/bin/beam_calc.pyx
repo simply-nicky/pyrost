@@ -62,8 +62,8 @@ cdef complex_t lens_wp(float_t x, float_t wl, float_t ap, float_t f,
 def lens(float_t[::1] x_arr, float_t wl, float_t ap, float_t focus,
          float_t defoc, float_t alpha, float_t x0):
     """
-    Lens wavefront calculation by dint of Fresnel diffraction (without the coefficient)
-    with third order polinomial abberations
+    Lens wavefront calculation by dint of Fresnel diffraction (without the normalizing coefficient)
+    Lens abberations are modelled by the third order polynomial
 
     x_arr - coordinates at the plane downstream [um]
     wl - wavelength [um]
@@ -105,7 +105,7 @@ cdef complex_t aperture_wp(float_t x, float_t z, float_t wl, float_t ap) nogil:
 
 def aperture(float_t[::1] x_arr, float_t z, float_t wl, float_t ap):
     """
-    Aperture wavefront calculation by dint of Fresnel diffraction (without the coefficient)
+    Aperture wavefront calculation by dint of Fresnel diffraction
 
     x_arr - coordinates at the plane downstream [um]
     z - propagation distance [um]
@@ -141,7 +141,7 @@ cdef void fhf_1d(complex_t[::1] wf1, complex_t[::1] wf0, float_t[::1] x_arr, flo
 
 def fraunhofer_1d(complex_t[::1] wf0, float_t[::1] x_arr, float_t[::1] xx_arr, float_t dist, float_t wl):
     """
-    1D Fraunhofer diffraction calculation (without the coefficient)
+    1D Fraunhofer diffraction calculation
 
     wf0 - wavefront at the plane downstream
     x_arr - coordinates at the plane downstream [um]
@@ -157,7 +157,7 @@ def fraunhofer_1d(complex_t[::1] wf0, float_t[::1] x_arr, float_t[::1] xx_arr, f
 
 def fraunhofer_2d(complex_t[:, ::1] wf0, float_t[::1] x_arr, float_t[::1] xx_arr, float_t dist, float_t wl):
     """
-    1D Fraunhofer diffraction calculation for an array of wavefronts (without the coefficient)
+    1D Fraunhofer diffraction calculation for an array of wavefronts
 
     wf0 - an array of wavefronts at the plane downstream
     x_arr - coordinates at the plane downstream [um]
@@ -194,7 +194,7 @@ cdef void fnl_1d(complex_t[::1] wf1, complex_t[::1] wf0, float_t[::1] x_arr, flo
 
 def fresnel_1d(complex_t[::1] wf0, float_t[::1] x_arr, float_t[::1] xx_arr, float_t dist, float_t wl):
     """
-    1D Fresnel diffraction calculation (without the coefficient)
+    1D Fresnel diffraction calculation
 
     wf0 - wavefront at the plane downstream
     x_arr - coordinates at the plane downstream [um]
@@ -210,7 +210,7 @@ def fresnel_1d(complex_t[::1] wf0, float_t[::1] x_arr, float_t[::1] xx_arr, floa
 
 def fresnel_2d(complex_t[:, ::1] wf0, float_t[::1] x_arr, float_t[::1] xx_arr, float_t dist, float_t wl):
     """
-    1D Fresnel diffraction calculation for an array of wavefronts (without the coefficient)
+    1D Fresnel diffraction calculation for an array of wavefronts
 
     wf0 - an array of wavefronts at the plane downstream
     x_arr - coordinates at the plane downstream [um]
@@ -227,7 +227,7 @@ def fresnel_2d(complex_t[:, ::1] wf0, float_t[::1] x_arr, float_t[::1] xx_arr, f
 
 def barcode_steps(float_t x0, float_t x1, float_t br_dx, float_t rd):
     """
-    Barcode bars' coordinates generation with random deviation
+    Generate a random vector of barcode bars' coordinates
 
     x0, x1 - sample's bounds [um]
     br_dx - mean bar size [um]
@@ -291,7 +291,7 @@ cdef void barcode_c(float_t[::1] br_tr, float_t[::1] x_arr, float_t[::1] bx_arr,
 
 def barcode_1d(float_t[::1] x_arr, float_t[::1] bx_arr, float_t sgm, float_t atn0, float_t atn):
     """
-    Barcode transmission array for a scan
+    Generate a vector of barcode transmission coefficients
 
     x_arr - coordinates [um]
     bx_arr - bar coordinates array [um]
@@ -309,7 +309,7 @@ def barcode_1d(float_t[::1] x_arr, float_t[::1] bx_arr, float_t sgm, float_t atn
 def barcode_2d(float_t[::1] x_arr, float_t[::1] bx_arr, float_t sgm,
                float_t atn0, float_t atn, float_t ss, int_t nf):
     """
-    Barcode transmission array for a scan
+    Generate a vector of barcode transmission coefficients for an array of wavefronts
 
     x_arr - coordinates [um]
     bx_arr - bar coordinates array [um]
@@ -349,7 +349,7 @@ cdef void make_frame_c(uint_t[:, ::1] frame, float_t[::1] i_x, float_t[::1] i_y,
 
 def make_frames(float_t[:, ::1] i_x, float_t[::1] i_y, float_t[::1] sc_x, float_t[::1] sc_y, float_t pix_size):
     """
-    Generate intensity frames with Poisson noise from x and y coordinate wavefront profiles
+    Generate a 2d array of intensities with Poisson noise based on arrays of wavefront profiles along the x and y axes
 
     i_x, i_y - x and y coordinate intensity profiles
     sc_x, sc_y - source rocking curve along x- and y-axes
@@ -392,9 +392,9 @@ cdef uint_t wirthselect_uint(uint_t[:] array, int k) nogil:
 
 def make_whitefield(uint_t[:, :, ::1] data, uint8_t[:, ::1] mask):
     """
-    Return whitefield based on median filtering of the stack of frames
+    Generate a whitefield using the median filtering
 
-    data - stack of frames
+    data - an array of frames
     mask - bad pixel mask
     """
     cdef:
