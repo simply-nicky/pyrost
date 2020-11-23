@@ -1,7 +1,6 @@
 name: rst
 channels:
   - conda-forge
-  - defaults
 dependencies:
   - cython
   - cythongsl
