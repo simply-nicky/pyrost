@@ -20,7 +20,6 @@ else:
     import site
     p = site.getsitepackages()[0]
     sys.path.insert(0, p)
-    os.environ[b"CC"] = b"x86_64-linux-gnu-gcc"
 
 # -- Project information -----------------------------------------------------
 
