@@ -1,4 +1,4 @@
 loader
 ======
 
-.. autofunction:: robust_speckle_tracking.loader
+.. autofunction:: pyrst.loader

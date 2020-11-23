@@ -23,7 +23,7 @@ else:
 
 # -- Project information -----------------------------------------------------
 
-project = 'robust_speckle_tracking'
+project = 'pyrst'
 copyright = '2020, Nikolay Ivanov'
 author = 'Nikolay Ivanov'
 

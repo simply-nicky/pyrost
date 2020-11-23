@@ -1,5 +1,5 @@
 STSim
 =====
 
-.. autoclass:: robust_speckle_tracking.simulation.STSim
+.. autoclass:: pyrst.simulation.STSim
     :members:

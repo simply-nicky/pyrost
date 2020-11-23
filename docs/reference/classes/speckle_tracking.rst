@@ -1,5 +1,5 @@
 SpeckleTracking
 ===============
 
-.. autoclass:: robust_speckle_tracking.SpeckleTracking
+.. autoclass:: pyrst.SpeckleTracking
     :members:

@@ -1,6 +1,6 @@
 STData
 ======
 
-.. autoclass:: robust_speckle_tracking.STData
+.. autoclass:: pyrst.STData
     :members:
     :inherited-members:

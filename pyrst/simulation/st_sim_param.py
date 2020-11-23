@@ -9,7 +9,7 @@ Examples
 Generate parameters, which could be later parsed to :class:`STSim`
 in order to perform the simulation.
 
->>> import robust_speckle_tracking.simulation as st_sim
+>>> import pyrst.simulation as st_sim
 >>> st_params = st_sim.parameters()
 >>> print(st_params)
 {'defocus': 400.0, 'det_dist': 2000000.0, 'step_size': 0.1,

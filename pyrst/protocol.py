@@ -11,14 +11,14 @@ Examples
 --------
 Generate the default CXI protocol.
 
->>> import robust_speckle_tracking as rst
+>>> import pyrst as rst
 >>> rst.cxi_protocol()
-<robust_speckle_tracking.protocol.Protocol at 0x7fd7c0c965d0>
+<pyrst.protocol.Protocol at 0x7fd7c0c965d0>
 
 Or generate the default CXI loader.
 
 >>> rst.loader()
-<robust_speckle_tracking.protocol.STLoader at 0x7fd7e0d0f590>
+<pyrst.protocol.STLoader at 0x7fd7e0d0f590>
 
 Notes
 -----

@@ -1,5 +1,5 @@
 STConverter
 ===========
 
-.. autoclass:: robust_speckle_tracking.simulation.STConverter
+.. autoclass:: pyrst.simulation.STConverter
     :members:

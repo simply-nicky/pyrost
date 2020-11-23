@@ -2,7 +2,7 @@
 This project takes over [Andrew Morgan's Ptychographic Speckle Tracking](https://github.com/andyofmelbourne/speckle-tracking) as an improved version aiming to add robustness to the optimisation algorithm in the case of the high noise present in the measured data. The project is written in Python and compatible with Python 3.X
 
 ## 1. Speckle Tracking simulation
-Speckle Tracking simulation (robust_speckle_tracking.simulation) is based on the Fresnel Diffraction wavefield propagation equations. The package is capable of generating a series of convergent X-ray beam snapshots produced by a lens with third order abberations profile. The X-ray beam goes through a barcode sample translated in transverse direction by a step at each frame.
+Speckle Tracking simulation (pyrst.simulation) is based on the Fresnel Diffraction wavefield propagation equations. The package is capable of generating a series of convergent X-ray beam snapshots produced by a lens with third order abberations profile. The X-ray beam goes through a barcode sample translated in transverse direction by a step at each frame.
 
 The st_sim framework is comprised of STParams, STSim, and STConverter classes:
 

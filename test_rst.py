@@ -1,7 +1,7 @@
 import os.path
 import pytest
-import robust_speckle_tracking as rst
-import robust_speckle_tracking.simulation as st_sim
+import pyrst
+import pyrst.simulation as st_sim
 import numpy as np
 
 @pytest.fixture(params=[{'det_dist': 5e5, 'n_frames': 10, 'ap_x': 5, 'ap_y': 1, 'focus': 3e3, 'defocus': 2e2},

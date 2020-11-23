@@ -14,7 +14,7 @@ else:
 
 if USE_CYTHON:
     extensions = [Extension(name='beam_calc',
-                            sources=["robust_speckle_tracking/bin/beam_calc.pyx"],
+                            sources=["pyrst/bin/beam_calc.pyx"],
                             language="c",
                             extra_compile_args=['-fopenmp'],
                             extra_link_args=['-lomp'],
@@ -26,7 +26,7 @@ if USE_CYTHON:
                                           os.path.join(sys.prefix, 'include')],
                             define_macros=[("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION")]),
                   Extension(name='st_utils',
-                            sources=["robust_speckle_tracking/bin/st_utils.pyx"],
+                            sources=["pyrst/bin/st_utils.pyx"],
                             language="c",
                             extra_compile_args=['-fopenmp'],
                             extra_link_args=['-lomp'],
@@ -45,14 +45,14 @@ if USE_CYTHON:
                                                 'binding': True,
                                                 'embedsignature': True})
 else:
-    extensions = [Extension(name="robust_speckle_tracking/bin/*",
-                            sources=["robust_speckle_tracking/bin/*.c"],
+    extensions = [Extension(name="pyrst/bin/*",
+                            sources=["pyrst/bin/*.c"],
                             include_dirs=[numpy.get_include()])]
 
 with open('README.md', 'r') as readme:
     long_description = readme.read()
 
-setup(name='rst',
+setup(name='pyrst',
       version='0.1.0',
       author='Nikolay Ivanov',
       author_email="nikolay.ivanov@desy.de",
@@ -75,4 +75,4 @@ setup(name='rst',
           "Operating System :: OS Independent"
       ],
       python_requires='>=3.7',
-      options={'build': {'build_lib': 'robust_speckle_tracking/bin'}})
+      options={'build': {'build_lib': 'pyrst/bin'}})

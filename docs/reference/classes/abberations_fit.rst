@@ -1,6 +1,6 @@
 AbberationsFit
 ==============
 
-.. autoclass:: robust_speckle_tracking.AbberationsFit
+.. autoclass:: pyrst.AbberationsFit
     :members:
     :inherited-members:

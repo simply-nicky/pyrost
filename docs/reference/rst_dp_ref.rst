@@ -1,7 +1,7 @@
 rst Core Classes
 ================
 
-.. automodule:: robust_speckle_tracking.data_processing
+.. automodule:: pyrst.data_processing
 
 .. toctree::
     :maxdepth: 1

@@ -1,6 +1,6 @@
 STParams
 ========
 
-.. autoclass:: robust_speckle_tracking.simulation.STParams
+.. autoclass:: pyrst.simulation.STParams
     :members:
     :inherited-members:

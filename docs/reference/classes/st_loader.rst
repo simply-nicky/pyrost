@@ -1,5 +1,5 @@
 STLoader
 ========
 
-.. autoclass:: robust_speckle_tracking.STLoader
+.. autoclass:: pyrst.STLoader
     :members:

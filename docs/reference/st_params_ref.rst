@@ -6,7 +6,7 @@ st_sim Parameters
 
 |
 
-.. automodule:: robust_speckle_tracking.simulation.st_sim_param
+.. automodule:: pyrst.simulation.st_sim_param
 
 .. toctree::
     :maxdepth: 1

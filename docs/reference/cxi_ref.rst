@@ -1,7 +1,7 @@
 rst CXI Protocol
 ================
 
-.. automodule:: robust_speckle_tracking.protocol
+.. automodule:: pyrst.protocol
 
 .. toctree::
     :maxdepth: 1

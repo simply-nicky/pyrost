@@ -1,6 +1,6 @@
 Protocol
 ========
 
-.. autoclass:: robust_speckle_tracking.Protocol
+.. autoclass:: pyrst.Protocol
     :members:
     :inherited-members:

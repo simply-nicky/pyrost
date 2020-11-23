@@ -1,7 +1,7 @@
 st_sim Core Classes
 ===================
 
-.. automodule:: robust_speckle_tracking.simulation.st_sim
+.. automodule:: pyrst.simulation.st_sim
 
 .. toctree::
     :maxdepth: 1

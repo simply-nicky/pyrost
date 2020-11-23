@@ -9,9 +9,9 @@ nonlinear least-squares algorithm.
 
 Examples
 --------
-Extract all the necessary data using a :func:`robust_speckle_tracking.protocol.loader` function.
+Extract all the necessary data using a :func:`pyrst.protocol.loader` function.
 
->>> import robust_speckle_tracking as rst
+>>> import pyrst as rst
 >>> loader = rst.loader()
 >>> rst_data = loader.load('results/test/data.cxi'
 

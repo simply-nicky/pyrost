@@ -1,7 +1,7 @@
 rst Abberations Fitting
 =======================
 
-.. automodule:: robust_speckle_tracking.abberations_fit
+.. automodule:: pyrst.abberations_fit
 
 .. toctree::
     :maxdepth: 1
