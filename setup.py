@@ -1,6 +1,8 @@
 from setuptools import setup
 from distutils.core import Extension
 import numpy
+import sys
+import os
 import cython_gsl
 
 try:
@@ -17,9 +19,11 @@ if USE_CYTHON:
                             extra_compile_args=['-fopenmp'],
                             extra_link_args=['-lomp'],
                             libraries=cython_gsl.get_libraries(),
-                            library_dirs=[cython_gsl.get_library_dir(), '/usr/local/lib'],
+                            library_dirs=[cython_gsl.get_library_dir(), '/usr/local/lib',
+                                          os.path.join(sys.prefix, 'lib')],
                             include_dirs=[numpy.get_include(),
-                                          cython_gsl.get_cython_include_dir()],
+                                          cython_gsl.get_cython_include_dir(),
+                                          os.path.join(sys.prefix, 'include')],
                             define_macros=[("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION")]),
                   Extension(name='st_utils',
                             sources=["robust_speckle_tracking/bin/st_utils.pyx"],
@@ -27,9 +31,11 @@ if USE_CYTHON:
                             extra_compile_args=['-fopenmp'],
                             extra_link_args=['-lomp'],
                             libraries=cython_gsl.get_libraries(),
-                            library_dirs=[cython_gsl.get_library_dir(), '/usr/local/lib'],
+                            library_dirs=[cython_gsl.get_library_dir(), '/usr/local/lib',
+                                          os.path.join(sys.prefix, 'lib')],
                             include_dirs=[numpy.get_include(),
-                                          cython_gsl.get_cython_include_dir()],
+                                          cython_gsl.get_cython_include_dir(),
+                                          os.path.join(sys.prefix, 'include')],
                             define_macros=[("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION")])]
     extensions = cythonize(extensions, annotate=False, language_level="3",
                            build_dir="build",
