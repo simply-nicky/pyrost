@@ -12,8 +12,14 @@
 #
 import os
 import sys
-sys.path.insert(0, os.path.abspath('../'))
 
+
+if (os.environ.get("READTHEDOCS") == "True") is False:
+    sys.path.insert(0, os.path.abspath('..'))
+else:
+    import site
+    p = site.getsitepackages()[0]
+    sys.path.insert(0, p)
 
 # -- Project information -----------------------------------------------------
 

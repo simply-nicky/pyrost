@@ -2,7 +2,6 @@ name: rst
 channels:
   - conda-forge
   - defaults
-channel_priority: strict
 dependencies:
   - cython
   - python=3.7
