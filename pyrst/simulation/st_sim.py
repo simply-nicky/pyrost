@@ -161,7 +161,7 @@ class STSim:
         self.logger.info("Generating wavefields at the sample's plane")
         self.wf0_x = lens_wp(x_arr=self.x_arr, wl=self.wl, ap=self.ap_x,
                              focus=self.focus, defoc=self.defocus, alpha=self.alpha,
-                             x0=(self.x0 - 0.5) * self.ap_x)
+                             xc=(self.x0 - 0.5) * self.ap_x)
         self.wf0_y = aperture_wp(x_arr=self.y_arr, z=self.focus + self.defocus,
                                  wl=self.wl, ap=self.ap_y)
         self.i0 = self.p0 / self.ap_x / self.ap_y
@@ -176,16 +176,16 @@ class STSim:
                                    br_dx=self.bar_size, rd=self.rnd_dev)
         self.bsteps = bsteps
         self.bs_t = barcode_profile(x_arr=self.x_arr, bx_arr=self.bsteps, sgm=self.bar_sigma,
-                               atn0=self.bulk_atn, atn=self.bar_atn, ss=self.step_size,
-                               nf=self.n_frames)
+                                    atn0=self.bulk_atn, atn=self.bar_atn, ss=self.step_size,
+                                    nf=self.n_frames)
         self.logger.info("The coefficients have been generated")
 
     def _init_detector(self):
         self.logger.info("Generating wavefields at the detector's plane")
         self.wf1_y = fraunhofer_1d(wf0=self.wf0_y, x_arr=self.y_arr, xx_arr=self.yy_arr,
-                                   dist=self.det_dist, wl=self.wl)
+                                   z=self.det_dist, wl=self.wl)
         self.wf1_x = fraunhofer_1d_scan(wf0=self.wf0_x * self.bs_t, x_arr=self.x_arr,
-                                   xx_arr=self.xx_arr, dist=self.det_dist, wl=self.wl)
+                                        xx_arr=self.xx_arr, z=self.det_dist, wl=self.wl)
         self.det_c = self.smp_c / self.wl / self.det_dist
         self.logger.info("The wavefields have been generated")
 

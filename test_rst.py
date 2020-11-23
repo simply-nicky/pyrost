@@ -43,7 +43,7 @@ def loader(request):
     """
     Return a default cxi protocol
     """
-    return rst.loader(request.param)
+    return pyrst.loader(request.param)
 
 @pytest.fixture(scope='function')
 def ini_path():
@@ -74,7 +74,7 @@ def test_st_sim(st_params):
 def test_loader_exp(exp_data, loader):
     assert os.path.isfile(exp_data['path'])
     data_dict = loader._load(**exp_data)
-    for attr in rst.STData.attr_set:
+    for attr in pyrst.STData.attr_set:
         assert not data_dict[attr] is None
 
 @pytest.mark.rst
@@ -83,7 +83,7 @@ def test_loader_sim(sim_data, loader):
     data_path = os.path.join(sim_data, 'data.cxi')
     assert os.path.isfile(data_path)
     data_dict = loader._load(data_path)
-    for attr in rst.STData.attr_set:
+    for attr in pyrst.STData.attr_set:
         assert not data_dict[attr] is None
 
 @pytest.mark.rst
@@ -94,7 +94,8 @@ def test_iter_update(sim_data, loader):
     st_data = loader.load(data_path)
     st_obj = st_data.get_st()
     pixel_map0 = st_obj.pixel_map.copy()
-    st_obj.iter_update([0, 150], ls_pm=2.5, ls_ri=15, verbose=True, n_iter=5)
+    st_obj.iter_update(sw_ss=0, sw_fs=150, ls_pm=2.5, ls_ri=15,
+                       verbose=True, n_iter=5)
     assert (st_obj.pixel_map == pixel_map0).all()
     assert st_obj.pixel_map.dtype == loader.protocol.known_types['float']
 
