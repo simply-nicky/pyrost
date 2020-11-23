@@ -1,6 +1,8 @@
 name: rst
 channels:
   - conda-forge
+  - defaults
+channel_priority: strict
 dependencies:
   - cython
   - python=3.7
@@ -13,3 +15,7 @@ dependencies:
   - sphinx_rtd_theme
   - mock
   - pillow
+  - pip
+  - pip:
+    - recommonmark
+    - readthedocs-sphinx-ext
