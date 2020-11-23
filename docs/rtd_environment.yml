@@ -9,3 +9,7 @@ dependencies:
   - h5py
   - numpy
   - scipy
+  - sphinx
+  - sphinx_rtd_theme
+  - mock
+  - pillow
