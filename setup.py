@@ -43,7 +43,7 @@ else:
 with open('README.md', 'r') as readme:
     long_description = readme.read()
 
-setup(name='robust_speckle_tracking',
+setup(name='rst',
       version='0.1.0',
       author='Nikolay Ivanov',
       author_email="nikolay.ivanov@desy.de",
