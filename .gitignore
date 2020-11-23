@@ -1,7 +1,7 @@
 # Diffraction pattern results and temporary development files
-figures/
-results/
-logs/
+/figures/
+/results/
+/logs/
 *.hdf5
 *.png
 *.eps
