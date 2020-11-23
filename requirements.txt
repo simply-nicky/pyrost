@@ -1,5 +1,5 @@
 Cython==0.29.21
-CythonGSL==0.2.3
+CythonGSL==0.2.2
 h5py==2.10.0
 numpy==1.19.1
 scipy==1.5.2
