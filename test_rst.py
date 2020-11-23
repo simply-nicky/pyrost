@@ -2,19 +2,20 @@ import os.path
 import pytest
 import robust_speckle_tracking as rst
 import robust_speckle_tracking.simulation as st_sim
+import numpy as np
 
-@pytest.fixture(params=[{'defoc': 1e2, 'det_dist': 5e5, 'n_frames': 10, 'ap_x': 30},
-                        {'defoc': 5e1, 'det_dist': 1e6, 'n_frames': 50, 'ap_x': 20}])
+@pytest.fixture(params=[{'det_dist': 5e5, 'n_frames': 10, 'ap_x': 5, 'ap_y': 1, 'focus': 3e3, 'defocus': 2e2},
+                        {'det_dist': 4.5e5, 'n_frames': 5, 'ap_x': 8, 'ap_y': 1.5, 'focus': 2e3, 'defocus': 1e2}])
 def st_params(request):
     """
-    Return a default simulation parameters instance
+    Return a default instance of simulation parameters 
     """
     return st_sim.parameters(**request.param)
 
 @pytest.fixture(params=['results/test', 'results/test_ideal'])
 def sim_data(request):
     """
-    Return a path to the simulated speckle tracking data
+    Return the data path and all the necessary parameters of the simulated speckle tracking 1d scan
     """
     return request.param
 
@@ -22,13 +23,27 @@ def sim_data(request):
                         {'scan_num': 1740, 'roi': (0, 1, 350, 1065), 'defocus': 1.5e-4}])
 def exp_data(request):
     """
-    Return a path to the experimental speckle tracking data
+    Return the data path and all the necessary parameters of the experimental speckle tracking 1d scan
     """
-    params = {}
+    params = {key: request.param[key] for key in request.param.keys() if key != 'scan_num'}
     params['path'] = 'results/exp/Scan_{:d}.cxi'.format(request.param['scan_num'])
-    params['defocus'] = request.param['defocus']
-    params['roi'] = request.param['roi']
     return params
+
+@pytest.fixture(params=[{'name': 'diatom.cxi', 'good_frames': np.arange(1, 121), 'defocus': 2.23e-3, 'roi': (70, 420, 50, 460)}])
+def exp_data_2d(request):
+    """
+    Return the data path and all the necessary parameters of the experimental speckle tracking 2d scan
+    """
+    params = {key: request.param[key] for key in request.param.keys() if key != 'name'}
+    params['path'] = os.path.join('results/exp', request.param['name'])
+    return params
+
+@pytest.fixture(params=['float32', 'float64'])
+def loader(request):
+    """
+    Return a default cxi protocol
+    """
+    return rst.loader(request.param)
 
 @pytest.fixture(scope='function')
 def ini_path():
@@ -56,36 +71,36 @@ def test_st_sim(st_params):
     assert ptych.shape[0] == st_params.n_frames
 
 @pytest.mark.rst
-def test_loader_exp(exp_data):
+def test_loader_exp(exp_data, loader):
     assert os.path.isfile(exp_data['path'])
-    data_dict = rst.loader()._load(**exp_data)
-    for attr in rst.STData.attr_dict:
+    data_dict = loader._load(**exp_data)
+    for attr in rst.STData.attr_set:
         assert not data_dict[attr] is None
 
 @pytest.mark.rst
-def test_loader_sim(sim_data):
+def test_loader_sim(sim_data, loader):
     assert os.path.isdir(sim_data)
-    protocol_path = os.path.join(sim_data, 'protocol.ini')
-    assert os.path.isfile(protocol_path)
     data_path = os.path.join(sim_data, 'data.cxi')
     assert os.path.isfile(data_path)
-    protocol = rst.Protocol.import_ini(protocol_path)
-    loader = rst.STLoader(protocol=protocol)
     data_dict = loader._load(data_path)
-    for attr in rst.STData.attr_dict:
+    for attr in rst.STData.attr_set:
         assert not data_dict[attr] is None
 
 @pytest.mark.rst
-def test_iter_update(sim_data):
+def test_iter_update(sim_data, loader):
     assert os.path.isdir(sim_data)
-    protocol_path = os.path.join(sim_data, 'protocol.ini')
-    assert os.path.isfile(protocol_path)
     data_path = os.path.join(sim_data, 'data.cxi')
     assert os.path.isfile(data_path)
-    protocol = rst.Protocol.import_ini(protocol_path)
-    loader = rst.STLoader(protocol=protocol)
     st_data = loader.load(data_path)
-    st_obj = st_data.get_last_st()
+    st_obj = st_data.get_st()
     pixel_map0 = st_obj.pixel_map.copy()
-    st_obj.iter_update(150, ls_pm=2.5, ls_ri=15, verbose=True, n_iter=5)
+    st_obj.iter_update([0, 150], ls_pm=2.5, ls_ri=15, verbose=True, n_iter=5)
     assert (st_obj.pixel_map == pixel_map0).all()
+    assert st_obj.pixel_map.dtype == loader.protocol.known_types['float']
+
+@pytest.mark.rst
+def test_data_process_routines(exp_data_2d, loader):
+    assert os.path.isfile(exp_data_2d['path'])
+    data = loader.load(**exp_data_2d)
+    data = data.make_mask(method='eiger-bad')
+    assert (data.get('whitefield') <= 65535).all()
