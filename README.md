@@ -1,5 +1,5 @@
 # pyrst
-Python Robust Speckle Tracking (pyrst) is a library for wavefront metrology
+Python Robust Speckle Tracking (**pyrst**) is a library for wavefront metrology
 and sample imaging based on ptychographic speckle tracking algorithm. This
 project takes over Andrew Morgan's [speckle_tracking](https://github.com/andyofmelbourne/speckle-tracking)
 project as an improved version aiming to add robustness to the optimisation
