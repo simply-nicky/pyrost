@@ -9,9 +9,9 @@ nonlinear least-squares algorithm.
 
 Examples
 --------
-Extract all the necessary data using a :func:`pyrst.protocol.loader` function.
+Extract all the necessary data using a :func:`pyrost.protocol.loader` function.
 
->>> import pyrst as rst
+>>> import pyrost as rst
 >>> loader = rst.loader()
 >>> rst_data = loader.load('results/test/data.cxi'
 

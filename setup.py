@@ -14,7 +14,7 @@ else:
 
 if USE_CYTHON:
     extensions = [Extension(name='beam_calc',
-                            sources=["pyrst/bin/beam_calc.pyx"],
+                            sources=["pyrost/bin/beam_calc.pyx"],
                             language="c",
                             extra_compile_args=['-fopenmp'],
                             extra_link_args=['-lomp'],
@@ -26,7 +26,7 @@ if USE_CYTHON:
                                           os.path.join(sys.prefix, 'include')],
                             define_macros=[("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION")]),
                   Extension(name='st_utils',
-                            sources=["pyrst/bin/st_utils.pyx"],
+                            sources=["pyrost/bin/st_utils.pyx"],
                             language="c",
                             extra_compile_args=['-fopenmp'],
                             extra_link_args=['-lomp'],
@@ -45,14 +45,14 @@ if USE_CYTHON:
                                                 'binding': True,
                                                 'embedsignature': True})
 else:
-    extensions = [Extension(name="pyrst/bin/*",
-                            sources=["pyrst/bin/*.c"],
+    extensions = [Extension(name="pyrost/bin/*",
+                            sources=["pyrost/bin/*.c"],
                             include_dirs=[numpy.get_include()])]
 
 with open('README.md', 'r') as readme:
     long_description = readme.read()
 
-setup(name='pyrst',
+setup(name='pyrost',
       version='0.1.0',
       author='Nikolay Ivanov',
       author_email="nikolay.ivanov@desy.de",
@@ -76,4 +76,4 @@ setup(name='pyrst',
           "Operating System :: OS Independent"
       ],
       python_requires='>=3.7',
-      options={'build': {'build_lib': 'pyrst/bin'}})
+      options={'build': {'build_lib': 'pyrost/bin'}})

@@ -1,6 +1,6 @@
 STParams
 ========
 
-.. autoclass:: pyrst.simulation.STParams
+.. autoclass:: pyrost.simulation.STParams
     :members:
     :inherited-members:

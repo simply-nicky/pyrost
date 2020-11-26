@@ -1,7 +1,7 @@
 st_sim Core Classes
 ===================
 
-.. automodule:: pyrst.simulation.st_sim
+.. automodule:: pyrost.simulation.st_sim
 
 .. toctree::
     :maxdepth: 1

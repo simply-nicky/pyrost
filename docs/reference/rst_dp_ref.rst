@@ -1,7 +1,7 @@
-pyrst Core Classes
-==================
+pyrost Core Classes
+===================
 
-.. automodule:: pyrst.data_processing
+.. automodule:: pyrost.data_processing
 
 .. toctree::
     :maxdepth: 1

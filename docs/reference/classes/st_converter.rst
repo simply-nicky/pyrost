@@ -1,5 +1,5 @@
 STConverter
 ===========
 
-.. autoclass:: pyrst.simulation.STConverter
+.. autoclass:: pyrost.simulation.STConverter
     :members:

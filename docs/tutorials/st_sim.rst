@@ -11,8 +11,8 @@ Experimental parameters
 ^^^^^^^^^^^^^^^^^^^^^^^
 
 Before performing the simulation, you need to choose experimental
-parameters. You can do it with :class:`pyrst.simulation.STParams` or
-:func:`pyrst.simulation.parameters`.
+parameters. You can do it with :class:`pyrost.simulation.STParams` or
+:func:`pyrost.simulation.parameters`.
 
 .. note:: Full list of experimental parameters is written in
     :doc:`../reference/st_params_ref`. All the spatial parameters are
@@ -20,7 +20,7 @@ parameters. You can do it with :class:`pyrst.simulation.STParams` or
 
 .. doctest::
 
-    >>> import pyrst.simulation as st_sim
+    >>> import pyrost.simulation as st_sim
     >>> params = st_sim.parameters(bar_size=0.7, bar_sigma=0.12, bar_atn=0.18,
     >>>                            bulk_atn=0.2, p0 = 5e4, th_s=8e-5, n_frames=100,
     >>>                            offset=2.0, step_size=0.1, defocus=150, alpha=0.05,
@@ -31,7 +31,7 @@ Performing the simulation
 
 Now you're able to generate the simulated data. It takes time to calculate the
 wavefronts, :class:`STSim` will post it's status during the process. You can
-either generate a stack of frames or a ptychograph. :class:`pyrst.simulation.STConverter`
+either generate a stack of frames or a ptychograph. :class:`pyrost.simulation.STConverter`
 saves the results to a CXI file using the provided CXI protocol.
 
 .. note:: :class:`STSim` logs the simulation procedure in `[package_root_folder]/logs`.
@@ -107,12 +107,12 @@ saves the results to a CXI file using the provided CXI protocol.
 Command-line interface
 ----------------------
 
-You can perform the whole simulation procedure with one command :code:`python -m pyrst.simulation`. To see all available arguments
-just type :code:`python -m pyrst.simulation --help`.
+You can perform the whole simulation procedure with one command :code:`python -m pyrost.simulation`. To see all available arguments
+just type :code:`python -m pyrost.simulation --help`.
 
 .. code-block:: console
 
-    $ python -m pyrst.simulation --help      
+    $ python -m pyrost.simulation --help      
     usage: __main__.py [-h] [-f INI_FILE] [--defocus DEFOCUS]
                        [--det_dist DET_DIST] [--step_size STEP_SIZE]
                        [--n_frames N_FRAMES] [--fs_size FS_SIZE]
@@ -161,7 +161,7 @@ just type :code:`python -m pyrst.simulation --help`.
       -v, --verbose         Turn on verbosity (default: True)
       -p, --ptych           Generate ptychograph data (default: False)
 
-    $ python -m pyrst.simulation results/sim_results --bar_size 0.7 --bar_sigma 0.12 \
+    $ python -m pyrost.simulation results/sim_results --bar_size 0.7 --bar_sigma 0.12 \
     --bar_atn 0.18 --bulk_atn 0.2 --p0 5e4 --th_s 8e-5 --n_frames 200 --offset 2 \
     --step_size 0.1 --defocus 150 --alpha 0.05 --x0 0.7 --rnd_dev 0.8 -p -v
     2020-11-25 17:29:35,570 - STSim - INFO - Initializing

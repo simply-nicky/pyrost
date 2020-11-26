@@ -1,7 +1,7 @@
 import os
 import pytest
-import pyrst
-import pyrst.simulation as st_sim
+import pyrost as rst
+import pyrost.simulation as st_sim
 import numpy as np
 
 @pytest.fixture(params=[{'det_dist': 5e5, 'n_frames': 10, 'ap_x': 5,
@@ -47,7 +47,7 @@ def loader(request):
     """
     Return a default cxi protocol
     """
-    return pyrst.loader(request.param)
+    return rst.loader(request.param)
 
 @pytest.fixture(scope='function')
 def ini_path():
@@ -77,7 +77,7 @@ def test_st_sim(st_params):
 def test_loader_exp(exp_data, loader):
     assert os.path.isfile(exp_data['path'])
     data_dict = loader.load_dict(**exp_data)
-    for attr in pyrst.STData.attr_set:
+    for attr in rst.STData.attr_set:
         assert not data_dict[attr] is None
 
 @pytest.mark.rst
@@ -86,7 +86,7 @@ def test_loader_sim(sim_data, loader):
     data_path = os.path.join(sim_data, 'data.cxi')
     assert os.path.isfile(data_path)
     data_dict = loader.load_dict(data_path)
-    for attr in pyrst.STData.attr_set:
+    for attr in rst.STData.attr_set:
         assert not data_dict[attr] is None
 
 @pytest.mark.rst

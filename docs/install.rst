@@ -3,7 +3,7 @@ Installation
 
 Dependencies
 ------------
-pyrst has the following **mandatory** runtime dependencies:
+pyrost has the following **mandatory** runtime dependencies:
 
 * `Python <https://www.python.org/>`_ 3.7 or later (Python 2.x is
   **not** supported).
@@ -17,32 +17,32 @@ pyrst has the following **mandatory** runtime dependencies:
 * `NumPy <https://numpy.org>`_ 1.19.0 or later.
 * `SciPy <https://scipy.org>`_ 1.5.2 or later.
 * `pyFFTW <https://github.com/pyFFTW/pyFFTW>`_ 0.12.0 or later, which is used
-  for the Fourier Transform wavefront reconstruction (:func:`pyrst.bin.ct_integrate`).
+  for the Fourier Transform wavefront reconstruction (:func:`pyrost.bin.ct_integrate`).
 
 Packages
 --------
-pyrst packages are available through `pypi <https://test.pypi.org/project/rst/>`_ on
+pyrost packages are available through `pypi <https://test.pypi.org/project/rst/>`_ on
 OS X as for now.
 
 pip
 ^^^
-pyrst is available on OS X via the `pip <https://pip.pypa.io/en/stable/>`_
+pyrost is available on OS X via the `pip <https://pip.pypa.io/en/stable/>`_
 package installer. Installation is pretty straightforward:
 
 .. code-block:: console
 
-    $ pip install pyrst
+    $ pip install pyrost
 
-If you want to install pyrst for a single user instead of
+If you want to install pyrost for a single user instead of
 system-wide, you can do:
 
 .. code-block:: console
 
-    $ pip install --user pyrst
+    $ pip install --user pyrost
 
 Installation from source
 ------------------------
-In order to install pyrst from source you will need:
+In order to install pyrost from source you will need:
 
 * a C++ compiler (gcc or clang will do).
 * `Python <https://www.python.org/>`_ 3.7 or later (Python 2.x is
@@ -57,19 +57,19 @@ In order to install pyrst from source you will need:
 * `NumPy <https://numpy.org>`_ 1.19.0 or later.
 
 After installing the dependencies, you can download the the source code from
-the `GitHub pyrst repository page <https://github.com/simply-nicky/pyrst>`_.
-Or you can download the last version of pyrst repository with ``git``:
+the `GitHub pyrost repository page <https://github.com/simply-nicky/pyrost>`_.
+Or you can download the last version of pyrost repository with ``git``:
 
 .. code-block:: console
 
-    $ git clone https://github.com/simply-nicky/pyrst.git
+    $ git clone https://github.com/simply-nicky/pyrost.git
 
-After downloading the pyrst's source code, ``cd`` into the repository root folder
+After downloading the pyrost's source code, ``cd`` into the repository root folder
 and build the C++ libraries using ``setuputils``:
 
 .. code-block:: console
 
-    $ cd pyrst
+    $ cd pyrost
     $ python setup.py install
 
 OR
@@ -80,6 +80,6 @@ OR
 
 Getting help
 ------------
-If you run into troubles installing pyrst, please do not hesitate
+If you run into troubles installing pyrost, please do not hesitate
 to contact me either through `my mail <nikolay.ivanov@desy.de>`_
-or by opening an issue report on `github <https://github.com/simply-nicky/pyrst/issues>`_.
+or by opening an issue report on `github <https://github.com/simply-nicky/pyrost/issues>`_.

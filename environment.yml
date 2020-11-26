@@ -1,4 +1,4 @@
-name: pyrst
+name: pyrost
 channels:
   - conda-forge
   - defaults

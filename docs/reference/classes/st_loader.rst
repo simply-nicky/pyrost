@@ -1,5 +1,5 @@
 STLoader
 ========
 
-.. autoclass:: pyrst.STLoader
+.. autoclass:: pyrost.STLoader
     :members:

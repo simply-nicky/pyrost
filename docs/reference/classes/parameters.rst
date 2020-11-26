@@ -1,4 +1,4 @@
 parameters
 ==========
 
-.. autofunction:: pyrst.simulation.parameters
+.. autofunction:: pyrost.simulation.parameters

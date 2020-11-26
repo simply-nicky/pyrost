@@ -1,4 +1,4 @@
 total_mse
 =========
 
-.. autofunction:: pyrst.bin.total_mse
+.. autofunction:: pyrost.bin.total_mse

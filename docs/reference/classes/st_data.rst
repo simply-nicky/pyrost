@@ -1,7 +1,7 @@
 STData
 ======
 
-.. autoclass:: pyrst.STData
+.. autoclass:: pyrost.STData
     :members:
     :inherited-members:
     :exclude-members: crop_data, mask_frames, make_mask, make_whitefield, make_pixel_map, update_defocus

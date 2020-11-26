@@ -1,4 +1,4 @@
 loader
 ======
 
-.. autofunction:: pyrst.loader
+.. autofunction:: pyrost.loader

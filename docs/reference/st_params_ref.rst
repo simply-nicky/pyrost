@@ -6,7 +6,7 @@ st_sim Parameters
 
 |
 
-.. automodule:: pyrst.simulation.st_sim_param
+.. automodule:: pyrost.simulation.st_sim_param
 
 .. toctree::
     :maxdepth: 1

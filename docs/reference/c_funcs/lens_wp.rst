@@ -1,4 +1,4 @@
 lens_wp
 =======
 
-.. autofunction:: pyrst.bin.lens_wp
+.. autofunction:: pyrost.bin.lens_wp
