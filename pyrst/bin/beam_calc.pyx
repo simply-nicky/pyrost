@@ -86,8 +86,9 @@ def lens_wp(float_t[::1] x_arr, float_t wl, float_t ap, float_t focus,
         Third order abberations coefficient [rad/mrad^3].
     xc : float
         Center point of the lens' abberations [um].
-    
-    Returns:
+
+    Returns
+    -------
     numpy.ndarray
         Beam's wavefront at the sample's plane.
 
@@ -212,15 +213,20 @@ def fraunhofer_1d(complex_t[::1] wf0, float_t[::1] x_arr, float_t[::1] xx_arr, f
     Parameters
     ----------
     wf0 : numpy.ndarray
-        Wavefront at the plane downstream.
+        Wavefront at the plane upstream.
     x_arr : numpy.ndarray
-        Coordinates at the plane downstream [um].
-    xx_arr : numpy.ndarray
         Coordinates at the plane upstream [um].
+    xx_arr : numpy.ndarray
+        Coordinates at the plane downstream [um].
     z : float
         Distance between the planes [um].
     wl : float
         Beam's wavelength [um].
+
+    Returns
+    -------
+    numpy.ndarray
+        Wavefront at the plane downstream.
 
     Notes
     -----
@@ -244,15 +250,20 @@ def fraunhofer_1d_scan(complex_t[:, ::1] wf0, float_t[::1] x_arr, float_t[::1] x
     Parameters
     ----------
     wf0 : numpy.ndarray
-        An array of wavefronts at the plane downstream.
+        Array of wavefronts at the plane upstream.
     x_arr : numpy.ndarray
-        Coordinates at the plane downstream [um].
-    xx_arr : numpy.ndarray
         Coordinates at the plane upstream [um].
+    xx_arr : numpy.ndarray
+        Coordinates at the plane downstream [um].
     z : float
         Distance between the planes [um].
     wl : float
         Beam's wavelength [um].
+
+    Returns
+    -------
+    numpy.ndarray
+        Array of wavefronts at the plane downstream.
 
     See Also
     --------

@@ -36,7 +36,7 @@ array([-5.19025587e+07, -8.63773622e+05,  3.42849675e+03,  2.98523995e+01,
 from __future__ import division
 
 import numpy as np
-from scipy.ndimage import gaussian_filter
+from scipy.ndimage import gaussian_filter, gaussian_gradient_magnitude
 from .abberations_fit import AbberationsFit
 from .data_container import DataContainer, dict_to_object
 from .bin import make_whitefield, make_reference, update_pixel_map_gs, update_pixel_map_nm, total_mse, ct_integrate
@@ -77,8 +77,6 @@ class STData(DataContainer):
 
     * basis_vectors : Detector basis vectors
     * data : Measured intensity frames.
-    * defocus_ss : Defocus distance for the slow detector axis [m].
-    * defocus_fs : Defocus distance for the fast detector axis [m].
     * distance : Sample-to-detector distance [m].
     * translations : Sample's translations [m].
     * wavelength : Incoming beam's wavelength [m].
@@ -87,6 +85,8 @@ class STData(DataContainer):
 
     Optional attributes:
 
+    * defocus_ss : Defocus distance for the slow detector axis [m].
+    * defocus_fs : Defocus distance for the fast detector axis [m].
     * good_frames : An array of good frames' indices.
     * mask : Bad pixels mask.
     * phase : Phase profile of lens' abberations.
@@ -100,10 +100,11 @@ class STData(DataContainer):
     * roi : Region of interest in the detector's plane.
     * whitefield : Measured frames' whitefield.
     """
-    attr_set = {'basis_vectors', 'data', 'defocus_fs', 'defocus_ss', 'distance',
-                'translations', 'wavelength', 'x_pixel_size', 'y_pixel_size'}
-    init_set = {'good_frames', 'mask', 'phase', 'pixel_abberations', 'pixel_map',
-                'pixel_translations', 'reference_image', 'roi', 'whitefield'}
+    attr_set = {'basis_vectors', 'data', 'distance', 'translations', 'wavelength',
+                'x_pixel_size', 'y_pixel_size'}
+    init_set = {'defocus_fs', 'defocus_ss', 'good_frames', 'mask', 'phase',
+                'pixel_abberations', 'pixel_map', 'pixel_translations',
+                'reference_image', 'roi', 'whitefield'}
 
     def __init__(self, protocol, **kwargs):
         # Initialize protocol for the proper data type conversion in __setattr__
@@ -129,23 +130,31 @@ class STData(DataContainer):
         if self.whitefield is None:
             self.whitefield = make_whitefield(data=self.data[self.good_frames], mask=self.mask)
 
-        # Set a pixel translations
-        if self.pixel_translations is None:
-            self.pixel_translations = (self.translations[:, None] * self.basis_vectors).sum(axis=-1)
-            defocus = np.array([self.defocus_ss, self.defocus_fs])
-            self.pixel_translations /= (self.basis_vectors**2).sum(axis=-1) * defocus / self.distance
-            self.pixel_translations -= self.pixel_translations.mean(axis=0)
+        # Initialize a list of SpeckleTracking objects
+        self._st_objects = []
+
+        # Initialize a list of AbberationsFit objects
+        self._ab_fits = []
 
         # Set a pixel map, deviation angles, and phase
         if self.pixel_map is None:
             self._init_pixel_map()
 
-        # Initialize a list of SpeckleTracking objects
-        self._st_objects = []
+        if self._isdefocus:
+            # Set a pixel translations
+            if self.pixel_translations is None:
+                self.pixel_translations = (self.translations[:, None] * self.basis_vectors).sum(axis=-1)
+                defocus = np.array([self.defocus_ss, self.defocus_fs])
+                self.pixel_translations /= (self.basis_vectors**2).sum(axis=-1) * defocus / self.distance
+                self.pixel_translations -= self.pixel_translations.mean(axis=0)
 
-        # Initialize an AbberationsFit object
-        self._ab_fits = [AbberationsFit.import_data(self, 0),
-                         AbberationsFit.import_data(self, 1)]
+            # Initialize AbberationsFit objects
+            self._ab_fits.extend([AbberationsFit.import_data(self, 0),
+                                  AbberationsFit.import_data(self, 1)])
+
+    @property
+    def _isdefocus(self):
+        return not self.defocus_ss is None and not self.defocus_fs is None
 
     def _init_pixel_map(self):
         self.pixel_map = np.indices(self.whitefield.shape)
@@ -367,10 +376,14 @@ class STData(DataContainer):
             algorithm description.
         """
         fit_obj = self.get_fit(axis)
-        return fit_obj.fit_pixel_abberations(self.get('pixel_abberations')[axis].mean(axis=1 - axis),
-                                             max_order=max_order, xtol=xtol, ftol=ftol, loss=loss)
+        if fit_obj is None:
+            return None
+        else:
+            pixel_ab = self.get('pixel_abberations')[axis].mean(axis=1 - axis)
+            return fit_obj.fit_pixel_abberations(pixel_ab, max_order=max_order,
+                                                 xtol=xtol, ftol=ftol, loss=loss)
 
-    def defocus_sweep(self, defoci, ls_ri, axes=(1,)):
+    def defocus_sweep(self, defoci_fs, defoci_ss=None, ls_ri=30):
         """Calculate an array of `reference_image` for `defoci`
         and return fugures of merit of `reference_image` sharpness
         (the higher the value the sharper `reference_image` is).
@@ -379,13 +392,12 @@ class STData(DataContainer):
 
         Parameters
         ----------
-        defoci : numpy.ndarray
-            Array of defocus distances [m].
-        ls_ri : float
+        defoci_fs : numpy.ndarray
+            Array of defocus distances along the fast detector axis [m].
+        defoci_ss : numpy.ndarray, optional
+            Array of defocus distances along the slow detector axis [m].
+        ls_ri : float, optional
             `reference_image` length scale in pixels.
-        axes : tuple, optional
-            Detector axes along which the defocus distances
-            are considered, (0 - slow axis, 1 - fast axis).
 
         Returns
         -------
@@ -396,13 +408,14 @@ class STData(DataContainer):
         --------
         SpeckleTracking.update_reference : `reference_image` update algorithm.
         """
-        df_arr = np.array([self.defocus_ss, self.defocus_fs]) * np.ones((defoci.size, 2))
-        df_arr[:, axes] = defoci[:, None]
+        if defoci_ss is None:
+            defoci_ss = defoci_fs.copy()
         sweep_scan = []
-        for defocus in df_arr:
-            st_data = self.update_defocus(defocus)
+        for defocus_fs, defocus_ss in zip(defoci_fs, defoci_ss):
+            st_data = self.update_defocus(defocus_fs, defocus_ss)
             st_obj = st_data.get_st().update_reference(ls_ri=ls_ri)
-            sweep_scan.append(np.mean(np.gradient(st_obj.reference_image[0])**2))
+            ri_gm = gaussian_gradient_magnitude(st_obj.reference_image, sigma=ls_ri)
+            sweep_scan.append(np.mean(ri_gm**2))
         return np.array(sweep_scan)
 
     def get(self, attr, value=None):
@@ -424,30 +437,36 @@ class STData(DataContainer):
         """
         if attr in self:
             val = super(STData, self).get(attr)
-            if attr in ['data', 'pixel_abberations', 'mask', 'phase', 'pixel_map', 'whitefield']:
-                val = val[..., self.roi[0]:self.roi[1], self.roi[2]:self.roi[3]]
-                val = np.ascontiguousarray(val)
-            if attr in ['basis_vectors', 'data', 'pixel_translations', 'translations']:
-                val = val[self.good_frames]
-                val = np.ascontiguousarray(val)
+            if not val is None:
+                if attr in ['data', 'pixel_abberations', 'mask', 'phase', 'pixel_map', 'whitefield']:
+                    val = val[..., self.roi[0]:self.roi[1], self.roi[2]:self.roi[3]]
+                    val = np.ascontiguousarray(val)
+                if attr in ['basis_vectors', 'data', 'pixel_translations', 'translations']:
+                    val = val[self.good_frames]
+                    val = np.ascontiguousarray(val)
             return val
         else:
             return value
 
     def get_st(self):
         """Return :class:`SpeckleTracking` object derived
-        from the container.
+        from the container. Return None if `defocus_fs`
+        or `defocus_ss` doesn't exist in the container.
 
         Returns
         -------
-        SpeckleTracking
+        SpeckleTracking or None
             An instance of :class:`SpeckleTracking` derived
-            from the container.
+            from the container. None if `defocus_fs` or
+            `defocus_ss` is None.
         """
-        if self._st_objects:
-            return self._st_objects[0]
+        if self._isdefocus:
+            if self._st_objects:
+                return self._st_objects[0]
+            else:
+                return SpeckleTracking.import_data(self)
         else:
-            return SpeckleTracking.import_data(self)
+            return None
 
     def get_st_list(self):
         """Return a list of all the :class:`SpeckleTracking`
@@ -464,7 +483,8 @@ class STData(DataContainer):
     def get_fit(self, axis=1):
         """Return an :class:`AbberationsFit` object for
         parametric regression of the lens' abberations
-        profile.
+        profile. Return None if `defocus_fs` or
+        `defocus_ss` doesn't exist in the container.
 
         Parameters
         ----------
@@ -473,21 +493,34 @@ class STData(DataContainer):
 
         Returns
         -------
-        AbberationsFit
+        AbberationsFit or None
             An instance of :class:`AbberationsFit` class.
+            None if `defocus_fs` or `defocus_ss` is None.
         """
-        return self._ab_fits[axis]
+        if self._isdefocus:
+            return self._ab_fits[axis]
+        else:
+            return None
 
-    def write_cxi(self, cxi_file):
+    def write_cxi(self, cxi_file, overwrite=True):
         """Write all the `attr` to a CXI file `cxi_file`.
 
         Parameters
         ----------
         cxi_file : h5py.File
             :class:`h5py.File` object of the CXI file.
+        overwrite : bool, optional
+            Overwrite the content of `cxi_file` file if it's True.
+
+        Raises
+        ------
+        ValueError
+            If `overwrite` is False and the data is already present
+            in `cxi_file`.
         """
-        for attr in self:
-            self.protocol.write_cxi(attr, self.__dict__[attr], cxi_file)
+        for attr, data in self.items():
+            if isinstance(data, np.ndarray):
+                self.protocol.write_cxi(attr, data, cxi_file, overwrite=overwrite)
 
 class SpeckleTracking(DataContainer):
     """Wrapper class for the  Robust Speckle Tracking algorithm.

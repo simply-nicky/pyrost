@@ -238,7 +238,7 @@ cdef void krig_data_c(float_t[::1] I, float_t[:, :, ::1] I_n, float_t[:, ::1] W,
         int kk0 = k - djk if k - djk > 0 else 0
         int kk1 = k + djk if k + djk < c else c
         float_t w0 = 0, rss = 0, r
-    for i in range(a):
+    for i in range(a + 1):
         I[i] = 0
     for jj in range(jj0, jj1):
         for kk in range(kk0, kk1):
@@ -247,17 +247,35 @@ cdef void krig_data_c(float_t[::1] I, float_t[:, :, ::1] I_n, float_t[:, ::1] W,
             rss += W[jj, kk]**3 * r**2
             for i in range(a):
                 I[i] += I_n[i, jj, kk] * W[jj, kk] * r
-    for i in range(a):
-        I[i] /= w0
-    I[a] = rss / w0**2
+    if w0:
+        for i in range(a):
+            I[i] /= w0
+        I[a] = rss / w0**2
 
 def krig_data(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, :, ::1] u,
               int j, int k, float_t ls):
     dtype = np.float64 if float_t is np.float64_t else np.float32
     cdef:
-        int a = I_n.shape[0]
-        float_t[::1] I = np.empty(a + 1, dtype=dtype)
-    krig_data_c(I, I_n, W, u, j, k, ls)
+        int a = I_n.shape[0], b = I_n.shape[1], c = I_n.shape[2], i, jj, kk
+        float_t[::1] I = np.zeros(a + 1, dtype=dtype)
+        int djk = <int>(ceil(2 * ls))
+        int jj0 = j - djk if j - djk > 0 else 0
+        int jj1 = j + djk if j + djk < b else b
+        int kk0 = k - djk if k - djk > 0 else 0
+        int kk1 = k + djk if k + djk < c else c
+        float_t w0 = 0, rss = 0, r
+    print(jj0, jj1, kk0, kk1)
+    for jj in range(jj0, jj1):
+        for kk in range(kk0, kk1):
+            r = rbf((u[0, jj, kk] - u[0, j, k])**2 + (u[1, jj, kk] - u[1, j, k])**2, ls)
+            w0 += r * W[jj, kk]**2
+            rss += W[jj, kk]**3 * r**2
+            for i in range(a):
+                I[i] += I_n[i, jj, kk] * W[jj, kk] * r
+    if w0:
+        for i in range(a):
+            I[i] /= w0
+        I[a] = rss / w0**2
     return np.asarray(I)
 
 cdef void frame_reference(float_t[:, ::1] I0, float_t[:, ::1] w0, float_t[:, ::1] I, float_t[:, ::1] W,
@@ -490,9 +508,9 @@ cdef void mse_min_c(float_t[::1] I, float_t[:, ::1] I0, float_t[::1] u,
     else:
         subpixel_ref_1d(I, I0, u, di, dj, l1)
     
-def upm_search(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0,
-               float_t[:, :, ::1] u0, float_t[::1] di, float_t[::1] dj,
-               int sw_ss, int sw_fs, float_t ls):
+def update_pixel_map_gs(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0,
+                        float_t[:, :, ::1] u0, float_t[::1] di, float_t[::1] dj,
+                        int sw_ss, int sw_fs, float_t ls):
     dtype = np.float64 if float_t is np.float64_t else np.float32
     cdef:
         int a = I_n.shape[0], b = I_n.shape[1], c = I_n.shape[2]
@@ -654,57 +672,6 @@ def init_newton(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0,
             init_newton_c(sptr[t], I[t], I0, u[:, j, k], di, dj, bnds)
             l1[j, k] = sptr[t, 2]
     return np.asarray(l1)
-
-# def newton_1d(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0,
-#               float_t[:, :, ::1] u, float_t[::1] di, float_t[::1] dj, int j, int k,
-#               int sw_fs, float_t ls, int max_iter=500, float_t x_tol=1e-12, bool_t verbose=False):
-#     dtype = np.float64 if float_t is np.float64_t else np.float32
-#     cdef:
-#         int a = I_n.shape[0], aa = I0.shape[0], bb = I0.shape[1], fslb, fsub, n
-#         float_t ss, fs, mu, dfs
-#         float_t[::1] sptr = np.zeros(3, dtype=dtype)
-#         float_t[::1] I = np.empty(a + 1, dtype=dtype)
-#         float_t mptr0[2]
-#         float_t mptr1[2]
-#         float_t mptr2[2]
-#         int bnds[6] # sw_ss, sw_fs, di0, di1, dj0, dj1
-#     bnds[0] = 1; bnds[1] = sw_fs
-#     bnds[2] = <int>(min_float(&di[0], a)); bnds[3] = <int>(max_float(&di[0], a)) + aa
-#     bnds[4] = <int>(min_float(&dj[0], a)); bnds[5] = <int>(max_float(&dj[0], a)) + bb
-#     fslb = -bnds[1] if bnds[1] < u[1, j, k] - bnds[4] else <int>(bnds[4] - u[1, j, k])
-#     fsub = bnds[1] if bnds[1] < bnds[5] - u[1, j, k] else <int>(bnds[5] - u[1, j, k])
-#     krig_data_c(I, I_n, W, u, j, k, ls)
-#     init_newton_c(sptr, I, I0, u[:, j, k], di, dj, &bnds[0])
-#     if verbose:
-#         print('l1 = %f, rss = %f' % (sptr[2], sptr[3]))
-#     ss = sptr[0]; fs = sptr[1]; mptr1[1] = NO_VAR; mptr2[1] = NO_VAR
-#     if verbose:
-#         print('n = 0, fs = %f' % fs)
-#     for n in range(max_iter):
-#         mse_bi(mptr0, I, I0, di, dj, u[0, j, k] + ss, u[1, j, k] + fs)
-#         mu = MU_C * mptr0[1]**0.25 / sqrt(sptr[2])
-#         mse_bi(mptr1, I, I0, di, dj, u[0, j, k] + ss, u[1, j, k] + fs - mu / 2)
-#         mse_bi(mptr2, I, I0, di, dj, u[0, j, k] + ss, u[1, j, k] + fs + mu / 2)
-#         dfs = -(mptr2[0] - mptr1[0]) / mu / sptr[2]
-#         if verbose:
-#             print('dmse = %f' % (-(mptr2[0] - mptr1[0]) / mu))
-#         fs += dfs
-#         if dfs < x_tol and dfs > -x_tol:
-#             if verbose:
-#                 print('x_tol achieved, n = %d' % n)
-#             sptr[1] = fs
-#             break
-#         if verbose:
-#             print('n = %d, fs = %f, mu = %f' % (n, fs, mu))
-#         if fs >= fsub or fs < fslb:
-#             if verbose:
-#                 print('out of bounds')
-#             break
-#     else:
-#         if verbose:
-#             print('max iter achived')
-#         sptr[1] = fs
-#     return np.asarray(sptr)
 
 def total_mse(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0,
               float_t[:, :, ::1] u, float_t[::1] di, float_t[::1] dj, float_t ls):

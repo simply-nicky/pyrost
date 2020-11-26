@@ -189,6 +189,14 @@ class STSim:
         self.det_c = self.smp_c / self.wl / self.det_dist
         self.logger.info("The wavefields have been generated")
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, exc_tb):
+        self.close()
+        if not exc_type is None:
+            return False
+
     def source_curve(self, dist, dx):
         """Return source's rocking curve profile at `dist` distance from
         the lens.
@@ -461,9 +469,10 @@ class STConverter:
             logger.info("{:s} saved".format(os.path.join(dir_path, 'data.cxi')))
 
 def main():
-    """Main fuction to run Speckle Tracking simulation and save the data to a CXI file.
+    """Main fuction to run Speckle Tracking simulation and save the results to a CXI file.
     """
-    parser = argparse.ArgumentParser(description="Run Speckle Tracking simulation")
+    parser = argparse.ArgumentParser(description="Run Speckle Tracking simulation",
+                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('out_path', type=str, help="Output folder path")
     parser.add_argument('-f', '--ini_file', type=str,
                         help="Path to an INI file to fetch all of the simulation parameters")
@@ -486,25 +495,22 @@ def main():
     parser.add_argument('--bar_atn', type=float, help="Bar attenuation")
     parser.add_argument('--bulk_atn', type=float, help="Bulk attenuation")
     parser.add_argument('--rnd_dev', type=float, help="Bar random deviation")
-    parser.add_argument('--offset', type=float, help="sample's offset at the beginning and the end of the scan [um]")
+    parser.add_argument('--offset', type=float,
+                        help="sample's offset at the beginning and the end of the scan [um]")
     parser.add_argument('-v', '--verbose', action='store_true', help="Turn on verbosity")
     parser.add_argument('-p', '--ptych', action='store_true', help="Generate ptychograph data")
+    parser.set_defaults(**parameters().export_dict())
 
-    params = parameters().export_dict()
-    args_dict = vars(parser.parse_args())
-    for param in args_dict:
-        if not args_dict[param] is None:
-            params[param] = args_dict[param]
-    if 'ini_file' in params:
-        st_params = STParams.import_ini(args_dict['ini_file'])
+    args = vars(parser.parse_args())
+    if args['ini_file']:
+        st_params = STParams.import_ini(args['ini_file'])
     else:
-        st_params = STParams.import_dict(**params)
+        st_params = STParams.import_dict(**args)
 
-    st_sim = STSim(st_params)
     st_converter = STConverter()
-    if params['ptych']:
-        data = st_sim.ptychograph()
-    else:
-        data = st_sim.frames()
-    st_converter.save_sim(data, st_sim, params['out_path'])
-    st_sim.close()
+    with STSim(st_params) as sim_obj:
+        if args['ptych']:
+            data = sim_obj.ptychograph()
+        else:
+            data = sim_obj.frames()
+        st_converter.save_sim(data, sim_obj, args['out_path'])

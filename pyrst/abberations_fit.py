@@ -375,6 +375,7 @@ class AbberationsFit(DataContainer, LeastSquares):
         dict
             :class:`dict` with the following fields defined:
 
+            * pixels : Array of x coordinates in pixels.
             * pix_fit : Array of the polynomial function coefficients of
               the `pixel_abberations` fit.
             * ang_fit : Array of the polynomial function coefficients of
@@ -395,5 +396,5 @@ class AbberationsFit(DataContainer, LeastSquares):
                             xtol=xtol, ftol=ftol, loss=loss)
         r_sq = 1 - np.sum(self.errors(fit, pixels, pixel_ab)**2) / \
                np.sum((pixel_ab.mean() - pixel_ab)**2)
-        return {'pix_fit': fit, 'ang_fit': self.to_ang_fit(fit), 'pix_err': err,
-                'ph_fit': self.to_ph_fit(fit, pixels), 'r_sq': r_sq}
+        return {'pixels': pixels, 'pix_fit': fit, 'ang_fit': self.to_ang_fit(fit),
+                'pix_err': err, 'ph_fit': self.to_ph_fit(fit, pixels), 'r_sq': r_sq}

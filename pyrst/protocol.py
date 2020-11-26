@@ -521,7 +521,7 @@ class Protocol(INIParser):
         cxi_file : h5py.File
             :class:`h5py.File` object of the CXI file.
         overwrite : bool, optional
-            Overwrite the CXI file if it's True.
+            Overwrite the content of `cxi_file` if it's True.
         cxi_path : str, optional
             Path to the data attribute. If `cxi_path` is None,
             the path will be inferred according to the protocol.
@@ -533,7 +533,7 @@ class Protocol(INIParser):
         ------
         ValueError
             If `overwrite` is False and the data is already present
-            at the given location.
+            at the given location in `cxi_file`.
         """
         if data is None:
             pass
@@ -632,7 +632,23 @@ class STLoader(INIParser):
         else:
             return None
 
-    def _load(self, path, **kwargs):
+    def load_dict(self, path, **kwargs):
+        """Load a CXI file and return a :class:`dict` with
+        all the data fetched from the file.
+
+        Parameters
+        ----------
+        path : str
+            Path to the cxi file.
+        **kwargs : dict
+            Dictionary of attribute values,
+            which will be parsed to the `STData` object instead.
+
+        Returns
+        -------
+        dict
+            Dictionary with all the data fetched from the CXI file.
+        """
         data_dict = {}
         with h5py.File(path, 'r') as cxi_file:
             for attr in self.protocol:
@@ -663,8 +679,7 @@ class STLoader(INIParser):
             Data container object with all the necessary data
             for the Speckle Tracking algorithm.
         """
-        data_dict = self._load(path, **kwargs)
-        return STData(self.protocol, **data_dict)
+        return STData(self.protocol, **self.load_dict(path, **kwargs))
 
 def loader(float_precision='float64'):
     """Return the default CXI loader.

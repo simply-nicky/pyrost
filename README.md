@@ -1,45 +1,37 @@
-# Robust Ptychographic Speckle Tracking project
-This project takes over [Andrew Morgan's Ptychographic Speckle Tracking](https://github.com/andyofmelbourne/speckle-tracking) as an improved version aiming to add robustness to the optimisation algorithm in the case of the high noise present in the measured data. The project is written in Python and compatible with Python 3.X
+# pyrst
+Python Robust Speckle Tracking (pyrst) is a library for wavefront metrology
+and sample imaging based on ptychographic speckle tracking algorithm. This
+project takes over Andrew Morgan's [speckle_tracking](https://github.com/andyofmelbourne/speckle-tracking)
+project as an improved version aiming to add robustness to the optimisation
+algorithm in the case of the high noise present in the measured data.
 
-## 1. Speckle Tracking simulation
-Speckle Tracking simulation (pyrst.simulation) is based on the Fresnel Diffraction wavefield propagation equations. The package is capable of generating a series of convergent X-ray beam snapshots produced by a lens with third order abberations profile. The X-ray beam goes through a barcode sample translated in transverse direction by a step at each frame.
+The documentation can be found on [Read the Docs](https://robust-speckle-tracking.readthedocs.io/en/latest/).
 
-The st_sim framework is comprised of STParams, STSim, and STConverter classes:
+## Dependencies
 
-- STParams stores all the simulation parameters (see the docstring for the whole list of parameters), parameters() method returns the default set of parameters
+- [Python](https://www.python.org/) 3.7 or later (Python 2.x is **not** supported).
+- [GNU Scientific Library](https://www.gnu.org/software/gsl/) 2.4 or later.
+- [LLVM's OpenMP library](http://openmp.llvm.org) 10.0.0 or later.
+- [h5py](https://www.h5py.org) 2.10.0 or later.
+- [NumPy](https://numpy.org) 1.19.0 or later.
+- [SciPy](https://scipy.org) 1.5.2 or later.
+- [pyFFTW](https://github.com/pyFFTW/pyFFTW) 0.12.0 or later.
 
-- STSim performs the main calculations
+## Installation
+We recommend **not** building from source, but install the release from [pypi](https://test.pypi.org/project/rst/)
+with the pip package installer:
 
-- STConverter converts the simulated to data to the CXI file, that could be processed with Andrew Morgan's speckle-tracking package.
+    pip install pyrst
 
-## 2. Robust Speckle Tracking algorithm
-An improved Speckle Tracking algorithm aimed to improve the phase sensitivity in the case of low signal-to-noise ratio. Works with the same cxi file protocol used in Andrew Morgan's speckle-tracking package.
+Pre-build binary wheels for OS X are available in [pypi](https://test.pypi.org/project/rst/) as for now.
 
-The fromawork consists of Protocol, STLoader, STData, SpeckleTracking1D, and AbberationsFit classes:
+## Installation from source
+In order to build the package from source simply execute the following command:
 
-- Protocol provides a list of data attribute's paths used in the cxi file and default data types accordingly
+    python setup.py install
 
-- STLoader loads a cxi file according to the provided protocol and yields an STData object
+or:
 
-- STData serves a data container purpose for all the data necessary to perform the speckle tracking. The class provides a list of handy functions to work with the data (for instance, masking frames, generating a new whitefield etc.)
+    pip install -r requirements.txt -e . -v
 
-- SpeckleTracking1D performs the lens' wavefront and umabbirated sample profile inference according to the robust speckle tracking algorithm
-
-- AbberationsFit is capable of least squares model regression of the provided lens' abberations profile in order to attain the abberation coefficients
-
-## Instalation
-
-Required dependencies:
-
-- Cython
-- CythonGSL
-- GNU Scientific Library
-- h5py
-- numpy
-- scipy
-
-Execute the following command in order to compile the c library used for the most computational heavy parts of code:
-
-```
-$ st_simulation % python setup.py build
-```
+That cythonizes the Cython extensions and builds them into ``/pyrst/bin``.

@@ -7,11 +7,17 @@ class dict_to_object:
         self.finstance = finstance
 
     def __get__(self, instance, cls):
-        return return_obj_method(self.finstance.__get__(instance, cls), cls, instance)
+        return return_obj_method(self.finstance.__get__(instance, cls), instance, cls)
 
 class return_obj_method:
-    def __init__(self, dict_func, cls, instance):
-        self.dict_func, self.cls, self.instance = dict_func, cls, instance
+    sig_attrs = {'__annotations__', '__doc__', '__module__',
+                 '__name__', '__qualname__'}
+
+    def __init__(self, func, instance, cls):
+        self.instance, self.cls = instance, cls
+        self.__wrapped__ = func
+        for attr in self.sig_attrs:
+            self.__dict__[attr] = getattr(func, attr)
 
     def __call__(self, *args, **kwargs):
         dct = {}
@@ -20,11 +26,11 @@ class return_obj_method:
                 dct[key] = np.copy(val)
             else:
                 dct[key] = val
-        dct.update(self.dict_func(*args, **kwargs))
+        dct.update(self.__wrapped__(*args, **kwargs))
         return self.cls(**dct)
 
     def inplace_update(self, *args, **kwargs):
-        dct = self.dict_func(*args, **kwargs)
+        dct = self.__wrapped__(*args, **kwargs)
         for key, val in dct.items():
             self.instance.__setattr__(key, val)
 

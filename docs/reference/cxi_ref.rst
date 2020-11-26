@@ -1,5 +1,5 @@
-rst CXI Protocol
-================
+pyrst CXI Protocol
+==================
 
 .. automodule:: pyrst.protocol
 

@@ -1,5 +1,5 @@
-rst Abberations Fitting
-=======================
+pyrst Abberations Fitting
+=========================
 
 .. automodule:: pyrst.abberations_fit
 

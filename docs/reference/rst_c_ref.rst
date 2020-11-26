@@ -1,5 +1,5 @@
-rst Core Functions
-==================
+pyrst Core Functions
+====================
 
 Core functions of the rst data processing 
 pipeline. All the functions are written in `Cython`_.

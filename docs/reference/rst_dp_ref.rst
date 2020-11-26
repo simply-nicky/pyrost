@@ -1,5 +1,5 @@
-rst Core Classes
-================
+pyrst Core Classes
+==================
 
 .. automodule:: pyrst.data_processing
 

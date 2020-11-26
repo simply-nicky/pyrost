@@ -57,6 +57,7 @@ setup(name='pyrst',
       author='Nikolay Ivanov',
       author_email="nikolay.ivanov@desy.de",
       long_description=long_description,
+      long_description_content_type='text/markdown',
       url="https://github.com/simply-nicky/rst",
       install_requires=[
           'Cython',
