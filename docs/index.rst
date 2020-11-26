@@ -4,7 +4,7 @@
    contain the root `toctree` directive.
 
 pyrost
-=====
+======
 
 Python Robust Speckle Tracking (**pyrost**) is a library for wavefront
 metrology and sample imaging based on ptychographic speckle tracking

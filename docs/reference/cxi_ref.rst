@@ -1,5 +1,5 @@
 pyrost CXI Protocol
-==================
+===================
 
 .. automodule:: pyrost.protocol
 

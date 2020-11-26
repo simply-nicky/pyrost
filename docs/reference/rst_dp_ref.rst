@@ -1,5 +1,5 @@
 pyrost Core Classes
-==================
+===================
 
 .. automodule:: pyrost.data_processing
 

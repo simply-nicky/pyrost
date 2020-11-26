@@ -1,5 +1,5 @@
 pyrost Abberations Fitting
-=========================
+==========================
 
 .. automodule:: pyrost.abberations_fit
 
