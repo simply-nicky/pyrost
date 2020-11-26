@@ -1,4 +1,4 @@
 aperture_wp
 ===========
 
-.. autofunction:: pyrst.bin.aperture_wp
+.. autofunction:: pyrost.bin.aperture_wp

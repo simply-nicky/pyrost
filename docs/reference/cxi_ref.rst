@@ -1,7 +1,7 @@
-pyrst CXI Protocol
+pyrost CXI Protocol
 ==================
 
-.. automodule:: pyrst.protocol
+.. automodule:: pyrost.protocol
 
 .. toctree::
     :maxdepth: 1

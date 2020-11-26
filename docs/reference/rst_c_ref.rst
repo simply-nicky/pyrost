@@ -1,4 +1,4 @@
-pyrst Core Functions
+pyrost Core Functions
 ====================
 
 Core functions of the rst data processing 

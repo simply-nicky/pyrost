@@ -11,14 +11,14 @@ Examples
 --------
 Generate the default CXI protocol.
 
->>> import pyrst as rst
+>>> import pyrost as rst
 >>> rst.cxi_protocol()
-<pyrst.protocol.Protocol at 0x7fd7c0c965d0>
+<pyrost.protocol.Protocol at 0x7fd7c0c965d0>
 
 Or generate the default CXI loader.
 
 >>> rst.loader()
-<pyrst.protocol.STLoader at 0x7fd7e0d0f590>
+<pyrost.protocol.STLoader at 0x7fd7e0d0f590>
 
 Notes
 -----

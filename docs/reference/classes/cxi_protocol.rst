@@ -1,4 +1,4 @@
 cxi_protocol
 ============
 
-.. autofunction:: pyrst.cxi_protocol
+.. autofunction:: pyrost.cxi_protocol

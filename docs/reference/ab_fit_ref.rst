@@ -1,7 +1,7 @@
-pyrst Abberations Fitting
+pyrost Abberations Fitting
 =========================
 
-.. automodule:: pyrst.abberations_fit
+.. automodule:: pyrost.abberations_fit
 
 .. toctree::
     :maxdepth: 1

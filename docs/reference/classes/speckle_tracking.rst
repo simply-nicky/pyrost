@@ -1,7 +1,7 @@
 SpeckleTracking
 ===============
 
-.. autoclass:: pyrst.SpeckleTracking
+.. autoclass:: pyrost.SpeckleTracking
     :members:
     :exclude-members: update_reference, update_pixel_map
 

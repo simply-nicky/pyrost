@@ -13,7 +13,7 @@ Examples
 
 Perform the simulation for a given :class:`STParams` object.
 
->>> import pyrst.simulation as st_sim
+>>> import pyrost.simulation as st_sim
 >>> st_params = st_sim.parameters()
 >>> sim_obj = st_sim.STSim(st_params)
 2020-11-20 12:21:21,574 - STSim - INFO - Initializing

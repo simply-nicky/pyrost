@@ -1,4 +1,4 @@
 make_whitefield
 ===============
 
-.. autofunction:: pyrst.bin.make_whitefield
+.. autofunction:: pyrost.bin.make_whitefield

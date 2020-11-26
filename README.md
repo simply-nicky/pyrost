@@ -1,5 +1,5 @@
-# pyrst
-Python Robust Speckle Tracking (**pyrst**) is a library for wavefront metrology
+# pyrost
+Python Robust Speckle Tracking (**pyrost**) is a library for wavefront metrology
 and sample imaging based on ptychographic speckle tracking algorithm. This
 project takes over Andrew Morgan's [speckle_tracking](https://github.com/andyofmelbourne/speckle-tracking)
 project as an improved version aiming to add robustness to the optimisation
@@ -21,7 +21,7 @@ The documentation can be found on [Read the Docs](https://robust-speckle-trackin
 We recommend **not** building from source, but install the release from [pypi](https://test.pypi.org/project/rst/)
 with the pip package installer:
 
-    pip install pyrst
+    pip install pyrost
 
 Pre-build binary wheels for OS X are available in [pypi](https://test.pypi.org/project/rst/) as for now.
 
@@ -34,4 +34,4 @@ or:
 
     pip install -r requirements.txt -e . -v
 
-That cythonizes the Cython extensions and builds them into ``/pyrst/bin``.
+That cythonizes the Cython extensions and builds them into ``/pyrost/bin``.

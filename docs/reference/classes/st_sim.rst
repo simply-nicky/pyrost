@@ -1,5 +1,5 @@
 STSim
 =====
 
-.. autoclass:: pyrst.simulation.STSim
+.. autoclass:: pyrost.simulation.STSim
     :members:

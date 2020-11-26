@@ -46,25 +46,25 @@ where each frame is an image of 516x1556 pixels.
 
 Loading the file
 ----------------
-Load the CXI file into a data container :class:`pyrst.STData` with :class:`pyrst.STLoader`.
-:func:`pyrst.loader` returns the default loader with the default CXI protocol
-(:func:`pyrst.protocol`).
+Load the CXI file into a data container :class:`pyrost.STData` with :class:`pyrost.STLoader`.
+:func:`pyrost.loader` returns the default loader with the default CXI protocol
+(:func:`pyrost.protocol`).
 
-.. note:: :class:`pyrst.STLoader` will raise an :class:`AttributeError` while loading the data
+.. note:: :class:`pyrost.STLoader` will raise an :class:`AttributeError` while loading the data
     from the CXI file if some of the necessary attributes for Speckle Tracking algorithm
     are not provided. You can see full list of the necessary attributes in
-    :class:`pyrst.STData`. Adding the missing attributes to :func:`pyrst.STLoader.load`
+    :class:`pyrost.STData`. Adding the missing attributes to :func:`pyrost.STLoader.load`
     solves the problem.
 
 .. doctest::
 
-    >>> import pyrst as rst
+    >>> import pyrost as rst
     >>> loader = rst.loader()
     >>> data = loader.load('results/diatom.cxi') # doctest: +SKIP
 
 Moreover, you can crop the data with the provided region of interest at the detector plane,
-or mask bad frames and bad pixels (See :func:`pyrst.STData.crop_data`,
-:func:`pyrst.STData.mask_frames`, :func:`pyrst.STData.make_mask`).
+or mask bad frames and bad pixels (See :func:`pyrost.STData.crop_data`,
+:func:`pyrost.STData.mask_frames`, :func:`pyrost.STData.make_mask`).
 
 .. doctest::
 
@@ -80,7 +80,7 @@ OR
     >>> data = data.make_mask(method='perc-bad')
 
 It worked! But still we can not perform the Speckle Tracking update procedure without the
-estimates of the defocus distance. You can estimate it with :func:`pyrst.STData.defocus_sweep`.
+estimates of the defocus distance. You can estimate it with :func:`pyrost.STData.defocus_sweep`.
 It generates sample profiles for the set of defocus distances and yields an average value
 of gradient magnitude squared (:math:`\left| \nabla I_{ref} \right|^2`), which characterizes
 reference image's contrast (the higher the value the better the estimate of defocus distance
@@ -113,7 +113,7 @@ Let's update the data container with the defocus distance we got.
 
 Speckle Tracking update
 -----------------------
-Now we're ready to generate a :class:`pyrst.SpeckleTracking` object, which does the heavy
+Now we're ready to generate a :class:`pyrost.SpeckleTracking` object, which does the heavy
 lifting of calculating the pixel mapping between reference plane and detector's plane,
 and generating the unabberated profile of the sample.
 
@@ -149,7 +149,7 @@ Phase reconstruction
 --------------------
 We got the pixel map, which can be easily translated to the deviation angles of the lens
 wavefront. Now we're able to reconstruct the lens' phase profile. Besides, you can fit
-the phase profile with polynomial function using :class:`pyrst.AbberationsFit`.
+the phase profile with polynomial function using :class:`pyrost.AbberationsFit`.
 
 .. doctest::
 
