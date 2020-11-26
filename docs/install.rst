@@ -21,7 +21,7 @@ pyrost has the following **mandatory** runtime dependencies:
 
 Packages
 --------
-pyrost packages are available through `pypi <https://test.pypi.org/project/rst/>`_ on
+pyrost packages are available through `pypi <https://pypi.org/project/pyrost/>`_ on
 OS X as for now.
 
 pip
