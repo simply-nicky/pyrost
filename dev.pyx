@@ -1,7 +1,6 @@
 #cython: language_level=3, boundscheck=False, wraparound=False, initializedcheck=False, cdivision=True
 cimport numpy as np
 import numpy as np
-from pyfftw import FFTW, empty_aligned
 cimport openmp
 from cython_gsl cimport *
 from libc.math cimport sqrt, cos, sin, exp, pi, erf, sinh, floor
@@ -695,12 +694,9 @@ def ct_integrate(float_t[:, ::1] sx_arr, float_t[:, ::1] sy_arr):
     dtype = np.float64 if float_t is np.float64_t else np.float32
     cdef:
         int a = sx_arr.shape[0], b = sx_arr.shape[1], i, j, ii, jj
+        float_t[:, ::1] s_asdi = np.empty((2 * a, 2 * b), dtype=dtype)
+        complex_t[:, ::1] sf_asdi = np.empty((2 * a, 2 * b), dtype=np.complex128)
         float_t xf, yf
-        np.ndarray[np.complex128_t, ndim=2] s_asdi = empty_aligned((2 * a, 2 * b), dtype='complex128')
-        np.ndarray[np.complex128_t, ndim=2] sf_asdi = empty_aligned((2 * a, 2 * b), dtype='complex128')
-        np.ndarray[np.complex128_t, ndim=2] w_asdi = empty_aligned((2 * a, 2 * b), dtype='complex128')
-    fft_obj = FFTW(s_asdi, sf_asdi, axes=(0, 1))
-    ifft_obj = FFTW(sf_asdi, w_asdi, axes=(0, 1), direction='FFTW_BACKWARD')
     for i in range(a):
         for j in range(b):
             s_asdi[i, j] = -sx_arr[a - i - 1, b - j - 1]
@@ -713,7 +709,7 @@ def ct_integrate(float_t[:, ::1] sx_arr, float_t[:, ::1] sy_arr):
     for i in range(a):
         for j in range(b):
             s_asdi[i + a, j + b] = sx_arr[i, j]
-    cdef np.ndarray[np.complex128_t, ndim=2] sfx_asdi = fft_obj().copy()
+    cdef np.ndarray[np.complex128_t, ndim=2] sfx_asdi = np.fft.fft2(s_asdi)
     for i in range(a):
         for j in range(b):
             s_asdi[i, j] = -sy_arr[a - i - 1, b - j - 1]
@@ -726,12 +722,11 @@ def ct_integrate(float_t[:, ::1] sx_arr, float_t[:, ::1] sy_arr):
     for i in range(a):
         for j in range(b):
             s_asdi[i + a, j + b] = sy_arr[i, j]
-    cdef np.ndarray[np.complex128_t, ndim=2] sfy_asdi = fft_obj().copy()
+    cdef np.ndarray[np.complex128_t, ndim=2] sfy_asdi = np.fft.fft2(s_asdi)
     for i in range(2 * a):
         xf = <float_t>(i) / 2 / a - i // a
         for j in range(2 * b):
             yf = <float_t>(j) / 2 / b - j // b
             sf_asdi[i, j] = (xf * sfx_asdi[i, j] + yf * sfy_asdi[i, j]) / (2j * pi * (xf**2 + yf**2))
     sf_asdi[0, 0] = 0
-    ifft_obj()
-    return np.asarray(w_asdi.real[a:, b:], dtype=dtype)
+    return np.asarray(np.fft.ifft2(sf_asdi).real[a:, b:], dtype=dtype)
