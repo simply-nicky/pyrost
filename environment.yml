@@ -11,4 +11,3 @@ dependencies:
   - h5py
   - numpy
   - scipy
-  - pyfftw

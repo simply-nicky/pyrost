@@ -16,12 +16,10 @@ pyrost has the following **mandatory** runtime dependencies:
   CXI files.
 * `NumPy <https://numpy.org>`_ 1.19.0 or later.
 * `SciPy <https://scipy.org>`_ 1.5.2 or later.
-* `pyFFTW <https://github.com/pyFFTW/pyFFTW>`_ 0.12.0 or later, which is used
-  for the Fourier Transform wavefront reconstruction (:func:`pyrost.bin.ct_integrate`).
 
 Packages
 --------
-pyrost packages are available through `pypi <https://test.pypi.org/project/rst/>`_ on
+pyrost packages are available through `pypi <https://pypi.org/project/pyrost/>`_ on
 OS X as for now.
 
 pip

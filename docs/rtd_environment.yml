@@ -16,4 +16,3 @@ dependencies:
   - sphinx_rtd_theme
   - mock
   - pillow
-  - pyfftw
