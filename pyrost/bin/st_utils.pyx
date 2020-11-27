@@ -12,6 +12,7 @@ ctypedef fused float_t:
 
 ctypedef np.uint64_t uint_t
 ctypedef np.npy_bool bool_t
+ctypedef np.complex128_t complex_t
 
 DEF FLOAT_MAX = 1.7976931348623157e+308
 DEF MU_C = 1.681792830507429
