@@ -90,6 +90,7 @@ from sys import stdout
 import h5py
 import numpy as np
 from ..protocol import cxi_protocol, ROOT_PATH
+from ..data_processing import STData
 from .st_sim_param import STParams, parameters
 from ..bin import aperture_wp, barcode_steps, barcode_profile, lens_wp
 from ..bin import make_frames, make_whitefield
@@ -117,14 +118,18 @@ class STSim:
 
     def __init__(self, st_params, bsteps=None):
         self.parameters = st_params
-        self.__dict__.update(**self.parameters.export_dict())
         self._init_logging()
         self._init_coord()
         self._init_lens()
         self._init_barcode(bsteps)
         self._init_detector()
 
+    def __getattr__(self, attr):
+        if attr in self.parameters:
+            return self.parameters.__getattr__(attr)
+
     def _init_logging(self):
+        os.makedirs(self.log_dir, exist_ok=True)
         self.logger = logging.getLogger(self.__class__.__name__)
         self.logger.level = logging.INFO
         filename = os.path.join(self.log_dir, datetime.datetime.now().strftime('%d-%m-%Y_%H-%M-%S.log'))
@@ -314,7 +319,8 @@ class STConverter:
 
     * basis_vectors : Detector basis vectors.
     * data : Measured intensity frames.
-    * defocus : Defocus distance.
+    * defocus_fs : Defocus distance along the fast detector axis.
+    * defocus_ss : Defocus distance along the slow detector axis.
     * distance : Sample-to-detector distance.
     * energy : Incoming beam photon energy [eV].
     * good_frames : An array of good frames' indices.
@@ -353,37 +359,88 @@ class STConverter:
         ini_parsers['protocol'] = self.protocol.export_ini()
         return ini_parsers
 
-    def _pixel_vector(self, st_params):
-        return self.crd_rat * np.array([st_params.pix_size, st_params.pix_size, 0])
+    def export_dict(self, data, st_params):
+        """Export simulated data `data` (fetched from :func:`STSim.frames`
+        or :func:`STSim.ptychograph`) and `st_params` to :class:`dict` object.
 
-    def _basis_vectors(self, st_params):
-        pix_vec = self._pixel_vector(st_params)
-        _vec_fs = np.tile(pix_vec * self.unit_vector_fs, (st_params.n_frames, 1))
-        _vec_ss = np.tile(pix_vec * self.unit_vector_ss, (st_params.n_frames, 1))
-        return np.stack((_vec_ss, _vec_fs), axis=1)
+        Parameters
+        ----------
+        data : numpy.ndarray
+            Simulated data.
+        st_params : STParams
+            Experimental parameters.
 
-    def _defocus(self, st_params):
-        return self.crd_rat * st_params.defocus
+        Returns
+        -------
+        data_dict : dict
+            Dictionary with all the data from `data` and `st_params`.
 
-    def _distance(self, st_params):
-        return self.crd_rat * st_params.det_dist
+        See Also
+        --------
+        STConverter - full list of the attributes stored in `data_dict`.
+        """
+        data_dict = {}
 
-    def _energy(self, st_params):
-        return self.e_to_wl / self._wavelength(st_params)
+        # Initialize basis vectors
+        pix_vec = self.crd_rat * np.array([st_params.pix_size, st_params.pix_size, 0])
+        data_dict['x_pixel_size'] = pix_vec[0]
+        data_dict['y_pixel_size'] = pix_vec[1]
+        vec_fs = np.tile(pix_vec * self.unit_vector_fs, (st_params.n_frames, 1))
+        vec_ss = np.tile(pix_vec * self.unit_vector_ss, (st_params.n_frames, 1))
+        data_dict['basis_vectors'] = np.stack((vec_ss, vec_fs), axis=1)
 
-    def _translations(self, st_params):
-        t_arr = np.zeros((st_params.n_frames, 3), dtype=np.float64)
+        # Initialize data
+        data_dict['data'] = data
+        data_dict['good_frames'] = np.arange(data.shape[0],
+                                             dtype=self.protocol.get_dtype('good_frames'))
+        data_dict['mask'] = np.ones(data.shape[1:], dtype=self.protocol.get_dtype('mask'))
+        data_dict['whitefield'] = make_whitefield(mask=data_dict['mask'], data=data)
+
+        # Initialize defocus distances
+        data_dict['defocus_fs'] = self.crd_rat * st_params.defocus
+        data_dict['defocus_ss'] = self.crd_rat * st_params.defocus
+
+        # Initialize sample-to-detector distance
+        data_dict['distance'] = self.crd_rat * st_params.det_dist
+
+        # Initialize beam's wavelength and energy
+        data_dict['wavelength'] = self.crd_rat * st_params.wl
+        data_dict['energy'] = self.e_to_wl / data_dict['wavelength']
+
+        # Initialize region of interest
+        fs_lb, fs_ub = st_params.fs_roi()
+        data_dict['roi'] = np.array([0, data.shape[1], fs_lb, fs_ub])
+
+        # Initialize sample translations
+        t_arr = np.zeros((st_params.n_frames, 3), dtype=self.protocol.get_dtype('translations'))
         t_arr[:, 0] = -np.arange(0, st_params.n_frames) * st_params.step_size
-        return self.crd_rat * t_arr
+        data_dict['translations'] = self.crd_rat * t_arr
 
-    def _wavelength(self, st_params):
-        return self.crd_rat * st_params.wl
+        for attr in data_dict:
+            data_dict[attr] = np.asarray(data_dict[attr], dtype=self.protocol.get_dtype(attr))
+        return data_dict
 
-    def _x_pixel_size(self, st_params):
-        return self._pixel_vector(st_params)[0]
+    def export_data(self, data, st_params):
+        """Export simulated data `data` (fetched from :func:`STSim.frames`
+        or :func:`STSim.ptychograph`) and `st_params` to a data container.
 
-    def _y_pixel_size(self, st_params):
-        return self._pixel_vector(st_params)[1]
+        Parameters
+        ----------
+        data : numpy.ndarray
+            Simulated data.
+        st_params : STParams
+            Experimental parameters.
+
+        Returns
+        -------
+        STData
+            Data container with all the data from `data` and `st_params`.
+
+        See Also
+        --------
+        STConverter - full list of the attributes stored in `data_dict`.
+        """
+        return STData(protocol=self.protocol, **self.export_dict(data, st_params))
 
     def save_sim(self, data, st_sim, dir_path):
         """Export simulated data `data` (fetched from :func:`STSim.frames`
@@ -409,14 +466,13 @@ class STConverter:
         * {'calc_error.ini', 'calculate_phase.ini', 'generate_pixel_map.ini',
           'make_reference.ini', 'speckle_gui.ini', 'update_pixel_map.ini',
           'update_translations.ini', 'zernike.ini'} : INI files to work with
-          Andrew's `speckle_tracking`_ GUI.
-
-        .. _speckle_tracking: https://github.com/andyofmelbourne/speckle-tracking
+          Andrew's `speckle_tracking <https://github.com/andyofmelbourne/speckle-tracking>`_
+          GUI.
         """
         self.save(data=data, st_params=st_sim.parameters,
                   dir_path=dir_path, logger=st_sim.logger)
 
-    def save(self, data, st_params, dir_path, logger=None, roi=None):
+    def save(self, data, st_params, dir_path, logger=None):
         """Export simulated data `data` (fetched from :func:`STSim.frames`
         or :func:`STSim.ptychograph`) and `st_params` to `dir_path` folder.
 
@@ -430,8 +486,6 @@ class STConverter:
             Path to the folder, where all the files are saved.
         logger : logging.Logger, optional
             Logging interface.
-        roi : numpy.ndarray, optional
-            Region of interest at the detector.
 
         See Also
         --------
@@ -451,22 +505,34 @@ class STConverter:
             logger.info("Making a cxi file...")
             logger.info("Using the following cxi protocol:")
             self.protocol.log(logger)
-        data_dict = {'data': data, 'mask': np.ones(data.shape[1:], dtype=np.uint8),
-                     'good_frames': np.arange(data.shape[0])}
-        data_dict['whitefield'] = make_whitefield(mask=data_dict['mask'], data=data)
-        if roi is None:
-            fs_lb, fs_ub = st_params.fs_roi()
-            roi = np.array([0, data.shape[1], fs_lb, fs_ub])
-        data_dict['roi'] = np.asarray(roi)
+        data_dict = self.export_dict(data, st_params)
         with h5py.File(os.path.join(dir_path, 'data.cxi'), 'w') as cxi_file:
-            for attr in self.write_attrs:
-                if attr in data_dict:
-                    self.protocol.write_cxi(attr, data_dict[attr], cxi_file)
-                else:
-                    dset = self.__getattribute__('_' + attr)(st_params)
-                    self.protocol.write_cxi(attr, dset, cxi_file)
+            for attr in data_dict:
+                self.protocol.write_cxi(attr, data_dict[attr], cxi_file)
         if logger:
             logger.info("{:s} saved".format(os.path.join(dir_path, 'data.cxi')))
+
+def converter(coord_ratio=1e-6, float_precision='float64'):
+    """Return the default simulation converter.
+
+    Parameters
+    ----------
+    coord_ratio : float, optional
+        Coordinates ratio between the simulated and saved data.
+    float_precision: {'float32', 'float64'}, optional
+        Floating point precision.
+
+    Returns
+    -------
+    STConverter
+        Default simulation data converter.
+
+    See Also
+    --------
+    STConverter : Full converter class description.
+    """
+    return STConverter(protocol=cxi_protocol(float_precision),
+                       coord_ratio=coord_ratio)
 
 def main():
     """Main fuction to run Speckle Tracking simulation and save the results to a CXI file.

@@ -42,7 +42,7 @@ with open('README.md', 'r') as readme:
     long_description = readme.read()
 
 setup(name='pyrost',
-      version='0.1.2',
+      version='0.1.3',
       author='Nikolay Ivanov',
       author_email="nikolay.ivanov@desy.de",
       long_description=long_description,
@@ -50,11 +50,10 @@ setup(name='pyrost',
       url="https://github.com/simply-nicky/rst",
       packages=find_packages(),
       include_package_data=True,
-      package_data={'pyrost.bin': ['*.pyx']},
+      package_data={'pyrost.bin': ['*.pyx', '*.c'],
+                    'pyrost': ['config/*.ini']},
       install_requires=['Cython', 'CythonGSL', 'h5py', 'numpy', 'scipy',],
       extras_require={'interactive': ['matplotlib', 'jupyter', 'pyximport']},
-      setup_requires=['pytest-runner'],
-      tests_require=['pytest'],
       ext_modules=extensions,
       classifiers=[
           "Programming Language :: Python",

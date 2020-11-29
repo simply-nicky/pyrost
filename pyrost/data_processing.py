@@ -693,7 +693,8 @@ class SpeckleTracking(DataContainer):
             return {'pixel_map': pixel_map}
 
     def iter_update(self, sw_fs, sw_ss=0, ls_pm=3., ls_ri=10.,
-                    n_iter=5, f_tol=3e-3, verbose=True, method='search'):
+                    n_iter=5, f_tol=3e-3, verbose=True, method='search',
+                    return_errors=True):
         """Perform iterative Robust Speckle Tracking update. `ls_ri` and
         `ls_pm` define high frequency cut-off to supress the noise.
         Iterative update terminates when the difference between total
@@ -723,6 +724,8 @@ class SpeckleTracking(DataContainer):
             * 'newton' : Iterative Newton's method based on
               finite difference gradient approximation.
             * 'search' : Grid search along the search window.
+        return_errors : bool, optional
+            Return errors array if True.
 
         Returns
         -------
@@ -730,7 +733,8 @@ class SpeckleTracking(DataContainer):
             A new :class:`SpeckleTracking` object with the updated
             `pixel_map` and `reference_image`.
         list
-            List of total MSE values for each iteration.
+            List of total MSE values for each iteration.  Only if
+            `return_errors` is True.
         """
         obj = self.update_reference(ls_ri=ls_ri, sw_ss=sw_ss, sw_fs=sw_fs)
         errors = [obj.total_mse(ls_ri=ls_ri)]
@@ -759,7 +763,10 @@ class SpeckleTracking(DataContainer):
                 print('Iteration No. {:d}: Total MSE = {:.3f}'.format(it, errors[-1]))
             if errors[-2] - errors[-1] <= f_tol:
                 break
-        return obj, errors
+        if return_errors:
+            return obj, errors
+        else:
+            return obj
 
     def total_mse(self, ls_ri=3.):
         """Return average mean-squared-error (MSE) per pixel.

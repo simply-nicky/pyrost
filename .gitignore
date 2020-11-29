@@ -2,10 +2,6 @@
 /figures/
 /results/
 /logs/
-*.hdf5
-*.png
-*.eps
-*.mp4
 
 #jupyter checkpoints
 .ipynb_checkpoints/
