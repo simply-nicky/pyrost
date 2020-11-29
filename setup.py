@@ -42,7 +42,7 @@ with open('README.md', 'r') as readme:
     long_description = readme.read()
 
 setup(name='pyrost',
-      version='0.1.4',
+      version='0.1.5',
       author='Nikolay Ivanov',
       author_email="nikolay.ivanov@desy.de",
       long_description=long_description,
@@ -60,4 +60,4 @@ setup(name='pyrost',
           "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
           "Operating System :: OS Independent"
       ],
-      python_requires='>=3.7')
+      python_requires='>=3.6')
