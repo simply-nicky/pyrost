@@ -5,7 +5,7 @@ Dependencies
 ------------
 pyrost has the following **mandatory** runtime dependencies:
 
-* `Python <https://www.python.org/>`_ 3.7 or later (Python 2.x is
+* `Python <https://www.python.org/>`_ 3.6 or later (Python 2.x is
   **not** supported).
 * `GNU Scientific Library <https://www.gnu.org/software/gsl/>`_ 2.4
   or later, which is used for numerical integration and pseudo-random
@@ -43,7 +43,7 @@ Installation from source
 In order to install pyrost from source you will need:
 
 * a C++ compiler (gcc or clang will do).
-* `Python <https://www.python.org/>`_ 3.7 or later (Python 2.x is
+* `Python <https://www.python.org/>`_ 3.6 or later (Python 2.x is
   **not** supported).
 * `GNU Scientific Library <https://www.gnu.org/software/gsl/>`_ 2.4
   or later, which is used for numerical integration and pseudo-random

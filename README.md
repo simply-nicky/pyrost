@@ -13,7 +13,7 @@ The documentation can be found on [Read the Docs](https://robust-speckle-trackin
 
 ## Dependencies
 
-- [Python](https://www.python.org/) 3.7 or later (Python 2.x is **not** supported).
+- [Python](https://www.python.org/) 3.6 or later (Python 2.x is **not** supported).
 - [GNU Scientific Library](https://www.gnu.org/software/gsl/) 2.4 or later.
 - [LLVM's OpenMP library](http://openmp.llvm.org) 10.0.0 or later.
 - [h5py](https://www.h5py.org) 2.10.0 or later.
