@@ -126,6 +126,12 @@ class STParams(INIParser):
         super(STParams, self).__init__(**kwargs)
         self.__dict__['_lookup'] = self.lookup_dict()
 
+    def __iter__(self):
+        return self._lookup.__iter__()
+
+    def __contains__(self, attr):
+        return attr in self._lookup
+
     def __getattr__(self, attr):
         if attr in self._lookup:
             return self.__dict__[self._lookup[attr]][attr]

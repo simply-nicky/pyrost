@@ -118,14 +118,18 @@ class STSim:
 
     def __init__(self, st_params, bsteps=None):
         self.parameters = st_params
-        self.__dict__.update(**self.parameters.export_dict())
         self._init_logging()
         self._init_coord()
         self._init_lens()
         self._init_barcode(bsteps)
         self._init_detector()
 
+    def __getattr__(self, attr):
+        if attr in self.parameters:
+            return self.parameters.__getattr__(attr)
+
     def _init_logging(self):
+        os.makedirs(self.log_dir, exist_ok=True)
         self.logger = logging.getLogger(self.__class__.__name__)
         self.logger.level = logging.INFO
         filename = os.path.join(self.log_dir, datetime.datetime.now().strftime('%d-%m-%Y_%H-%M-%S.log'))
@@ -507,6 +511,28 @@ class STConverter:
                 self.protocol.write_cxi(attr, data_dict[attr], cxi_file)
         if logger:
             logger.info("{:s} saved".format(os.path.join(dir_path, 'data.cxi')))
+
+def converter(coord_ratio=1e-6, float_precision='float64'):
+    """Return the default simulation converter.
+
+    Parameters
+    ----------
+    coord_ratio : float, optional
+        Coordinates ratio between the simulated and saved data.
+    float_precision: {'float32', 'float64'}, optional
+        Floating point precision.
+
+    Returns
+    -------
+    STConverter
+        Default simulation data converter.
+
+    See Also
+    --------
+    STConverter : Full converter class description.
+    """
+    return STConverter(protocol=cxi_protocol(float_precision),
+                       coord_ratio=coord_ratio)
 
 def main():
     """Main fuction to run Speckle Tracking simulation and save the results to a CXI file.
