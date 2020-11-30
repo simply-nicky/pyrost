@@ -5,7 +5,6 @@ channels:
 dependencies:
   - cython
   - python=3.7
-  - cythongsl
   - gsl
   - llvm-openmp
   - h5py

@@ -1,7 +1,6 @@
 cimport numpy as np
 import numpy as np
-from cython_gsl cimport *
-from libc.math cimport sqrt, exp, pi, floor
+from libc.math cimport sqrt, exp, pi, floor, ceil
 from cython.parallel import prange
 cimport openmp
 from posix.time cimport clock_gettime, timespec, CLOCK_REALTIME
