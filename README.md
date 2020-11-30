@@ -21,12 +21,12 @@ The documentation can be found on [Read the Docs](https://robust-speckle-trackin
 - [SciPy](https://scipy.org) 1.5.2 or later.
 
 ## Installation
-We recommend **not** building from source, but install the release from [pypi](https://test.pypi.org/project/rst/)
+We recommend **not** building from source, but install the release from [pypi](https://pypi.org/project/pyrost/)
 with the pip package installer:
 
     pip install pyrost
 
-Pre-build binary wheels for OS X are available in [pypi](https://test.pypi.org/project/rst/) as for now.
+Pre-build binary wheels for OS X are available in [pypi](https://pypi.org/project/pyrost/) as for now.
 
 ## Installation from source
 In order to build the package from source simply execute the following command:
