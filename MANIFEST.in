@@ -3,5 +3,6 @@ graft pyrost/config
 graft pyrost/bin
 exclude dev.pyx
 include pytest.ini
+include LICENSE
 global-exclude *.py[cod]
 global-exclude *.so
