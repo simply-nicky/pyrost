@@ -3,8 +3,8 @@ cimport numpy as np
 import numpy as np
 cimport openmp
 from libc.math cimport sqrt, cos, sin, exp, pi, erf, sinh, floor, ceil
+from libc.time cimport time, time_t
 from cython.parallel import prange, parallel
-from posix.time cimport clock_gettime, timespec, CLOCK_REALTIME
 
 ctypedef fused float_t:
     np.float64_t
@@ -18,93 +18,20 @@ DEF FLOAT_MAX = 1.7976931348623157e+308
 DEF MU_C = 1.681792830507429
 DEF NO_VAR = -1.0
 
-cdef double gsl_quad(gsl_function func, double a, double b, double eps_abs, double eps_rel, int limit) nogil:
+def barcode_steps(double x0, double x1, double br_dx, double rd):
     cdef:
-        double result, error
-        gsl_integration_workspace * W
-    W = gsl_integration_workspace_alloc(limit)
-    gsl_integration_qag(&func, a, b, eps_abs, eps_rel, limit, GSL_INTEG_GAUSS51, W, &result, &error)
-    gsl_integration_workspace_free(W)
-    return result
-
-cdef double lens_re(double xx, void* params) nogil:
-    cdef:
-        double x = (<double*> params)[0], wl = (<double*> params)[1]
-        double f = (<double*> params)[2], df = (<double*> params)[3]
-        double a = (<double*> params)[4], xc = (<double*> params)[5]
-        double ph, ph_ab
-    ph = -pi * xx**2 / wl * df / f / (f + df) - 2 * pi / wl / (f + df) * x * xx
-    ph_ab = -a * 1e9 * ((xx - xc) / f)**3
-    return cos(ph + ph_ab)
-
-cdef double lens_im(double xx, void* params) nogil:
-    cdef:
-        double x = (<double*> params)[0], wl = (<double*> params)[1]
-        double f = (<double*> params)[2], df = (<double*> params)[3]
-        double a = (<double*> params)[4], xc = (<double*> params)[5]
-        double ph, ph_ab
-    ph = -pi * xx**2 / wl * df / f / (f + df) - 2 * pi / wl / (f + df) * x * xx
-    ph_ab = -a * 1e9 * ((xx - xc) / f)**3
-    return sin(ph + ph_ab)
-
-cdef complex_t lens_wp_c(double x, double wl, double ap, double f,
-                       double df, double a, double xc) nogil:
-    cdef:
-        double re, im, ph = pi / wl / (f + df) * x**2
-        double params[6]
-        int fn = <int> (ap**2 / wl / (f + df))
-        gsl_function func
-    params[0] = x; params[1] = wl; params[2] = f
-    params[3] = df; params[4] = a; params[5] = xc
-    func.function = &lens_re; func.params = params
-    re = gsl_quad(func, -ap / 2, ap / 2, 1e-9, 1e-7, 1000 * fn)
-    func.function = &lens_im
-    im = gsl_quad(func, -ap / 2, ap / 2, 1e-9, 1e-7, 1000 * fn)
-    return (re + 1j * im) * (cos(ph) + 1j * sin(ph))
-
-def lens_wp(double[::1] x_arr, double wl, double ap, double focus,
-            double defoc, double alpha, double xc):
-    cdef:
-        int a = x_arr.shape[0], i
-        complex_t[::1] lens_wf = np.empty((a,), dtype=np.complex128)
-    for i in prange(a, schedule='guided', nogil=True, chunksize=10):
-        lens_wf[i] = lens_wp_c(x_arr[i], wl, ap, focus, defoc, alpha, xc) 
-    return np.asarray(lens_wf)
-
-cdef float_t wirthselect_float(float_t[::1] array, int k) nogil:
-    cdef:
-        int l = 0, m = array.shape[0] - 1, i, j
-        float_t x, tmp 
-    while l < m: 
-        x = array[k] 
-        i = l; j = m 
-        while 1: 
-            while array[i] < x: i += 1 
-            while x < array[j]: j -= 1 
-            if i <= j: 
-                tmp = array[i]; array[i] = array[j]; array[j] = tmp
-                i += 1; j -= 1 
-            if i > j: break 
-        if j < k: l = i 
-        if k < i: m = j 
-    return array[k]
-
-def make_whitefield(float_t[:, :, ::1] data, bool_t[:, ::1] mask):
-    dtype = np.float64 if float_t is np.float64_t else np.float32
-    cdef:
-        int a = data.shape[0], b = data.shape[1], c = data.shape[2], i, j, k
-        int max_threads = openmp.omp_get_max_threads()
-        float_t[:, ::1] wf = np.empty((b, c), dtype=dtype)
-        float_t[:, ::1] array = np.empty((max_threads, a), dtype=dtype)
-    for j in prange(b, schedule='guided', nogil=True):
-        i = openmp.omp_get_thread_num()
-        for k in range(c):
-            if mask[j, k]:
-                array[i] = data[:, j, k]
-                wf[j, k] = wirthselect_float(array[i], a // 2)
-            else:
-                wf[j, k] = 0
-    return np.asarray(wf)
+        int br_n = <int>((x1 - x0) / 2 / br_dx) * 2 if x1 - x0 > 0 else 0, i
+        gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937)
+        double bs_min = max(1 - rd, 0), bs_max = min(1 + rd, 2)
+        double[::1] bx_arr = np.empty(br_n, dtype=np.float64)
+        time_t t = time(NULL)
+    gsl_rng_set(r, t)
+    if br_n:
+        bx_arr[0] = x0 + br_dx * ((bs_max - bs_min) * gsl_rng_uniform_pos(r) - 1)
+        for i in range(1, br_n):
+            bx_arr[i] = bx_arr[i - 1] + br_dx * (bs_min + (bs_max - bs_min) * gsl_rng_uniform_pos(r))
+    gsl_rng_free(r)
+    return np.asarray(bx_arr)
 
 cdef float_t bprd_varc(float_t br_dx, float_t sgm, float_t atn) nogil:
     cdef:
@@ -186,7 +113,9 @@ def make_frames(float_t[:, ::1] i_x, float_t[::1] i_y, float_t[::1] sc_x, float_
         uint_t[:, :, ::1] frames = np.empty((a, b, c), dtype=np.uint64)
         float_t[::1] i_ys = np.empty(b, dtype=dtype)
         gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937)
+        time_t t = time(NULL)
         unsigned long seed
+    gsl_rng_set(r, t)
     for i in range(b):
         i_ys[i] = convolve_c(i_y, sc_y, i)
     for i in prange(a, schedule='guided', nogil=True):

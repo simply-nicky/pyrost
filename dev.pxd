@@ -1,3 +1,4 @@
+#cython: language_level=3, boundscheck=False, wraparound=False, initializedcheck=False, cdivision=True
 cdef extern from "gsl/gsl_math.h":
 
     ctypedef struct gsl_function:
@@ -46,6 +47,9 @@ cdef extern from "gsl/gsl_rng.h":
     void gsl_rng_set ( gsl_rng * r, unsigned long int seed) nogil
 
     void gsl_rng_free (gsl_rng * r) nogil
+
+    double gsl_rng_uniform ( gsl_rng * r) nogil
+    double gsl_rng_uniform_pos ( gsl_rng * r) nogil
 
 cdef extern from "gsl/gsl_randist.h":
 
