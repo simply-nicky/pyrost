@@ -2,9 +2,9 @@ cimport numpy as np
 import numpy as np
 from .beam_calc cimport *
 from libc.math cimport sqrt, cos, sin, pi, erf
+from libc.time cimport time_t, time
 from cython.parallel import prange
 cimport openmp
-from posix.time cimport clock_gettime, timespec, CLOCK_REALTIME
 
 ctypedef np.complex128_t complex_t
 ctypedef np.uint64_t uint_t
@@ -300,9 +300,8 @@ def barcode_steps(double x0, double x1, double br_dx, double rd):
         gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937)
         double bs_min = max(1 - rd, 0), bs_max = min(1 + rd, 2)
         double[::1] bx_arr = np.empty(br_n, dtype=np.float64)
-        timespec ts
-    clock_gettime(CLOCK_REALTIME, &ts)
-    gsl_rng_set(r, ts.tv_sec + ts.tv_nsec)
+        time_t t = time(NULL)
+    gsl_rng_set(r, t)
     if br_n:
         bx_arr[0] = x0 + br_dx * ((bs_max - bs_min) * gsl_rng_uniform_pos(r) - 1)
         for i in range(1, br_n):
@@ -457,10 +456,9 @@ def make_frames(double[:, ::1] i_x, double[::1] i_y, double[::1] sc_x, double[::
         uint_t[:, :, ::1] frames = np.empty((a, b, c), dtype=np.uint64)
         double[::1] i_ys = np.empty(b, dtype=np.float64)
         gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937)
-        timespec ts
+        time_t t = time(NULL)
         unsigned long seed
-    clock_gettime(CLOCK_REALTIME, &ts)
-    gsl_rng_set(r, ts.tv_sec + ts.tv_nsec)
+    gsl_rng_set(r, t)
     for i in range(b):
         i_ys[i] = convolve_c(i_y, sc_y, i)
     for i in prange(a, schedule='guided', nogil=True):
