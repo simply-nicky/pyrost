@@ -3,7 +3,6 @@ from distutils.core import Extension
 import numpy
 import sys
 import os
-import cython_gsl
 
 try:
     from Cython.Build import cythonize
@@ -16,12 +15,10 @@ ext = '.pyx' if USE_CYTHON else '.c'
 extension_args = {'language': 'c',
                   'extra_compile_args': ['-fopenmp'],
                   'extra_link_args': ['-lomp'],
-                  'libraries': cython_gsl.get_libraries(),
-                  'library_dirs': [cython_gsl.get_library_dir(),
-                                   '/usr/local/lib',
+                  'libraries': ['gsl', 'gslcblas'],
+                  'library_dirs': ['/usr/local/lib',
                                    os.path.join(sys.prefix, 'lib')],
                   'include_dirs': [numpy.get_include(),
-                                   cython_gsl.get_cython_include_dir(),
                                    os.path.join(sys.prefix, 'include')],
                   'define_macros': [("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION")]}
 

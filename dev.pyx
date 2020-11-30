@@ -2,8 +2,7 @@
 cimport numpy as np
 import numpy as np
 cimport openmp
-from cython_gsl cimport *
-from libc.math cimport sqrt, cos, sin, exp, pi, erf, sinh, floor
+from libc.math cimport sqrt, cos, sin, exp, pi, erf, sinh, floor, ceil
 from cython.parallel import prange, parallel
 from posix.time cimport clock_gettime, timespec, CLOCK_REALTIME
 
@@ -18,6 +17,59 @@ ctypedef np.uint64_t uint_t
 DEF FLOAT_MAX = 1.7976931348623157e+308
 DEF MU_C = 1.681792830507429
 DEF NO_VAR = -1.0
+
+cdef double gsl_quad(gsl_function func, double a, double b, double eps_abs, double eps_rel, int limit) nogil:
+    cdef:
+        double result, error
+        gsl_integration_workspace * W
+    W = gsl_integration_workspace_alloc(limit)
+    gsl_integration_qag(&func, a, b, eps_abs, eps_rel, limit, GSL_INTEG_GAUSS51, W, &result, &error)
+    gsl_integration_workspace_free(W)
+    return result
+
+cdef double lens_re(double xx, void* params) nogil:
+    cdef:
+        double x = (<double*> params)[0], wl = (<double*> params)[1]
+        double f = (<double*> params)[2], df = (<double*> params)[3]
+        double a = (<double*> params)[4], xc = (<double*> params)[5]
+        double ph, ph_ab
+    ph = -pi * xx**2 / wl * df / f / (f + df) - 2 * pi / wl / (f + df) * x * xx
+    ph_ab = -a * 1e9 * ((xx - xc) / f)**3
+    return cos(ph + ph_ab)
+
+cdef double lens_im(double xx, void* params) nogil:
+    cdef:
+        double x = (<double*> params)[0], wl = (<double*> params)[1]
+        double f = (<double*> params)[2], df = (<double*> params)[3]
+        double a = (<double*> params)[4], xc = (<double*> params)[5]
+        double ph, ph_ab
+    ph = -pi * xx**2 / wl * df / f / (f + df) - 2 * pi / wl / (f + df) * x * xx
+    ph_ab = -a * 1e9 * ((xx - xc) / f)**3
+    return sin(ph + ph_ab)
+
+cdef complex_t lens_wp_c(double x, double wl, double ap, double f,
+                       double df, double a, double xc) nogil:
+    cdef:
+        double re, im, ph = pi / wl / (f + df) * x**2
+        double params[6]
+        int fn = <int> (ap**2 / wl / (f + df))
+        gsl_function func
+    params[0] = x; params[1] = wl; params[2] = f
+    params[3] = df; params[4] = a; params[5] = xc
+    func.function = &lens_re; func.params = params
+    re = gsl_quad(func, -ap / 2, ap / 2, 1e-9, 1e-7, 1000 * fn)
+    func.function = &lens_im
+    im = gsl_quad(func, -ap / 2, ap / 2, 1e-9, 1e-7, 1000 * fn)
+    return (re + 1j * im) * (cos(ph) + 1j * sin(ph))
+
+def lens_wp(double[::1] x_arr, double wl, double ap, double focus,
+            double defoc, double alpha, double xc):
+    cdef:
+        int a = x_arr.shape[0], i
+        complex_t[::1] lens_wf = np.empty((a,), dtype=np.complex128)
+    for i in prange(a, schedule='guided', nogil=True, chunksize=10):
+        lens_wf[i] = lens_wp_c(x_arr[i], wl, ap, focus, defoc, alpha, xc) 
+    return np.asarray(lens_wf)
 
 cdef float_t wirthselect_float(float_t[::1] array, int k) nogil:
     cdef:

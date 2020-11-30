@@ -51,7 +51,6 @@ In order to install pyrost from source you will need:
 * `LLVM's OpenMP library <http://openmp.llvm.org>`_ 10.0.0 or later, which
   is used for parallelization.
 * `Cython <https://cython.org>`_ 0.29 or later.
-* `CythonGSL <https://github.com/twiecki/CythonGSL>`_ 0.2.2 or later.
 * `NumPy <https://numpy.org>`_ 1.19.0 or later.
 
 After installing the dependencies, you can download the the source code from
