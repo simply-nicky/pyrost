@@ -14,7 +14,7 @@ else:
 ext = '.pyx' if USE_CYTHON else '.c'
 extension_args = {'language': 'c',
                   'extra_compile_args': ['-fopenmp'],
-                  'extra_link_args': ['-fopenmp'],
+                  'extra_link_args': ['-fopenmp', '-Wl,-rpath,/usr/local/lib'],
                   'libraries': ['gsl', 'gslcblas'],
                   'library_dirs': ['/usr/local/lib',
                                    os.path.join(sys.prefix, 'lib')],
@@ -39,7 +39,7 @@ with open('README.md', 'r') as readme:
     long_description = readme.read()
 
 setup(name='pyrost',
-      version='0.1.10',
+      version='0.1.11',
       author='Nikolay Ivanov',
       author_email="nikolay.ivanov@desy.de",
       long_description=long_description,
