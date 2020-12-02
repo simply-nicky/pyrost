@@ -3,7 +3,6 @@ import numpy as np
 from libc.math cimport sqrt, exp, pi, floor, ceil
 from cython.parallel import prange
 cimport openmp
-from posix.time cimport clock_gettime, timespec, CLOCK_REALTIME
 
 ctypedef fused float_t:
     np.float64_t
