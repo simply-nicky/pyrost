@@ -39,7 +39,7 @@ with open('README.md', 'r') as readme:
     long_description = readme.read()
 
 setup(name='pyrost',
-      version='0.1.11',
+      version='0.1.12',
       author='Nikolay Ivanov',
       author_email="nikolay.ivanov@desy.de",
       long_description=long_description,
@@ -49,7 +49,7 @@ setup(name='pyrost',
       include_package_data=True,
       package_data={'pyrost.bin': ['*.pyx', '*.c'],
                     'pyrost': ['config/*.ini']},
-      install_requires=['Cython', 'h5py', 'numpy', 'scipy'],
+      install_requires=['h5py', 'numpy', 'scipy'],
       extras_require={'interactive': ['matplotlib', 'jupyter', 'pyximport']},
       ext_modules=extensions,
       classifiers=[
