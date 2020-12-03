@@ -27,7 +27,7 @@ We recommend **not** building from source, but install the release via the
 
     conda install -c conda-forge pyrost
 
-The package is available in [conda-forge](https://conda-forge.org) on OS X and Linux.
+The package is available in [conda-forge](https://anaconda.org/conda-forge/pyrost) on OS X and Linux.
 
 Also you can install the release from [pypi](https://pypi.org/project/pyrost/)
 with the pip package installer:
