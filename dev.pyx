@@ -1,10 +1,13 @@
-#cython: language_level=3, boundscheck=False, wraparound=False, initializedcheck=False, cdivision=True
+#cython: language_level=3, boundscheck=False, wraparound=False, initializedcheck=False, cdivision=True, embedsignature=True
 cimport numpy as np
 import numpy as np
 cimport openmp
 from libc.math cimport sqrt, cos, sin, exp, pi, erf, sinh, floor, ceil
 from libc.time cimport time, time_t
-from cython.parallel import prange, parallel
+from cython.parallel import prange
+from scipy.ndimage import gaussian_filter
+from pyrost.bin import update_pixel_map_gs, make_reference, total_mse
+import speckle_tracking as st
 
 ctypedef fused float_t:
     np.float64_t
@@ -18,20 +21,83 @@ DEF FLOAT_MAX = 1.7976931348623157e+308
 DEF MU_C = 1.681792830507429
 DEF NO_VAR = -1.0
 
-def barcode_steps(double x0, double x1, double br_dx, double rd):
-    cdef:
-        int br_n = <int>((x1 - x0) / 2 / br_dx) * 2 if x1 - x0 > 0 else 0, i
-        gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937)
-        double bs_min = max(1 - rd, 0), bs_max = min(1 + rd, 2)
-        double[::1] bx_arr = np.empty(br_n, dtype=np.float64)
-        time_t t = time(NULL)
-    gsl_rng_set(r, t)
-    if br_n:
-        bx_arr[0] = x0 + br_dx * ((bs_max - bs_min) * gsl_rng_uniform_pos(r) - 1)
-        for i in range(1, br_n):
-            bx_arr[i] = bx_arr[i - 1] + br_dx * (bs_min + (bs_max - bs_min) * gsl_rng_uniform_pos(r))
-    gsl_rng_free(r)
-    return np.asarray(bx_arr)
+def st_update(I_n, W, dij, basis, x_ps, y_ps, z, df, sw_ss, sw_fs, ls, roi=None, n_iter=5):
+    """
+    Andrew's speckle tracking update algorithm
+    
+    I_n - measured data
+    W - whitefield
+    basis - detector plane basis vectors
+    x_ps, y_ps - x and y pixel sizes
+    z - distance between the sample and the detector
+    df - defocus distance
+    sw_max - pixel mapping search window size
+    n_iter - number of iterations
+    """
+    M = np.ones((I_n.shape[1], I_n.shape[2]), dtype=bool)
+    u, dij_pix, res = st.generate_pixel_map(W.shape, dij, basis, x_ps,
+                                            y_ps, z, df, verbose=False)
+    I0, n0, m0 = st.make_object_map(I_n, M, W, dij_pix, u, ls, roi=roi)
+
+    es = []
+    for i in range(n_iter):
+
+        # calculate errors
+        error_total = st.calc_error(I_n, M, W, dij_pix, I0, u, n0, m0, ls=ls,
+                                    roi=roi, subpixel=True, verbose=False)[0]
+
+        # store total error
+        es.append(error_total)
+
+        # update pixel map
+        u = st.update_pixel_map(I_n, M, W, I0, u, n0, m0, dij_pix,
+                                sw_ss, sw_fs, ls, roi=roi)
+
+        # make reference image
+        I0, n0, m0 = st.make_object_map(I_n, M, W, dij_pix, u, ls, roi=roi)
+    return {'u':u, 'I0':I0, 'errors':es, 'n0': n0, 'm0': m0}
+
+def pixel_translations(basis, dij, df, z):
+    dij_pix = (basis * dij[:, None]).sum(axis=-1)
+    dij_pix /= (basis**2).sum(axis=-1) * df / z
+    dij_pix -= dij_pix.mean(axis=0)
+    return np.ascontiguousarray(dij_pix[:, 0]), np.ascontiguousarray(dij_pix[:, 1])
+
+def str_update(I_n, W, dij, basis, x_ps, y_ps, z, df, sw_max=100, n_iter=5, l_scale=2.5):
+    """
+    Robust version of Andrew's speckle tracking update algorithm
+    
+    I_n - measured data
+    W - whitefield
+    basis - detector plane basis vectors
+    x_ps, y_ps - x and y pixel sizes
+    z - distance between the sample and the detector
+    df - defocus distance
+    sw_max - pixel mapping search window size
+    n_iter - number of iterations
+    """
+    I_n = I_n.astype(np.float64)
+    W = W.astype(np.float64)
+    u0 = np.indices(W.shape, dtype=np.float64)
+    di, dj = pixel_translations(basis, dij, df, z)
+    I0, n0, m0 = make_reference(I_n=I_n, W=W, u=u0, di=di, dj=dj, ls=l_scale, sw_fs=0, sw_ss=0)
+
+    es = []
+    for i in range(n_iter):
+
+        # calculate errors
+        es.append(total_mse(I_n=I_n, W=W, I0=I0, u=u0, di=di - n0, dj=dj - m0, ls=l_scale))
+
+        # update pixel map
+        u = update_pixel_map_gs(I_n=I_n, W=W, I0=I0, u0=u0, di=di - n0, dj=dj - m0,
+                                sw_ss=0, sw_fs=sw_max, ls=l_scale)
+        sw_max = int(np.max(np.abs(u - u0)))
+        u0 = u0 + gaussian_filter(u - u0, (0, 0, l_scale))
+
+        # make reference image
+        I0, n0, m0 = make_reference(I_n=I_n, W=W, u=u0, di=di, dj=dj, ls=l_scale, sw_ss=0, sw_fs=0)
+        I0 = gaussian_filter(I0, (0, l_scale))
+    return {'u':u0, 'I0':I0, 'errors':es, 'n0': n0, 'm0': m0}
 
 cdef float_t bprd_varc(float_t br_dx, float_t sgm, float_t atn) nogil:
     cdef:
@@ -258,63 +324,6 @@ def krig_data(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, :, ::1] u,
         I[a] = rss / w0**2
     return np.asarray(I)
 
-cdef void frame_reference(float_t[:, ::1] I0, float_t[:, ::1] w0, float_t[:, ::1] I, float_t[:, ::1] W,
-                          float_t[:, :, ::1] u, float_t di, float_t dj, float_t ls) nogil:
-    cdef:
-        int b = I.shape[0], c = I.shape[1], j, k, jj, kk, j0, k0
-        int aa = I0.shape[0], bb = I0.shape[1], jj0, jj1, kk0, kk1
-        int dn = <int>(ceil(4 * ls))
-        float_t ss, fs, r
-    for j in range(b):
-        for k in range(c):
-            ss = u[0, j, k] - di
-            fs = u[1, j, k] - dj
-            j0 = <int>(ss) + 1
-            k0 = <int>(fs) + 1
-            jj0 = j0 - dn if j0 - dn > 0 else 0
-            jj1 = j0 + dn if j0 + dn < aa else aa
-            kk0 = k0 - dn if k0 - dn > 0 else 0
-            kk1 = k0 + dn if k0 + dn < bb else bb
-            for jj in range(jj0, jj1):
-                for kk in range(kk0, kk1):
-                    r = rbf((jj - ss)**2 + (kk - fs)**2, ls)
-                    I0[jj, kk] += I[j, k] * W[j, k] * r
-                    w0[jj, kk] += W[j, k]**2 * r
-
-def make_reference(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, :, ::1] u, float_t[::1] di,
-                   float_t[::1] dj, float_t ls, int sw_ss, int sw_fs, bool_t return_nm0=True):
-    dtype = np.float64 if float_t is np.float64_t else np.float32
-    cdef:
-        int a = I_n.shape[0], b = I_n.shape[1], c = I_n.shape[2], i, j, k, t
-        float_t n0 = -min_float(&u[0, 0, 0], b * c) + max_float(&di[0], a) + sw_ss
-        float_t m0 = -min_float(&u[1, 0, 0], b * c) + max_float(&dj[0], a) + sw_fs
-        int aa = <int>(max_float(&u[0, 0, 0], b * c) - min_float(&di[0], a) + n0) + 1 + sw_ss
-        int bb = <int>(max_float(&u[1, 0, 0], b * c) - min_float(&dj[0], a) + m0) + 1 + sw_fs
-        int max_threads = openmp.omp_get_max_threads()
-        float_t[:, :, ::1] I = np.zeros((max_threads, aa, bb), dtype=dtype)
-        float_t[:, :, ::1] w = np.zeros((max_threads, aa, bb), dtype=dtype)
-        float_t[::1] Is = np.empty(max_threads, dtype=dtype)
-        float_t[::1] ws = np.empty(max_threads, dtype=dtype)
-        float_t[:, ::1] I0 = np.zeros((aa, bb), dtype=dtype)
-    for i in prange(a, schedule='guided', nogil=True):
-        t = openmp.omp_get_thread_num()
-        frame_reference(I[t], w[t], I_n[i], W, u, di[i] - n0, dj[i] - m0, ls)
-    for k in prange(bb, schedule='guided', nogil=True):
-        t = openmp.omp_get_thread_num()
-        for j in range(aa):
-            Is[t] = 0; ws[t] = 0
-            for i in range(max_threads):
-                Is[t] = Is[t] + I[i, j, k]
-                ws[t] = ws[t] + w[i, j, k]
-            if ws[t]:
-                I0[j, k] = Is[t] / ws[t]
-            else:
-                I0[j, k] = 0
-    if return_nm0:
-        return np.asarray(I0), <int>(n0), <int>(m0)
-    else:
-        return np.asarray(I0)
-
 def subpixel_refinement_2d(float_t[::1] I, float_t[:, ::1] I0, float_t[:] u0,
                            float_t[::1] di, float_t[::1] dj, float_t l1):
     dtype = np.float64 if float_t is np.float64_t else np.float32
@@ -398,117 +407,6 @@ def subpixel_refinement_1d(float_t[::1] I, float_t[:, ::1] I0, float_t[:] u0,
     print('dfs = %f' % dfs)
     u[1] += dfs
     return np.asarray(u)
-
-cdef void subpixel_ref_2d(float_t[::1] I, float_t[:, ::1] I0, float_t[::1] u,
-                          float_t[::1] di, float_t[::1] dj, float_t l1) nogil:
-    cdef:
-        float_t dss = 0, dfs = 0, det, mu, dd
-        float_t f22, f11, f00, f21, f01, f12, f10
-        float_t mv_ptr[2]
-    mse_bi(mv_ptr, I, I0, di, dj, u[0], u[1])
-    f11 = mv_ptr[0]
-    mu = MU_C * mv_ptr[1]**0.25 / sqrt(l1)
-    mu = mu if mu > 2 else 2
-    mv_ptr[1] = NO_VAR
-
-    mse_bi(mv_ptr, I, I0, di, dj, u[0] - mu / 2, u[1] - mu / 2)
-    f00 = mv_ptr[0]
-    mse_bi(mv_ptr, I, I0, di, dj, u[0] - mu / 2, u[1])
-    f01 = mv_ptr[0]
-    mse_bi(mv_ptr, I, I0, di, dj, u[0], u[1] - mu / 2)
-    f10 = mv_ptr[0]
-    mse_bi(mv_ptr, I, I0, di, dj, u[0], u[1] + mu / 2)
-    f12 = mv_ptr[0]
-    mse_bi(mv_ptr, I, I0, di, dj, u[0] + mu / 2, u[1])
-    f21 = mv_ptr[0]
-    mse_bi(mv_ptr, I, I0, di, dj, u[0] + mu / 2, u[1] + mu / 2)
-    f22 = mv_ptr[0]
-
-    det = 4 * (f21 + f01 - 2 * f11) * (f12 + f10 - 2 * f11) - \
-          (f22 + f00 + 2 * f11 - f01 - f21 - f10 - f12)**2
-    if det != 0:
-        dss = ((f22 + f00 + 2 * f11 - f01 - f21 - f10 - f12) * (f12 - f10) - \
-               2 * (f12 + f10 - 2 * f11) * (f21 - f01)) / det * mu / 2
-        dfs = ((f22 + f00 + 2 * f11 - f01 - f21 - f10 - f12) * (f21 - f01) - \
-               2 * (f21 + f01 - 2 * f11) * (f12 - f10)) / det * mu / 2
-        dd = sqrt(dfs**2 + dss**2)
-        if dd > 1:
-            dss /= dd; dfs /= dd
-    
-    u[0] += dss; u[1] += dfs
-
-cdef void subpixel_ref_1d(float_t[::1] I, float_t[:, ::1] I0, float_t[::1] u,
-                          float_t[::1] di, float_t[::1] dj, float_t l1) nogil:
-    cdef:
-        float_t dfs = 0, det, mu, dd
-        float_t f11, f12, f10
-        float_t mv_ptr[2]
-    mse_bi(mv_ptr, I, I0, di, dj, u[0], u[1])
-    f11 = mv_ptr[0]
-    mu = MU_C * mv_ptr[1]**0.25 / sqrt(l1)
-    mu = mu if mu > 2 else 2
-    mv_ptr[1] = NO_VAR
-
-    mse_bi(mv_ptr, I, I0, di, dj, u[0], u[1] - mu / 2)
-    f10 = mv_ptr[0]
-    mse_bi(mv_ptr, I, I0, di, dj, u[0], u[1] + mu / 2)
-    f12 = mv_ptr[0]
-
-    det = 4 * (f12 + f10 - 2 * f11)
-    if det != 0:
-        dfs = (f10 - f12) / det * mu
-        dd = sqrt(dfs**2)
-        if dd > 1:
-            dfs /= dd
-
-    u[1] += dfs
-
-cdef void mse_min_c(float_t[::1] I, float_t[:, ::1] I0, float_t[::1] u,
-                    float_t[::1] di, float_t[::1] dj, int* bnds) nogil:
-    cdef:
-        int sslb = -bnds[0] if bnds[0] < u[0] - bnds[2] else <int>(bnds[2] - u[0])
-        int ssub = bnds[0] if bnds[0] < bnds[3] - u[0] else <int>(bnds[3] - u[0])
-        int fslb = -bnds[1] if bnds[1] < u[1] - bnds[4] else <int>(bnds[4] - u[1])
-        int fsub = bnds[1] if bnds[1] < bnds[5] - u[1] else <int>(bnds[5] - u[1])
-        int ss_min = sslb, fs_min = fslb, ss_max = sslb, fs_max = fslb, ss, fs
-        float_t mse_min = FLOAT_MAX, mse_max = -FLOAT_MAX, l1
-        float_t mv_ptr[2]
-    mv_ptr[1] = NO_VAR
-    for ss in range(sslb, ssub):
-        for fs in range(fslb, fsub):
-            mse_bi(mv_ptr, I, I0, di, dj, u[0] + ss, u[1] + fs)
-            if mv_ptr[0] < mse_min:
-                mse_min = mv_ptr[0]; ss_min = ss; fs_min = fs
-            if mv_ptr[0] > mse_max:
-                mse_max = mv_ptr[0]; ss_max = ss; fs_max = fs
-    u[0] += ss_min; u[1] += fs_min
-    l1 = 2 * (mse_max - mse_min) / ((ss_max - ss_min)**2 + (fs_max - fs_min)**2)
-    if ssub - sslb > 1:
-        subpixel_ref_2d(I, I0, u, di, dj, l1)
-    else:
-        subpixel_ref_1d(I, I0, u, di, dj, l1)
-    
-def update_pixel_map_gs(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0,
-                        float_t[:, :, ::1] u0, float_t[::1] di, float_t[::1] dj,
-                        int sw_ss, int sw_fs, float_t ls):
-    dtype = np.float64 if float_t is np.float64_t else np.float32
-    cdef:
-        int a = I_n.shape[0], b = I_n.shape[1], c = I_n.shape[2]
-        int aa = I0.shape[0], bb = I0.shape[1], j, k, t
-        int max_threads = openmp.omp_get_max_threads()
-        float_t[::1, :, :] u = np.empty((2, b, c), dtype=dtype, order='F')
-        float_t[:, ::1] I = np.empty((max_threads, a + 1), dtype=dtype)
-        int bnds[6] # sw_ss, sw_fs, di0, di1, dj0, dj1
-    bnds[0] = sw_ss if sw_ss >= 1 else 1; bnds[1] = sw_fs if sw_fs >= 1 else 1
-    bnds[2] = <int>(min_float(&di[0], a)); bnds[3] = <int>(max_float(&di[0], a)) + aa
-    bnds[4] = <int>(min_float(&dj[0], a)); bnds[5] = <int>(max_float(&dj[0], a)) + bb
-    for k in prange(c, schedule='guided', nogil=True):
-        t = openmp.omp_get_thread_num()
-        for j in range(b):
-            krig_data_c(I[t], I_n, W, u0, j, k, ls)
-            u[:, j, k] = u0[:, j, k]
-            mse_min_c(I[t], I0, u[:, j, k], di, dj, bnds)
-    return np.asarray(u, order='C')
 
 cdef void mse_surface_c(float_t[:, ::1] mse_m, float_t[:, ::1] mse_var, float_t[::1] I, float_t[:, ::1] I0,
                         float_t[::1] di, float_t[::1] dj, float_t u_ss, float_t u_fs, int* bnds) nogil:
@@ -652,24 +550,6 @@ def init_newton(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0,
             init_newton_c(sptr[t], I[t], I0, u[:, j, k], di, dj, bnds)
             l1[j, k] = sptr[t, 2]
     return np.asarray(l1)
-
-def total_mse(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0,
-              float_t[:, :, ::1] u, float_t[::1] di, float_t[::1] dj, float_t ls):
-    dtype = np.float64 if float_t is np.float64_t else np.float32
-    cdef:
-        int a = I_n.shape[0], b = I_n.shape[1], c = I_n.shape[2]
-        int aa = I0.shape[0], bb = I0.shape[1], j, k, t
-        int max_threads = openmp.omp_get_max_threads()
-        float_t err = 0
-        float_t[:, ::1] mptr = NO_VAR * np.ones((max_threads, 2), dtype=dtype)
-        float_t[:, ::1] I = np.empty((max_threads, a + 1), dtype=dtype)
-    for k in prange(c, schedule='static', nogil=True):
-        t = openmp.omp_get_thread_num()
-        for j in range(b):
-            krig_data_c(I[t], I_n, W, u, j, k, ls)
-            mse_bi(&mptr[t, 0], I[t], I0, di, dj, u[0, j, k], u[1, j, k])
-            err += mptr[t, 0]
-    return err / b / c
 
 def ct_integrate(float_t[:, ::1] sx_arr, float_t[:, ::1] sy_arr):
     dtype = np.float64 if float_t is np.float64_t else np.float32

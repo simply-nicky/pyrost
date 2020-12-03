@@ -1,4 +1,4 @@
-#cython: language_level=3, boundscheck=False, wraparound=False, initializedcheck=False, cdivision=True
+#cython: language_level=3, boundscheck=False, wraparound=False, initializedcheck=False, cdivision=True, embedsignature=True
 cdef extern from "gsl/gsl_math.h":
 
     ctypedef struct gsl_function:
