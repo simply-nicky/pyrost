@@ -1,7 +1,7 @@
 ## Current build status
 [![PyPI](https://img.shields.io/pypi/v/pyrost?color=brightgreen)](https://pypi.org/project/pyrost/)
 [![Documentation Status](https://readthedocs.org/projects/robust-speckle-tracking/badge/?version=latest)](https://robust-speckle-tracking.readthedocs.io/en/latest/?badge=latest)
-[![conda-forge](https://anaconda.org/conda-forge/pyrost)](https://img.shields.io/conda/vn/conda-forge/pyrost?color=brightgreen)
+[![conda-forge](https://img.shields.io/conda/vn/conda-forge/pyrost?color=brightgreen)](https://anaconda.org/conda-forge/pyrost)
 
 # pyrost
 Python Robust Speckle Tracking (**pyrost**) is a library for wavefront metrology
