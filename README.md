@@ -25,7 +25,7 @@ The documentation can be found on [Read the Docs](https://robust-speckle-trackin
 We recommend **not** building from source, but install the release via the
 [conda](https://anaconda.org/conda-forge/pyrost) manager:
 
-    conda install pyrost
+    conda install -c conda-forge pyrost
 
 The package is available in [conda-forge](https://conda-forge.org) on OS X and Linux.
 
