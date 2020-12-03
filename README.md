@@ -1,7 +1,7 @@
 ## Current build status
 [![PyPI](https://img.shields.io/pypi/v/pyrost?color=brightgreen)](https://pypi.org/project/pyrost/)
 [![Documentation Status](https://readthedocs.org/projects/robust-speckle-tracking/badge/?version=latest)](https://robust-speckle-tracking.readthedocs.io/en/latest/?badge=latest)
-![conda-forge](https://img.shields.io/conda/vn/conda-forge/pyrost?color=brightgreen)
+[![conda-forge](https://anaconda.org/conda-forge/pyrost)](https://img.shields.io/conda/vn/conda-forge/pyrost?color=brightgreen)
 
 # pyrost
 Python Robust Speckle Tracking (**pyrost**) is a library for wavefront metrology
@@ -22,12 +22,19 @@ The documentation can be found on [Read the Docs](https://robust-speckle-trackin
 - [SciPy](https://scipy.org) 1.5.2 or later.
 
 ## Installation
-We recommend **not** building from source, but install the release from [pypi](https://pypi.org/project/pyrost/)
+We recommend **not** building from source, but install the release via the
+[conda](https://anaconda.org/conda-forge/pyrost) manager:
+
+    conda install pyrost
+
+The package is available in [conda-forge](https://conda-forge.org) on OS X and Linux.
+
+Also you can install the release from [pypi](https://pypi.org/project/pyrost/)
 with the pip package installer:
 
     pip install pyrost
 
-Pre-build binary wheels for OS X are available in [pypi](https://pypi.org/project/pyrost/) as for now.
+The source distribution is available in [pypi](https://pypi.org/project/pyrost/) as for now.
 
 ## Installation from source
 In order to build the package from source simply execute the following command:
