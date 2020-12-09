@@ -1,24 +1,24 @@
 """Robust Speckle Tracking data processing algorithm.
-:class:`STData` contains all the necessary data for the Speckle
+:class:`pyrost.STData` contains all the necessary data for the Speckle
 Tracking algorithm, and handy data processing tools to work
-with the data. :class:`SpeckleTracking` performs the main
+with the data. :class:`pyrost.SpeckleTracking` performs the main
 Robust Speckle Tracking algorithm and yields reference image
-and pixel mapping. :class:`AbberationsFit` fit the lens'
+and pixel mapping. :class:`pyrost.AbberationsFit` fit the lens'
 abberations profile with the polynomial function using
 nonlinear least-squares algorithm.
 
 Examples
 --------
-Extract all the necessary data using a :func:`pyrost.protocol.loader` function.
+Extract all the necessary data using a :func:`pyrost.loader` function.
 
 >>> import pyrost as rst
 >>> loader = rst.loader()
->>> rst_data = loader.load('results/test/data.cxi'
+>>> rst_data = loader.load('results/test/data.cxi')
 
-Perform the Robust Speckle Tracking using a :class:`SpeckleTracking` object.
+Perform the Robust Speckle Tracking using a :class:`pyrost.SpeckleTracking` object.
 
 >>> rst_obj = rst_data.get_st()
->>> rst_res, errors = rst_obj.iter_update([0, 150], ls_pm=3., ls_ri=10,
+>>> rst_res, errors = rst_obj.iter_update(sw_fs=150, ls_pm=3., ls_ri=10.,
 ...                                       verbose=True, n_iter=10)
 Iteration No. 0: Total MSE = 0.150
 Iteration No. 1: Total MSE = 0.077
@@ -39,7 +39,8 @@ import numpy as np
 from scipy.ndimage import gaussian_filter, gaussian_gradient_magnitude
 from .abberations_fit import AbberationsFit
 from .data_container import DataContainer, dict_to_object
-from .bin import make_whitefield, make_reference, update_pixel_map_gs, update_pixel_map_nm, total_mse, ct_integrate
+from .bin import make_whitefield, make_reference, update_pixel_map_gs, update_pixel_map_nm
+from .bin import update_translations_gs, mse_frame, mse_total, ct_integrate
 
 class STData(DataContainer):
     """Speckle Tracking algorithm data container class.
@@ -380,7 +381,7 @@ class STData(DataContainer):
             return None
         else:
             pixel_ab = self.get('pixel_abberations')[axis].mean(axis=1 - axis)
-            return fit_obj.fit_pixel_abberations(pixel_ab, max_order=max_order,
+            return fit_obj.fit_abberations(pixel_ab, max_order=max_order,
                                                  xtol=xtol, ftol=ftol, loss=loss)
 
     def defocus_sweep(self, defoci_fs, defoci_ss=None, ls_ri=30):
@@ -672,6 +673,11 @@ class SpeckleTracking(DataContainer):
             If `reference_image` was not generated beforehand.
         ValueError
             If `method` keyword value is not valid.
+
+        See Also
+        --------
+        bin.update_pixel_map_gs, bin.update_pixel_map_nm : Full details
+            of the `pixel_map` update algorithm.
         """
         if self.reference_image is None:
             raise AttributeError('The reference image has not been generated')
@@ -692,9 +698,61 @@ class SpeckleTracking(DataContainer):
                 raise ValueError('Wrong method argument: {:s}'.format(method))
             return {'pixel_map': pixel_map}
 
-    def iter_update(self, sw_fs, sw_ss=0, ls_pm=3., ls_ri=10.,
-                    n_iter=5, f_tol=3e-3, verbose=True, method='search',
-                    return_errors=True):
+    @dict_to_object
+    def update_translations(self, sw_fs, sw_ss=0, ls_ri=5.):
+        """Return a new :class:`SpeckleTracking` object with
+        the updated sample pixel translations (`dss_pix`,
+        `dfs_pix`).
+
+        Parameters
+        ----------
+        sw_fs : int
+            Search window size in pixels along the fast detector
+            axis.
+        sw_ss : int, optional
+            Search window size in pixels along the slow detector
+            axis.
+        ls_ri: float, optional
+            `reference_image` length scale in pixels.
+        method : {'search', 'newton'}, optional
+            `pixel_map` update algorithm. The following keyword
+            values are allowed:
+
+            * 'newton' : Iterative Newton's method based on
+              finite difference gradient approximation.
+            * 'search' : Grid search along the search window.
+
+        Returns
+        -------
+        SpeckleTracking
+            A new :class:`SpeckleTracking` object with the updated
+            `dss_pix`, `dfs_pix`.
+
+        Raises
+        ------
+        AttributeError
+            If `reference_image` was not generated beforehand.
+
+        See Also
+        --------
+        bin.update_translations_gs : Full details of the sample
+            translations update algorithm.
+        """
+        if self.reference_image is None:
+            raise AttributeError('The reference image has not been generated')
+        else:
+            dij = update_translations_gs(I_n=self.data, W=self.whitefield,
+                                         I0=self.reference_image, u=self.pixel_map,
+                                         di=self.dss_pix - self.n0,
+                                         dj=self.dfs_pix - self.m0,
+                                         sw_ss=sw_ss, sw_fs=sw_fs, ls=ls_ri)
+            dss_pix = np.ascontiguousarray(dij[:, 0]) + self.n0
+            dfs_pix = np.ascontiguousarray(dij[:, 1]) + self.m0
+            return {'dss_pix': dss_pix, 'dfs_pix': dfs_pix}
+
+    def iter_update(self, sw_fs, sw_ss=0, ls_pm=3., ls_ri=5.,
+                    n_iter=5, f_tol=1e-3, verbose=True, method='search',
+                    update_translations=False, return_errors=True):
         """Perform iterative Robust Speckle Tracking update. `ls_ri` and
         `ls_pm` define high frequency cut-off to supress the noise.
         Iterative update terminates when the difference between total
@@ -724,6 +782,8 @@ class SpeckleTracking(DataContainer):
             * 'newton' : Iterative Newton's method based on
               finite difference gradient approximation.
             * 'search' : Grid search along the search window.
+        update_translations : bool, optional
+            Update sample pixel translations if True.
         return_errors : bool, optional
             Return errors array if True.
 
@@ -731,22 +791,32 @@ class SpeckleTracking(DataContainer):
         -------
         SpeckleTracking
             A new :class:`SpeckleTracking` object with the updated
-            `pixel_map` and `reference_image`.
+            `pixel_map` and `reference_image`. `dss_pix` and `dfs_pix`
+            are also updated if `update_translations` is True.
         list
             List of total MSE values for each iteration.  Only if
             `return_errors` is True.
         """
         obj = self.update_reference(ls_ri=ls_ri, sw_ss=sw_ss, sw_fs=sw_fs)
-        errors = [obj.total_mse(ls_ri=ls_ri)]
+        errors = [obj.mse_total(ls_ri=ls_ri)]
         if verbose:
             print('Iteration No. 0: Total MSE = {:.3f}'.format(errors[0]))
         for it in range(1, n_iter + 1):
+            # Update pixel_map, reference_image
             new_obj = obj.update_reference(ls_ri=ls_ri)
             new_obj.update_pixel_map.inplace_update(sw_ss=sw_ss, sw_fs=sw_fs,
                                                     ls_pm=ls_pm, method=method)
 
+            # Update dss_pix, dfs_pix
+            if update_translations:
+                new_obj.update_translations.inplace_update(sw_ss=sw_ss, sw_fs=sw_fs,
+                                                           ls_ri=ls_ri)
+
+            # Apply pixel_map update
             obj.pixel_map += gaussian_filter(new_obj.pixel_map - obj.pixel_map,
                                              (0, ls_pm, ls_pm))
+
+            # Apply reference_image update
             ss_roi = np.clip([obj.n0 - new_obj.n0,
                               new_obj.reference_image.shape[0] + obj.n0 - new_obj.n0],
                              0, obj.reference_image.shape[0]) - obj.n0
@@ -758,17 +828,21 @@ class SpeckleTracking(DataContainer):
             d_ri = new_obj.reference_image[ss_s1, fs_s1] - obj.reference_image[ss_s0, fs_s0]
             obj.reference_image[ss_s0, fs_s0] += gaussian_filter(d_ri, (ls_ri, ls_ri))
 
-            errors.append(obj.total_mse(ls_ri=ls_ri))
+            # Apply dss_pix, dfs_pix update
+            obj.dss_pix, obj.dfs_pix = new_obj.dss_pix, new_obj.dfs_pix
+
+            # Calculate errors
+            errors.append(obj.mse_total(ls_ri=ls_ri))
             if verbose:
                 print('Iteration No. {:d}: Total MSE = {:.3f}'.format(it, errors[-1]))
-            if errors[-2] - errors[-1] <= f_tol:
+            if (errors[-2] - errors[-1]) <= f_tol * errors[0]:
                 break
         if return_errors:
             return obj, errors
         else:
             return obj
 
-    def total_mse(self, ls_ri=3.):
+    def mse_frame(self, ls_ri=5.):
         """Return average mean-squared-error (MSE) per pixel.
 
         Parameters
@@ -778,22 +852,55 @@ class SpeckleTracking(DataContainer):
 
         Returns
         -------
-        float
+        numpy.ndarray
             Average mean-squared-error (MSE) per pixel.
 
         Raises
         ------
         AttributeError
             If `reference_image` was not generated beforehand.
+
+        See Also
+        --------
+        bin.mse_frame : Full details of the error metric.
         """
         if self.reference_image is None:
             raise AttributeError('The reference image hsa not been generated')
         else:
-            return total_mse(I_n=self.data, W=self.whitefield, I0=self.reference_image,
+            return mse_frame(I_n=self.data, W=self.whitefield, I0=self.reference_image,
                              u=self.pixel_map, di=self.dss_pix - self.n0,
                              dj=self.dfs_pix - self.m0, ls=ls_ri)
 
-    def var_pixel_map(self, ls_ri=20):
+    def mse_total(self, ls_ri=5.):
+        """Return average total mean-squared-error (MSE).
+
+        Parameters
+        ----------
+        ls_ri : float
+            `reference_image` length scale in pixels.
+
+        Returns
+        -------
+        float
+            Average total mean-squared-error (MSE).
+
+        Raises
+        ------
+        AttributeError
+            If `reference_image` was not generated beforehand.
+
+        See Also
+        --------
+        bin.mse_total : Full details of the error metric.
+        """
+        if self.reference_image is None:
+            raise AttributeError('The reference image hsa not been generated')
+        else:
+            return mse_total(I_n=self.data, W=self.whitefield, I0=self.reference_image,
+                             u=self.pixel_map, di=self.dss_pix - self.n0,
+                             dj=self.dfs_pix - self.m0, ls=ls_ri)
+
+    def var_pixel_map(self, ls_ri=20.):
         """Return `pixel_map` variance.
 
         Parameters
@@ -807,7 +914,7 @@ class SpeckleTracking(DataContainer):
             `pixel_map` variance.
         """
         var_psn = np.mean(self.data)
-        ri = self.update_reference.dict_func(ls_ri=ls_ri) 
+        ri = self.update_reference.dict_func(ls_ri=ls_ri)
         dri_ss = np.mean(np.gradient(ri['reference_image'][0])**2)
         N, K = self.data.shape[0], self.data.shape[-1] / (self.dfs_pix[0] - self.dfs_pix[1])
         return var_psn * (1 / N + 1 / N / K) / dri_ss / np.mean(self.whitefield**2)

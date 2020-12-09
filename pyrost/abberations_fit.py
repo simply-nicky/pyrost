@@ -1,19 +1,19 @@
 """Routines for model regression based on nonlinear
-least-squares algorithm. :class:`AbberationsFit` fit the
+least-squares algorithm. :class:`pyrost.AbberationsFit` fit the
 lens' abberations profile with the polynomial function
 using nonlinear least-squares algorithm.
 
 Examples
 --------
-Generate a :class:`AbberationsFit` object from
-:class:`STData` container object `st_data` as follows:
+Generate a :class:`pyrost.AbberationsFit` object from
+:class:`pyrost.STData` container object `st_data` as follows:
 
 >>> fit_ab = AbberationsFit.import_data(st_data)
 
 Fit a pixel abberations profile `pixel_ab` with third
 order polynomial:
 
->>> fit_res = fit_ab.fit_pixel_abberations(pixel_ab, max_order=3)
+>>> fit_res = fit_ab.fit_abberations(pixel_ab, max_order=3)
 """
 import numpy as np
 from scipy.optimize import least_squares
@@ -337,7 +337,7 @@ class AbberationsFit(DataContainer, LeastSquares):
         ph_fit[-2] -= self.model(ph_fit, pixels * self.pix_ap).mean()
         return ph_fit
 
-    def fit_pixel_abberations(self, pixel_ab, pixels=None, max_order=2, xtol=1e-14, ftol=1e-14, loss='cauchy'):
+    def fit_abberations(self, pixel_ab, pixels=None, max_order=2, xtol=1e-14, ftol=1e-14, loss='cauchy'):
         """Fit lens' pixel abberations `pixel_ab` with polynomial
         function using :func:`scipy.optimise.least_squares`.
 

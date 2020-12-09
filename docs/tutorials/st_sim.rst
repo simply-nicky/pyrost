@@ -30,11 +30,11 @@ Performing the simulation
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Now you're able to generate the simulated data. It takes time to calculate the
-wavefronts, :class:`STSim` will post it's status during the process. You can
+wavefronts, :class:`pyrost.simulation.STSim` will post it's status during the process. You can
 either generate a stack of frames or a ptychograph. :class:`pyrost.simulation.STConverter`
 saves the results to a CXI file using the provided CXI protocol.
 
-.. note:: :class:`STSim` logs the simulation procedure in `[package_root_folder]/logs`.
+.. note:: :class:`pyrost.simulation.STSim` logs the simulation procedure in `[package_root_folder]/logs`.
 
 .. doctest::
 
@@ -103,6 +103,30 @@ saves the results to a CXI file using the provided CXI protocol.
 .. image:: ../figures/ptychograph.png
     :width: 100 %
     :alt: Ptychograph.
+
+Or you can directly generate an :class:`pyrost.STData` data container to perform the Speckle Tracking algorithm.
+
+.. doctest::
+
+    >>> with st_sim.STSim(params) as sim_obj:
+    >>>     ptych = sim_obj.ptychograph()
+    >>>     st_conv = st_sim.STConverter()
+    >>>     st_data = st_conv.export_data(ptych, sim_obj)
+    2020-11-25 15:50:34,548 - STSim - INFO - Initializing
+    2020-11-25 15:50:34,549 - STSim - INFO - Current parameters
+    2020-11-25 15:50:34,550 - STSim - INFO - Initializing coordinate arrays at the sample's plane
+    2020-11-25 15:50:34,551 - STSim - INFO - Number of points in x axis: 4828
+    2020-11-25 15:50:34,552 - STSim - INFO - Number of points in y axis: 905
+    2020-11-25 15:50:34,554 - STSim - INFO - Generating wavefields at the sample's plane
+    2020-11-25 15:50:44,708 - STSim - INFO - The wavefields have been generated
+    2020-11-25 15:50:44,709 - STSim - INFO - Generating barcode's transmission coefficients
+    2020-11-25 15:50:44,770 - STSim - INFO - The coefficients have been generated
+    2020-11-25 15:50:44,771 - STSim - INFO - Generating wavefields at the detector's plane
+    2020-11-25 15:50:52,562 - STSim - INFO - The wavefields have been generated
+    2020-11-25 15:50:52,564 - STSim - INFO - Making ptychograph...
+    2020-11-25 15:50:52,565 - STSim - INFO - Source blur size: 160.000000 um
+    2020-11-25 15:50:52,581 - STSim - INFO - The ptychograph is generated, data shape: (200, 1, 2000)
+
 
 Command-line interface
 ----------------------

@@ -1,17 +1,18 @@
 """One-dimensional Speckle Tracking scan simulation.
 Generate intensity frames based on Fresnel diffraction
-theory. :class:`STSim` does the heavy lifting of calculating
-the wavefront propagation to the detector plane.
-:class:`STConverter` exports simulated data to a `CXI`_ format
-file accordingly to the provided :class:`Protocol` object and
-saves the protocol and experimental parameters to the same folder.
+theory. :class:`pyrost.simulation.STSim` does the heavy lifting
+of calculating the wavefront propagation to the detector plane.
+:class:`pyrost.simulation.STConverter` exports simulated data to a
+`CXI`_ format file accordingly to the provided :class:`pyrost.Protocol`
+object and saves the protocol and experimental parameters to the same
+folder.
 
-Logs of the simulation process are saved in `logs` folder.
+Logs of the simulation process are saved in `[package_root_folder]/logs` folder.
 
 Examples
 --------
 
-Perform the simulation for a given :class:`STParams` object.
+Perform the simulation for a given :class:`pyrost.simulation.STParams` object.
 
 >>> import pyrost.simulation as st_sim
 >>> st_params = st_sim.parameters()
@@ -53,28 +54,28 @@ Save the simulated data to a `CXI`_ file using the default protocol.
 2020-11-20 12:33:40,409 - STSim - INFO - test/protocol.ini saved
 2020-11-20 12:33:40,410 - STSim - INFO - Making a cxi file...
 2020-11-20 12:33:40,411 - STSim - INFO - Using the following cxi protocol:
-2020-11-20 12:33:40,412 - STSim - INFO - basis_vectors [float]: '/entry_1/instrument_1/detector_1/basis_vectors' 
-2020-11-20 12:33:40,413 - STSim - INFO - data [float]: '/entry_1/data_1/data' 
-2020-11-20 12:33:40,413 - STSim - INFO - defocus [float]: '/speckle_tracking/defocus' 
-2020-11-20 12:33:40,414 - STSim - INFO - defocus_fs [float]: '/speckle_tracking/dfs' 
-2020-11-20 12:33:40,415 - STSim - INFO - defocus_ss [float]: '/speckle_tracking/dss' 
-2020-11-20 12:33:40,416 - STSim - INFO - distance [float]: '/entry_1/instrument_1/detector_1/distance' 
-2020-11-20 12:33:40,417 - STSim - INFO - energy [float]: '/entry_1/instrument_1/source_1/energy' 
-2020-11-20 12:33:40,418 - STSim - INFO - good_frames [int]: '/frame_selector/good_frames' 
-2020-11-20 12:33:40,419 - STSim - INFO - m0 [int]: '/speckle_tracking/m0' 
-2020-11-20 12:33:40,419 - STSim - INFO - mask [bool]: '/speckle_tracking/mask' 
-2020-11-20 12:33:40,420 - STSim - INFO - n0 [int]: '/speckle_tracking/n0' 
-2020-11-20 12:33:40,421 - STSim - INFO - phase [float]: '/speckle_tracking/phase' 
-2020-11-20 12:33:40,422 - STSim - INFO - pixel_map [float]: '/speckle_tracking/pixel_map' 
-2020-11-20 12:33:40,422 - STSim - INFO - pixel_abberations [float]: '/speckle_tracking/pixel_abberations' 
-2020-11-20 12:33:40,423 - STSim - INFO - pixel_translations [float]: '/speckle_tracking/pixel_translations' 
-2020-11-20 12:33:40,424 - STSim - INFO - reference_image [float]: '/speckle_tracking/reference_image' 
-2020-11-20 12:33:40,425 - STSim - INFO - roi [int]: '/speckle_tracking/roi' 
-2020-11-20 12:33:40,425 - STSim - INFO - translations [float]: '/entry_1/sample_1/geometry/translations' 
-2020-11-20 12:33:40,426 - STSim - INFO - wavelength [float]: '/entry_1/instrument_1/source_1/wavelength' 
-2020-11-20 12:33:40,427 - STSim - INFO - whitefield [float]: '/speckle_tracking/whitefield' 
-2020-11-20 12:33:40,428 - STSim - INFO - x_pixel_size [float]: '/entry_1/instrument_1/detector_1/x_pixel_size' 
-2020-11-20 12:33:40,429 - STSim - INFO - y_pixel_size [float]: '/entry_1/instrument_1/detector_1/y_pixel_size' 
+2020-11-20 12:33:40,412 - STSim - INFO - basis_vectors [float]: '/entry_1/instrument_1/detector_1/basis_vectors'
+2020-11-20 12:33:40,413 - STSim - INFO - data [float]: '/entry_1/data_1/data'
+2020-11-20 12:33:40,413 - STSim - INFO - defocus [float]: '/speckle_tracking/defocus'
+2020-11-20 12:33:40,414 - STSim - INFO - defocus_fs [float]: '/speckle_tracking/dfs'
+2020-11-20 12:33:40,415 - STSim - INFO - defocus_ss [float]: '/speckle_tracking/dss'
+2020-11-20 12:33:40,416 - STSim - INFO - distance [float]: '/entry_1/instrument_1/detector_1/distance'
+2020-11-20 12:33:40,417 - STSim - INFO - energy [float]: '/entry_1/instrument_1/source_1/energy'
+2020-11-20 12:33:40,418 - STSim - INFO - good_frames [int]: '/frame_selector/good_frames'
+2020-11-20 12:33:40,419 - STSim - INFO - m0 [int]: '/speckle_tracking/m0'
+2020-11-20 12:33:40,419 - STSim - INFO - mask [bool]: '/speckle_tracking/mask'
+2020-11-20 12:33:40,420 - STSim - INFO - n0 [int]: '/speckle_tracking/n0'
+2020-11-20 12:33:40,421 - STSim - INFO - phase [float]: '/speckle_tracking/phase'
+2020-11-20 12:33:40,422 - STSim - INFO - pixel_map [float]: '/speckle_tracking/pixel_map'
+2020-11-20 12:33:40,422 - STSim - INFO - pixel_abberations [float]: '/speckle_tracking/pixel_abberations'
+2020-11-20 12:33:40,423 - STSim - INFO - pixel_translations [float]: '/speckle_tracking/pixel_translations'
+2020-11-20 12:33:40,424 - STSim - INFO - reference_image [float]: '/speckle_tracking/reference_image'
+2020-11-20 12:33:40,425 - STSim - INFO - roi [int]: '/speckle_tracking/roi'
+2020-11-20 12:33:40,425 - STSim - INFO - translations [float]: '/entry_1/sample_1/geometry/translations'
+2020-11-20 12:33:40,426 - STSim - INFO - wavelength [float]: '/entry_1/instrument_1/source_1/wavelength'
+2020-11-20 12:33:40,427 - STSim - INFO - whitefield [float]: '/speckle_tracking/whitefield'
+2020-11-20 12:33:40,428 - STSim - INFO - x_pixel_size [float]: '/entry_1/instrument_1/detector_1/x_pixel_size'
+2020-11-20 12:33:40,429 - STSim - INFO - y_pixel_size [float]: '/entry_1/instrument_1/detector_1/y_pixel_size'
 2020-11-20 12:33:51,966 - STSim - INFO - test/data.cxi saved
 
 .. _CXI: https://www.cxidb.org/cxi.html

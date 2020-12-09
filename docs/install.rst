@@ -22,9 +22,24 @@ Packages
 pyrost packages are available through `pypi <https://pypi.org/project/pyrost/>`_ on
 OS X as for now.
 
+conda
+^^^^^
+pyrost binary distribution is available via the `conda <https://anaconda.org/conda-forge/pyrost>`_
+package manager for Linux and OSX (Windows is **not** supported)in `conda-forge <https://conda-forge.org/>`_
+channel. In order to install pyrost via conda, you just need to add ``conda-forge``
+to the channels, and install as following:
+
+.. code-block:: console
+
+    $ conda config --add channels conda-forge
+    $ conda config --set channel_priority strict
+    $ conda install pyrost
+
+The conda packages for pyrost are regularly updated when a new version is released.
+
 pip
 ^^^
-pyrost is available on OS X via the `pip <https://pip.pypa.io/en/stable/>`_
+pyrost source distribution is available via the `pip <https://pip.pypa.io/en/stable/>`_
 package installer. Installation is pretty straightforward:
 
 .. code-block:: console

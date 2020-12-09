@@ -12,5 +12,7 @@ pipeline. All the functions are written in `Cython`_.
     c_funcs/make_reference
     c_funcs/update_pixel_map_gs
     c_funcs/update_pixel_map_nm
-    c_funcs/total_mse
+    c_funcs/update_translations_gs
+    c_funcs/mse_frame
+    c_funcs/mse_total
     c_funcs/ct_integrate

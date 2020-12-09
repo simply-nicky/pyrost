@@ -123,6 +123,10 @@ and generating the unabberated profile of the sample.
     high you'll lose useful information. If the values are too low in presence of high noise,
     you won't get accurate results.
 
+.. note:: Apart from pixel mapping update you may try to perform sample shifts update if you've
+    got low precision or credibilily of sample shifts measurements. You can do it with :func:`pyrost.SpeckleTracking.iter_update`
+    if you assign True to `update_translations` argument.
+
 .. doctest::
 
     >>> st_obj = data.get_st()

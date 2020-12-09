@@ -1,12 +1,13 @@
 """Experimental parameters for the one-dimenional Speckle Tracking
-scan. :class:`STParams` contains all the parameters and provides
-tools to import and export parameters from an INI file. Invoke
-:func:`parameters` to get the default experimental parameters.
+scan. :class:`pyrost.simulation.STParams` contains all the parameters
+and provides tools to import and export parameters from an INI file.
+Invoke :func:`pyrost.simulation.parameters` to get the default
+experimental parameters.
 
 Examples
 --------
 
-Generate parameters, which could be later parsed to :class:`STSim`
+Generate parameters, which could be later parsed to :class:`pyrost.simulation.STSim`
 in order to perform the simulation.
 
 >>> import pyrost.simulation as st_sim
@@ -147,6 +148,18 @@ class STParams(INIParser):
 
     @classmethod
     def import_dict(cls, **kwargs):
+        """Initialize experimental parameters from a dictionary `kwargs`.
+
+        Parameters
+        ----------
+        **kwargs : dict
+            Dictionary with experimental parameters.
+
+        Returns
+        -------
+        STParams
+            An :class:`STParams` object with the parameters from `kwargs`.
+        """
         init_dict = {}
         for section in cls.attr_dict:
             init_dict[section] = {}

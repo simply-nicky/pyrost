@@ -1,8 +1,8 @@
 """Speckle Tracking data protocol for `CXI`_ format files.
-The :class:`Protocol` class provides paths to the necessary
+The :class:`pyrost.Protocol` class provides paths to the necessary
 data attribute in a `CXI`_ file and corresponding data types.
-The :class:`STLoader` automatically loads all the necessary
-data from a `CXI`_ file and returns an :class:`STData` data
+The :class:`pyrost.STLoader` automatically loads all the necessary
+data from a `CXI`_ file and returns an :class:`pyrost.STData` data
 container object.
 
 .. _CXI: https://www.cxidb.org/cxi.html
@@ -372,7 +372,7 @@ class Protocol(INIParser):
 
     See Also
     --------
-    protocol : Full list of data attributes and configuration 
+    protocol : Full list of data attributes and configuration
         parameters.
     """
     datatypes_lookup = {'basis_vectors': 'float', 'data': 'float', 'defocus': 'float',
