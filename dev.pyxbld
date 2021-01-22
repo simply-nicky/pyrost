@@ -1,5 +1,5 @@
 def make_ext(modname, pyxfilename):
-    from distutils.extension import Extension
+    from distutils.core import Extension
     import numpy
     from Cython.Build import cythonize
     import os

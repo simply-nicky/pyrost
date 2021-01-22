@@ -158,8 +158,10 @@ the phase profile with polynomial function using :class:`pyrost.AbberationsFit`.
 .. doctest::
 
     >>> data.update_phase(st_res)
-    >>> fit_ss = data.fit_phase(axis=0, max_order=3)
-    >>> fit_fs = data.fit_phase(axis=1, max_order=3)
+    >>> fit_obj_ss = data.get_fit(axis=0)
+    >>> fit_ss = fit_obj_ss.fit(max_order=3)
+    >>> fit_obj_fs = data.get_fit(axis=1)
+    >>> fit_fs = fit_obj_fs.fit(max_order=3)
 
     >>> fig, ax = plt.subplots(figsize=(10, 10)) # doctest: +SKIP
     >>> ax.imshow(data.get('phase')) # doctest: +SKIP
@@ -176,12 +178,12 @@ the phase profile with polynomial function using :class:`pyrost.AbberationsFit`.
 .. doctest::
 
     >>> fig, axes = plt.subplots(1, 2, figsize=(16, 6)) # doctest: +SKIP
-    >>> axes[0].plot(data.get('phase').mean(axis=0), label='Reconstructed profile') # doctest: +SKIP
-    >>> axes[0].plot(data.get_fit(axis=1).phase_model(fit_fs['ph_fit'], fit_fs['pixels']), # doctest: +SKIP
-    >>>              label='Polynomial fit') # doctest: +SKIP
+    >>> axes[0].plot(fit_obj_fs.pixels, fit_obj_fs.phase, label='Reconstructed profile') # doctest: +SKIP
+    >>> axes[0].plot(fit_obj_fs.pixels, fit_obj_fs.model(fit_fs['ph_fit']), # doctest: +SKIP
+                     label='Polynomial fit') # doctest: +SKIP
     >>> axes[0].set_xlabel('fast axis', fontsize=15) # doctest: +SKIP
-    >>> axes[1].plot(data.get('phase').mean(axis=1), label='Reconstructed profile') # doctest: +SKIP
-    >>> axes[1].plot(data.get_fit(axis=0).phase_model(fit_ss['ph_fit'], fit_ss['pixels']), # doctest: +SKIP
+    >>> axes[1].plot(fit_obj_ss.pixels, fit_obj_ss.phase, label='Reconstructed profile') # doctest: +SKIP
+    >>> axes[1].plot(fit_obj_ss.pixels, fit_obj_ss.model(fit_ss['ph_fit']), # doctest: +SKIP
     >>>              label='Polynomial fit') # doctest: +SKIP
     >>> axes[1].set_xlabel('slow axis') # doctest: +SKIP
     >>> for ax in axes: # doctest: +SKIP
@@ -224,6 +226,7 @@ In the end you can save the results to a CXI file.
     /frame_selector          Group
     /frame_selector/good_frames Dataset {120}
     /speckle_tracking        Group
+    /speckle_tracking/error_frame Dataset {516, 1556}
     /speckle_tracking/dfs    Dataset {SCALAR}
     /speckle_tracking/dss    Dataset {SCALAR}
     /speckle_tracking/mask   Dataset {516, 1556}

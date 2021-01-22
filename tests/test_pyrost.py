@@ -126,5 +126,8 @@ def test_full(st_params, converter):
     st_obj = data.get_st()
     st_res = st_obj.iter_update(sw_fs=20, ls_pm=3, ls_ri=5,
                                 verbose=True, n_iter=10, return_errors=False)
+    data = data.update_phase(st_res)
+    fit = data.fit_phase(axis=1)
     assert (st_obj.pixel_map != st_res.pixel_map).any()
     assert st_res.pixel_map.dtype == converter.protocol.known_types['float']
+    assert not fit is None

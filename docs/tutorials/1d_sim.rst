@@ -151,6 +151,7 @@ In the end you can save the results to a CXI file.
     /frame_selector          Group
     /frame_selector/good_frames Dataset {200}
     /speckle_tracking        Group
+    /speckle_tracking/error_frame Dataset {1, 2000}
     /speckle_tracking/dfs    Dataset {SCALAR}
     /speckle_tracking/dss    Dataset {SCALAR}
     /speckle_tracking/mask   Dataset {1, 2000}

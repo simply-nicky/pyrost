@@ -88,6 +88,8 @@ class STData(DataContainer):
 
     * defocus_ss : Defocus distance for the slow detector axis [m].
     * defocus_fs : Defocus distance for the fast detector axis [m].
+    * error_frame : MSE (mean-squared-error) of the reference image
+      and pixel mapping fit per pixel.
     * good_frames : An array of good frames' indices.
     * mask : Bad pixels mask.
     * phase : Phase profile of lens' abberations.
@@ -103,8 +105,8 @@ class STData(DataContainer):
     """
     attr_set = {'basis_vectors', 'data', 'distance', 'translations', 'wavelength',
                 'x_pixel_size', 'y_pixel_size'}
-    init_set = {'defocus_fs', 'defocus_ss', 'good_frames', 'mask', 'phase',
-                'pixel_abberations', 'pixel_map', 'pixel_translations',
+    init_set = {'defocus_fs', 'defocus_ss', 'error_frame', 'good_frames', 'mask',
+                'phase', 'pixel_abberations', 'pixel_map', 'pixel_translations',
                 'reference_image', 'roi', 'whitefield'}
 
     def __init__(self, protocol, **kwargs):
@@ -131,12 +133,6 @@ class STData(DataContainer):
         if self.whitefield is None:
             self.whitefield = make_whitefield(data=self.data[self.good_frames], mask=self.mask)
 
-        # Initialize a list of SpeckleTracking objects
-        self._st_objects = []
-
-        # Initialize a list of AbberationsFit objects
-        self._ab_fits = []
-
         # Set a pixel map, deviation angles, and phase
         if self.pixel_map is None:
             self._init_pixel_map()
@@ -149,7 +145,12 @@ class STData(DataContainer):
                 self.pixel_translations /= (self.basis_vectors**2).sum(axis=-1) * defocus / self.distance
                 self.pixel_translations -= self.pixel_translations.mean(axis=0)
 
-            # Initialize AbberationsFit objects
+        # Initialize a list of SpeckleTracking objects
+        self._st_objects = []
+
+        # Initialize a list of AbberationsFit objects
+        self._ab_fits = []
+        if self._isphase:
             self._ab_fits.extend([AbberationsFit.import_data(self, 0),
                                   AbberationsFit.import_data(self, 1)])
 
@@ -157,10 +158,15 @@ class STData(DataContainer):
     def _isdefocus(self):
         return not self.defocus_ss is None and not self.defocus_fs is None
 
+    @property
+    def _isphase(self):
+        return not self.pixel_abberations is None and not self.phase is None
+
     def _init_pixel_map(self):
         self.pixel_map = np.indices(self.whitefield.shape)
         self.pixel_abberations = np.zeros(self.pixel_map.shape)
         self.phase = np.zeros(self.whitefield.shape)
+        self.error_frame = np.zeros(self.whitefield.shape)
 
     def __setattr__(self, attr, value):
         if attr in self.attr_set | self.init_set:
@@ -184,6 +190,27 @@ class STData(DataContainer):
             New :class:`STData` object with the updated `roi`.
         """
         return {'roi': np.asarray(roi, dtype=np.int)}
+
+    @dict_to_object
+    def integrate_data(self, axis=1):
+        """Return a new :class:`STData` object with the `data` summed
+        over the `axis`.
+
+        Parameters
+        ----------
+        axis : int
+            Axis along which a sum is performed. 
+
+        Returns
+        -------
+        STData
+            New :class:`STData` object with the updated `data`,
+            `whitefield`, `mask`, and `roi`.
+        """
+        roi = self.roi.copy()
+        roi[2 * (axis - 1):2 * axis] = np.arange(2)
+        return {'data': np.sum(self.data, axis=axis, keepdims=True), 'whitefield': None,
+                'mask': None, 'roi': roi}
 
     @dict_to_object
     def mask_frames(self, good_frames):
@@ -311,6 +338,7 @@ class STData(DataContainer):
             If `st_obj` doesn't belong to the :class:`STData` object.
         """
         if st_obj in self._st_objects:
+            # Update phase, pixel_abberations, and reference_image
             self._init_pixel_map()
             dev_ss, dev_fs = (st_obj.pixel_map - self.get('pixel_map'))
             dev_ss -= dev_ss.mean()
@@ -320,12 +348,18 @@ class STData(DataContainer):
                                  self.x_pixel_size**2 * dev_fs * self.defocus_fs / self.wavelength) \
                     * 2 * np.pi / self.distance**2
             self.phase[self.roi[0]:self.roi[1], self.roi[2]:self.roi[3]] = phase
+            self.error_frame[self.roi[0]:self.roi[1], self.roi[2]:self.roi[3]] = st_obj.error_frame
             self.reference_image = st_obj.reference_image
+
+            # Initialize AbberationsFit objects
+            self._ab_fits.clear()
+            self._ab_fits.extend([AbberationsFit.import_data(self, 0),
+                                  AbberationsFit.import_data(self, 1)])
             return self
         else:
             raise ValueError("the SpeckleTracking object doesn't belong to the data container")
 
-    def fit_phase(self, axis=1, max_order=2, xtol=1e-14, ftol=1e-14, loss='cauchy'):
+    def fit_phase(self, axis=1, max_order=2, xtol=1e-14, ftol=1e-14, loss='cauchy', roi=None):
         """Fit `pixel_abberations` with the polynomial function
         using nonlinear least-squares algorithm. The function uses
         least-squares algorithm from :func:`scipy.optimize.least_squares`.
@@ -344,45 +378,43 @@ class STData(DataContainer):
             Determines the loss function. The following keyword values are
             allowed:
 
-            * 'linear : ``rho(z) = z``. Gives a standard
+            * 'linear' : ``rho(z) = z``. Gives a standard
               least-squares problem.
             * 'soft_l1' : ``rho(z) = 2 * ((1 + z)**0.5 - 1)``. The smooth
               approximation of l1 (absolute value) loss. Usually a good
               choice for robust least squares.
             * 'huber' : ``rho(z) = z if z <= 1 else 2*z**0.5 - 1``. Works
               similarly to 'soft_l1'.
-            * 'cauchy'' (default) : ``rho(z) = ln(1 + z)``. Severely weakens
+            * 'cauchy' (default) : ``rho(z) = ln(1 + z)``. Severely weakens
               outliers influence, but may cause difficulties in optimization
               process.
             * 'arctan' : ``rho(z) = arctan(z)``. Limits a maximum loss on
               a single residual, has properties similar to 'cauchy'.
+        roi : iterable, optional
+            Region of interest. Full region if `roi` is None.
 
         Returns
         -------
         dict
             :class:`dict` with the following fields defined:
 
-            * pix_fit : Array of the polynomial function coefficients of
-              the `pixel_abberations` fit.
-            * ang_fit : Array of the polynomial function coefficients of
-              the deviation angles fit.
+            * alpha : Third order abberations ceofficient [rad/mrad^3].
+            * fit : Array of the polynomial function coefficients of the
+              pixel abberations fit.
             * ph_fit : Array of the polynomial function coefficients of
-              the `phase` fit.
-            * pix_err : Vector of errors of the `pix_fit` fit coefficients.
+              the phase abberations fit.
+            * rel_err : Vector of relative errors of the fit coefficients.
             * r_sq : ``R**2`` goodness of fit.
 
         See Also
         --------
-        :func:`scipy.optimize.least_squares` : Full nonlinear least-squares
-            algorithm description.
+        AbberationsFit.fit - Full details of the abberations fitting algorithm.
         """
-        fit_obj = self.get_fit(axis)
-        if fit_obj is None:
-            return None
+        if self._isphase:
+            return self._ab_fits[axis].fit(max_order=max_order, xtol=xtol,
+                                           ftol=ftol, loss=loss, roi=roi)
         else:
-            pixel_ab = self.get('pixel_abberations')[axis].mean(axis=1 - axis)
-            return fit_obj.fit_abberations(pixel_ab, max_order=max_order,
-                                                 xtol=xtol, ftol=ftol, loss=loss)
+            return None
 
     def defocus_sweep(self, defoci_fs, defoci_ss=None, ls_ri=30):
         """Calculate an array of `reference_image` for `defoci`
@@ -439,7 +471,8 @@ class STData(DataContainer):
         if attr in self:
             val = super(STData, self).get(attr)
             if not val is None:
-                if attr in ['data', 'pixel_abberations', 'mask', 'phase', 'pixel_map', 'whitefield']:
+                if attr in ['data', 'error_frame', 'mask', 'phase',
+                            'pixel_abberations', 'pixel_map', 'whitefield']:
                     val = val[..., self.roi[0]:self.roi[1], self.roi[2]:self.roi[3]]
                     val = np.ascontiguousarray(val)
                 if attr in ['basis_vectors', 'data', 'pixel_translations', 'translations']:
@@ -498,7 +531,7 @@ class STData(DataContainer):
             An instance of :class:`AbberationsFit` class.
             None if `defocus_fs` or `defocus_ss` is None.
         """
-        if self._isdefocus:
+        if self._isphase:
             return self._ab_fits[axis]
         else:
             return None
@@ -562,6 +595,8 @@ class SpeckleTracking(DataContainer):
 
     Optional attributes:
 
+    * error_frame : MSE (mean-squared-error) of the reference image
+      and pixel mapping fit per pixel.
     * reference_image : The unabberated reference image of the sample.
     * m0 : The lower bounds of the fast detector axis of
       the reference image at the reference frame in pixels.
@@ -576,7 +611,7 @@ class SpeckleTracking(DataContainer):
         based on grid search.
     """
     attr_set = {'data', 'dref', 'dfs_pix', 'dss_pix', 'pixel_map', 'whitefield'}
-    init_set = {'n0', 'm0', 'reference_image'}
+    init_set = {'error_frame', 'n0', 'm0', 'reference_image'}
 
     def __init__(self, **kwargs):
         super(SpeckleTracking, self).__init__(**kwargs)
@@ -697,6 +732,39 @@ class SpeckleTracking(DataContainer):
             else:
                 raise ValueError('Wrong method argument: {:s}'.format(method))
             return {'pixel_map': pixel_map}
+    
+    @dict_to_object
+    def update_errors(self, ls_ri=5.):
+        """Return a new :class:`SpeckleTracking` object with
+        the updated `error_frame`.
+
+        Parameters
+        ----------
+        ls_ri : float
+            `reference_image` length scale in pixels.
+
+        Returns
+        -------
+        SpeckleTracking
+            A new :class:`SpeckleTracking` object with the updated
+            `error_frame`.
+
+        Raises
+        ------
+        AttributeError
+            If `reference_image` was not generated beforehand.
+
+        See Also
+        --------
+        bin.mse_frame : Full details of the error metric.
+        """
+        if self.reference_image is None:
+            raise AttributeError('The reference image has not been generated')
+        else:
+            error_frame = mse_frame(I_n=self.data, W=self.whitefield, ls=ls_ri,
+                                    I0=self.reference_image, u=self.pixel_map,
+                                    di=self.dss_pix - self.n0, dj=self.dfs_pix - self.m0)
+            return {'error_frame': error_frame}
 
     @dict_to_object
     def update_translations(self, sw_fs, sw_ss=0, ls_ri=5.):
@@ -798,7 +866,8 @@ class SpeckleTracking(DataContainer):
             `return_errors` is True.
         """
         obj = self.update_reference(ls_ri=ls_ri, sw_ss=sw_ss, sw_fs=sw_fs)
-        errors = [obj.mse_total(ls_ri=ls_ri)]
+        obj.update_errors.inplace_update(ls_ri=ls_ri)
+        errors = [obj.error_frame.mean()]
         if verbose:
             print('Iteration No. 0: Total MSE = {:.3f}'.format(errors[0]))
         for it in range(1, n_iter + 1):
@@ -806,6 +875,7 @@ class SpeckleTracking(DataContainer):
             new_obj = obj.update_reference(ls_ri=ls_ri)
             new_obj.update_pixel_map.inplace_update(sw_ss=sw_ss, sw_fs=sw_fs,
                                                     ls_pm=ls_pm, method=method)
+            new_obj.update_errors.inplace_update(ls_ri=ls_ri)
 
             # Update dss_pix, dfs_pix
             if update_translations:
@@ -827,12 +897,13 @@ class SpeckleTracking(DataContainer):
             ss_s1, fs_s1 = slice(*(ss_roi + new_obj.n0)), slice(*(fs_roi + new_obj.m0))
             d_ri = new_obj.reference_image[ss_s1, fs_s1] - obj.reference_image[ss_s0, fs_s0]
             obj.reference_image[ss_s0, fs_s0] += gaussian_filter(d_ri, (ls_ri, ls_ri))
+            obj.error_frame = new_obj.error_frame
 
             # Apply dss_pix, dfs_pix update
             obj.dss_pix, obj.dfs_pix = new_obj.dss_pix, new_obj.dfs_pix
 
             # Calculate errors
-            errors.append(obj.mse_total(ls_ri=ls_ri))
+            errors.append(obj.error_frame.mean())
             if verbose:
                 print('Iteration No. {:d}: Total MSE = {:.3f}'.format(it, errors[-1]))
             if (errors[-2] - errors[-1]) <= f_tol * errors[0]:
@@ -841,35 +912,6 @@ class SpeckleTracking(DataContainer):
             return obj, errors
         else:
             return obj
-
-    def mse_frame(self, ls_ri=5.):
-        """Return average mean-squared-error (MSE) per pixel.
-
-        Parameters
-        ----------
-        ls_ri : float
-            `reference_image` length scale in pixels.
-
-        Returns
-        -------
-        numpy.ndarray
-            Average mean-squared-error (MSE) per pixel.
-
-        Raises
-        ------
-        AttributeError
-            If `reference_image` was not generated beforehand.
-
-        See Also
-        --------
-        bin.mse_frame : Full details of the error metric.
-        """
-        if self.reference_image is None:
-            raise AttributeError('The reference image hsa not been generated')
-        else:
-            return mse_frame(I_n=self.data, W=self.whitefield, I0=self.reference_image,
-                             u=self.pixel_map, di=self.dss_pix - self.n0,
-                             dj=self.dfs_pix - self.m0, ls=ls_ri)
 
     def mse_total(self, ls_ri=5.):
         """Return average total mean-squared-error (MSE).
