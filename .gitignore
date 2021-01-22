@@ -11,7 +11,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# C extensions and Cython generated C files
+# Libraries and Cython generated C extensions
 *.so
 pyrost/bin/beam_calc.c
 pyrost/bin/st_utils.c
