@@ -377,15 +377,14 @@ class Protocol(INIParser):
     """
     datatypes_lookup = {'basis_vectors': 'float', 'data': 'float', 'defocus': 'float',
                         'defocus_fs': 'float', 'defocus_ss': 'float', 'distance': 'float',
-                        'energy': 'float', 'good_frames': 'int', 'm0': 'int', 'mask': 'bool',
-                        'n0': 'int', 'phase': 'float', 'pixel_map': 'float',
-                        'pixel_abberations': 'float', 'pixel_translations': 'float',
-                        'reference_image': 'float', 'roi': 'int', 'translations': 'float',
-                        'wavelength': 'float', 'whitefield': 'float',
-                        'x_pixel_size': 'float', 'y_pixel_size': 'float'}
+                        'energy': 'float', 'error_frame': 'float', 'good_frames': 'int',
+                        'm0': 'int', 'mask': 'bool', 'n0': 'int', 'phase': 'float',
+                        'pixel_map': 'float', 'pixel_abberations': 'float',
+                        'pixel_translations': 'float', 'reference_image': 'float',
+                        'roi': 'int', 'translations': 'float', 'wavelength': 'float',
+                        'whitefield': 'float', 'x_pixel_size': 'float', 'y_pixel_size': 'float'}
     attr_dict = {'default_paths': list(datatypes_lookup), 'config': ('float_precision', )}
     fmt_dict = {'default_paths': 'str', 'config': 'str'}
-    log_txt = "{attr:s} [{fmt:s}]: '{path:s}' "
 
     def __init__(self, **kwargs):
         super(Protocol, self).__init__(**kwargs)
@@ -425,19 +424,6 @@ class Protocol(INIParser):
 
     def __contains__(self, attr):
         return attr in self.default_paths
-
-    def log(self, logger):
-        """Log the protocol with `logger`. Log all the attributes,
-        their datatypes, and their paths.
-
-        Parameters
-        ----------
-        logger : logging.Logger
-            Logging interface.
-        """
-        for attr in self.default_paths:
-            logger.info(self.log_txt.format(attr=attr, fmt=self.datatypes_lookup[attr],
-                                            path=self.default_paths[attr]))
 
     def get_path(self, attr, value=None):
         """Return the atrribute's path in the cxi file.

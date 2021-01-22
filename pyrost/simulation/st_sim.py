@@ -3,11 +3,9 @@ Generate intensity frames based on Fresnel diffraction
 theory. :class:`pyrost.simulation.STSim` does the heavy lifting
 of calculating the wavefront propagation to the detector plane.
 :class:`pyrost.simulation.STConverter` exports simulated data to a
-`CXI`_ format file accordingly to the provided :class:`pyrost.Protocol`
-object and saves the protocol and experimental parameters to the same
-folder.
-
-Logs of the simulation process are saved in `[package_root_folder]/logs` folder.
+`CXI <https://www.cxidb.org/cxi.html>`_ format file accordingly to
+the provided :class:`pyrost.Protocol` object and saves the protocol
+and experimental parameters to the same folder.
 
 Examples
 --------
@@ -16,92 +14,37 @@ Perform the simulation for a given :class:`pyrost.simulation.STParams` object.
 
 >>> import pyrost.simulation as st_sim
 >>> st_params = st_sim.parameters()
->>> sim_obj = st_sim.STSim(st_params)
-2020-11-20 12:21:21,574 - STSim - INFO - Initializing
-2020-11-20 12:21:21,575 - STSim - INFO - Current parameters
-2020-11-20 12:21:21,576 - STSim - INFO - Initializing coordinate arrays at the sample's plane
-2020-11-20 12:21:21,576 - STSim - INFO - Number of points in x axis: 12876
-2020-11-20 12:21:21,577 - STSim - INFO - Number of points in y axis: 905
-2020-11-20 12:21:21,579 - STSim - INFO - Generating wavefields at the sample's plane
-2020-11-20 12:21:50,557 - STSim - INFO - The wavefields have been generated
-2020-11-20 12:21:50,559 - STSim - INFO - Generating barcode's transmission coefficients
-2020-11-20 12:21:50,776 - STSim - INFO - The coefficients have been generated
-2020-11-20 12:21:50,777 - STSim - INFO - Generating wavefields at the detector's plane
-2020-11-20 12:22:26,552 - STSim - INFO - The wavefields have been generated
+>>> sim_obj = st_sim.STSim(params=st_params)
 
 Return an array of intensity frames at the detector's plane.
 
 >>> data = sim_obj.frames()
-2020-11-20 12:32:33,024 - STSim - INFO - Making frames at the detector's plane...
-2020-11-20 12:32:33,025 - STSim - INFO - Source blur size: 400.000000 um
-2020-11-20 12:32:35,434 - STSim - INFO - The frames are generated, data shape: (300, 1000, 2000)
 
-Save the simulated data to a `CXI`_ file using the default protocol.
+Save the simulated data to a `CXI <https://www.cxidb.org/cxi.html>`_ file using
+the default protocol.
 
 >>> st_conv = st_sim.STConverter()
 >>> st_conv.save_sim(data, sim_obj, 'test')
-2020-11-20 12:33:40,385 - STSim - INFO - Saving data in the directory: test
-2020-11-20 12:33:40,387 - STSim - INFO - Making ini files...
-2020-11-20 12:33:40,397 - STSim - INFO - test/update_pixel_map.ini saved
-2020-11-20 12:33:40,398 - STSim - INFO - test/zernike.ini saved
-2020-11-20 12:33:40,399 - STSim - INFO - test/calculate_phase.ini saved
-2020-11-20 12:33:40,401 - STSim - INFO - test/make_reference.ini saved
-2020-11-20 12:33:40,402 - STSim - INFO - test/calc_error.ini saved
-2020-11-20 12:33:40,403 - STSim - INFO - test/speckle_gui.ini saved
-2020-11-20 12:33:40,405 - STSim - INFO - test/generate_pixel_map.ini saved
-2020-11-20 12:33:40,406 - STSim - INFO - test/update_translations.ini saved
-2020-11-20 12:33:40,408 - STSim - INFO - test/parameters.ini saved
-2020-11-20 12:33:40,409 - STSim - INFO - test/protocol.ini saved
-2020-11-20 12:33:40,410 - STSim - INFO - Making a cxi file...
-2020-11-20 12:33:40,411 - STSim - INFO - Using the following cxi protocol:
-2020-11-20 12:33:40,412 - STSim - INFO - basis_vectors [float]: '/entry_1/instrument_1/detector_1/basis_vectors'
-2020-11-20 12:33:40,413 - STSim - INFO - data [float]: '/entry_1/data_1/data'
-2020-11-20 12:33:40,413 - STSim - INFO - defocus [float]: '/speckle_tracking/defocus'
-2020-11-20 12:33:40,414 - STSim - INFO - defocus_fs [float]: '/speckle_tracking/dfs'
-2020-11-20 12:33:40,415 - STSim - INFO - defocus_ss [float]: '/speckle_tracking/dss'
-2020-11-20 12:33:40,416 - STSim - INFO - distance [float]: '/entry_1/instrument_1/detector_1/distance'
-2020-11-20 12:33:40,417 - STSim - INFO - energy [float]: '/entry_1/instrument_1/source_1/energy'
-2020-11-20 12:33:40,418 - STSim - INFO - good_frames [int]: '/frame_selector/good_frames'
-2020-11-20 12:33:40,419 - STSim - INFO - m0 [int]: '/speckle_tracking/m0'
-2020-11-20 12:33:40,419 - STSim - INFO - mask [bool]: '/speckle_tracking/mask'
-2020-11-20 12:33:40,420 - STSim - INFO - n0 [int]: '/speckle_tracking/n0'
-2020-11-20 12:33:40,421 - STSim - INFO - phase [float]: '/speckle_tracking/phase'
-2020-11-20 12:33:40,422 - STSim - INFO - pixel_map [float]: '/speckle_tracking/pixel_map'
-2020-11-20 12:33:40,422 - STSim - INFO - pixel_abberations [float]: '/speckle_tracking/pixel_abberations'
-2020-11-20 12:33:40,423 - STSim - INFO - pixel_translations [float]: '/speckle_tracking/pixel_translations'
-2020-11-20 12:33:40,424 - STSim - INFO - reference_image [float]: '/speckle_tracking/reference_image'
-2020-11-20 12:33:40,425 - STSim - INFO - roi [int]: '/speckle_tracking/roi'
-2020-11-20 12:33:40,425 - STSim - INFO - translations [float]: '/entry_1/sample_1/geometry/translations'
-2020-11-20 12:33:40,426 - STSim - INFO - wavelength [float]: '/entry_1/instrument_1/source_1/wavelength'
-2020-11-20 12:33:40,427 - STSim - INFO - whitefield [float]: '/speckle_tracking/whitefield'
-2020-11-20 12:33:40,428 - STSim - INFO - x_pixel_size [float]: '/entry_1/instrument_1/detector_1/x_pixel_size'
-2020-11-20 12:33:40,429 - STSim - INFO - y_pixel_size [float]: '/entry_1/instrument_1/detector_1/y_pixel_size'
-2020-11-20 12:33:51,966 - STSim - INFO - test/data.cxi saved
-
-.. _CXI: https://www.cxidb.org/cxi.html
 """
 from __future__ import division
 from __future__ import absolute_import
 
 import os
-import logging
-import datetime
 import argparse
-from sys import stdout
 import h5py
 import numpy as np
 from ..protocol import cxi_protocol, ROOT_PATH
+from ..data_container import DataContainer, dict_to_object
 from ..data_processing import STData
 from .st_sim_param import STParams, parameters
-from ..bin import aperture_wp, barcode_steps, barcode_profile, lens_wp
+from ..bin import rsc_wp, fhf_wp, fhf_wp_scan, fft_convolve, fft_convolve_scan
 from ..bin import make_frames, make_whitefield
-from ..bin import fraunhofer_1d, fraunhofer_1d_scan
 
-class STSim:
+class STSim(DataContainer):
     """One-dimensional Speckle Tracking scan simulation class.
     Generates barcode's transmission profile and lens' abberated
     wavefront, whereupon propagates the wavefront to the detector's
-    plane. Logs all the steps to `logs` folder.
+    plane.
 
     Parameters
     ----------
@@ -111,142 +54,121 @@ class STSim:
         Array of barcode's bar coordinates. Generates the array
         automatically if it's not provided.
 
+    Notes
+    -----
+    Necessary attributes:
+
+    * params : Experimental parameters.
+
+    Optional attributes:
+
+    * b_steps : Barcode's bar positions [um].
+    * b_profile : Barcode's transmission profile.
+    * det_wfx : Wavefront at the detector's plane along the x
+      axis.
+    * det_wfy : Wavefront at the detector's plane along the y
+      axis.
+    * det_iy : Intensity profile at the detector's plane along
+      the x axis.
+    * det_iy : Intensity profile at the detector's plane along
+      the y axis.
+    * lens_wfx : Wavefront at the lens' plane along the x
+      axis.
+    * lens_wfy : Wavefront at the lens' plane along the y
+      axis.
+    * n_x : Wavefront size along the x axis.
+    * n_y : Wavefront size along the y axis.
+    * sample_wfx : Wavefront at the sample's plane along the x
+      axis.
+    * sample_wfy : Wavefront at the sample's plane along the y
+      axis.
+
     See Also
     --------
     st_sim_param : Full list of experimental parameters.
     """
-    log_dir = os.path.join(ROOT_PATH, '../logs')
+    attr_set = {'params'}
+    init_set = {'b_steps', 'b_profile', 'det_wfx', 'det_wfy', 'det_ix', 'det_iy',
+                'lens_wfx', 'lens_wfy','n_x', 'n_y', 'sample_wfx', 'sample_wfy'}
 
-    def __init__(self, st_params, bsteps=None):
-        self.parameters = st_params
-        self._init_logging()
-        self._init_coord()
-        self._init_lens()
-        self._init_barcode(bsteps)
-        self._init_detector()
+    def __init__(self, **kwargs):
+        super(STSim, self).__init__(**kwargs)
+        self._init_dict()
 
-    def __getattr__(self, attr):
-        if attr in self.parameters:
-            return self.parameters.__getattr__(attr)
+    def _init_dict(self):
+        # Initialize barcode's bar positions
+        if self.b_steps is None:
+            self.b_steps = self.params.bar_positions(dist=self.params.defocus)
 
-    def _init_logging(self):
-        os.makedirs(self.log_dir, exist_ok=True)
-        self.logger = logging.getLogger(self.__class__.__name__)
-        self.logger.level = logging.INFO
-        filename = os.path.join(self.log_dir, datetime.datetime.now().strftime('%d-%m-%Y_%H-%M-%S.log'))
-        self.logger.addHandler(logging.FileHandler(filename))
-        if self.verbose:
-            self.logger.addHandler(logging.StreamHandler(stdout))
-        for handler in self.logger.handlers:
-            handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-        self.logger.info('Initializing')
-        self.logger.info('Current parameters')
+        # Initialize wavefronts' sizes
+        if self.n_x is None:
+            self.n_x = self.params.x_wavefront_size()
+        if self.n_y is None:
+            self.n_y = self.params.y_wavefront_size()
 
-    def _init_coord(self):
-        # Initializing coordinate parameters
-        xx_span = self.fs_size * self.pix_size
-        yy_span = self.ss_size * self.pix_size
+        # Initialize wavefronts at the lens' plane
+        if self.lens_wfx is None or self.lens_wfy is None:
+            self.lens_wfx, self.lens_wfy = self.params.lens_wavefronts(n_x=self.n_x, n_y=self.n_y)
 
-        x_span = 1.6 * self.ap_x / self.focus * self.defocus
-        y_span = 1.2 * self.ap_y
-        n_x = int(x_span * xx_span / self.wl / self.det_dist)
-        n_y = int(y_span * yy_span / self.wl / self.det_dist)
+        # Initialize wavefronts at the sample's plane
+        if self.sample_wfx is None:
+            dx0 = 2 * self.params.ap_x / self.n_x
+            dx1 = dx0 * self.params.defocus / self.params.focus
+            z01 = self.params.focus + self.params.defocus
+            self.sample_wfx = rsc_wp(u0=self.lens_wfx, dx0=dx0, dx=dx1, z=z01, wl=self.params.wl)
+        if self.sample_wfy is None:
+            dy0 = 2 * self.params.ap_y / self.n_y
+            z01 = self.params.focus + self.params.defocus
+            self.sample_wfy = rsc_wp(u0=self.lens_wfy, dx0=dy0, dx=dy0, z=z01, wl=self.params.wl)
 
-        # Initializing coordinate arrays
-        self.logger.info("Initializing coordinate arrays at the sample's plane")
-        self.logger.info('Number of points in x axis: {:d}'.format(n_x))
-        self.logger.info('Number of points in y axis: {:d}'.format(n_y))
+        # Initialize barcode's transmission profile
+        if self.b_profile is None:
+            dx1 = 2 * self.params.ap_x * self.params.defocus / self.params.focus / self.n_x
+            self.b_profile = self.params.barcode_profile(b_steps=self.b_steps, dx=dx1, n_x=self.n_x)
 
-        self.x_arr = np.linspace(-x_span / 2, x_span / 2, n_x)
-        self.y_arr = np.linspace(-y_span / 2, y_span / 2, n_y)
-        self.xx_arr = np.linspace(-xx_span / 2, xx_span / 2, self.fs_size, endpoint=False)
-        self.yy_arr = np.linspace(-yy_span / 2, yy_span / 2, self.ss_size, endpoint=False)
+        # Initialize wavefronts at the detector's plane
+        if self.det_wfx is None:
+            dx1 = 2 * self.params.ap_x * self.params.defocus / self.params.focus / self.n_x
+            dx2 = self.params.fs_size * self.params.pix_size / self.n_x
+            self.det_wfx = fhf_wp_scan(u0=self.sample_wfx * self.b_profile, dx0=dx1, dx=dx2,
+                                    z=self.params.det_dist, wl=self.params.wl)
+        if self.det_wfy is None:
+            dy1 = 2 * self.params.ap_y / self.n_y
+            dy2 = self.params.ss_size * self.params.pix_size / self.n_y
+            self.det_wfy = fhf_wp(u0=self.sample_wfy, dx0=dy1, dx=dy2,
+                                  z=self.params.det_dist, wl=self.params.wl)
 
-    def _init_lens(self):
-        #Initializing wavefields at the sample's plane
-        self.logger.info("Generating wavefields at the sample's plane")
-        self.wf0_x = lens_wp(x_arr=self.x_arr, wl=self.wl, ap=self.ap_x,
-                             focus=self.focus, defoc=self.defocus, alpha=self.alpha,
-                             xc=(self.x0 - 0.5) * self.ap_x)
-        self.wf0_y = aperture_wp(x_arr=self.y_arr, z=self.focus + self.defocus,
-                                 wl=self.wl, ap=self.ap_y)
-        self.i0 = self.p0 / self.ap_x / self.ap_y
-        self.smp_c = 1 / self.wl / (self.focus + self.defocus)
-        self.logger.info("The wavefields have been generated")
+        # Initialize intensity profiles at the detector's plane
+        if self.det_ix is None:
+            dx = self.params.fs_size * self.params.pix_size / self.n_x
+            sc_x = self.params.source_curve(dist=self.params.defocus + self.params.det_dist, dx=dx)
+            det_ix = np.sqrt(self.params.p0) / self.params.ap_x * np.abs(self.det_wfx)**2
+            self.det_ix = fft_convolve_scan(a1=det_ix, a2=sc_x)
+        if self.det_iy is None:
+            dy = self.params.ss_size * self.params.pix_size / self.n_y
+            sc_y = self.params.source_curve(dist=self.params.defocus + self.params.det_dist, dx=dy)
+            det_iy = np.sqrt(self.params.p0) / self.params.ap_y * np.abs(self.det_wfy)**2
+            self.det_iy = fft_convolve(a1=det_iy, a2=sc_y)
 
-    def _init_barcode(self, bsteps):
-        self.logger.info("Generating barcode's transmission coefficients")
-        if bsteps is None:
-            bsteps = barcode_steps(x0=self.x_arr[0] + self.offset, x1=self.x_arr[-1] + \
-                                   self.n_frames * self.step_size - self.offset,
-                                   br_dx=self.bar_size, rd=self.rnd_dev)
-        self.bsteps = bsteps
-        self.bs_t = barcode_profile(x_arr=self.x_arr, bx_arr=self.bsteps, sgm=self.bar_sigma,
-                                    atn0=self.bulk_atn, atn=self.bar_atn, ss=self.step_size,
-                                    nf=self.n_frames)
-        self.logger.info("The coefficients have been generated")
-
-    def _init_detector(self):
-        self.logger.info("Generating wavefields at the detector's plane")
-        self.wf1_y = fraunhofer_1d(wf0=self.wf0_y, x_arr=self.y_arr, xx_arr=self.yy_arr,
-                                   z=self.det_dist, wl=self.wl)
-        self.wf1_x = fraunhofer_1d_scan(wf0=self.wf0_x * self.bs_t, x_arr=self.x_arr,
-                                        xx_arr=self.xx_arr, z=self.det_dist, wl=self.wl)
-        self.det_c = self.smp_c / self.wl / self.det_dist
-        self.logger.info("The wavefields have been generated")
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_value, exc_tb):
-        self.close()
-        if not exc_type is None:
-            return False
-
-    def source_curve(self, dist, dx):
-        """Return source's rocking curve profile at `dist` distance from
-        the lens.
+    @dict_to_object
+    def update_bar_positions(self, b_steps):
+        """Return a new :class:`STSim` object with the updated
+        `b_steps`.
 
         Parameters
         ----------
-        dist : float
-            Distance from the lens to the rocking curve profile[um].
-        dx : float
-            Sampling distance [um].
+        b_steps : numpy.ndarray
+            Array of barcode's bar positions.
 
         Returns
         -------
-        numpy.ndarray
-            Source's rocking curve profile.
+        STSim
+            A new :class:`STSim` object with the updated
+            `b_steps`.
         """
-        sigma = self.th_s * dist
-        x_arr = dx * np.arange(-np.ceil(4 * sigma / dx), np.ceil(4 * sigma / dx) + 1)
-        s_arr = np.exp(-x_arr**2 / 2 / sigma**2)
-        return s_arr / s_arr.sum()
+        return {'b_steps': b_steps, 'b_profile': None, 'det_wfx': None, 'det_ix': None}
 
-    def sample_wavefronts(self):
-        """Return beam's wavefront profiles along the x axis at the
-        sample's plane.
-
-        Returns
-        -------
-        numpy.ndarray
-            Beam's wavefront at the sample's plane.
-        """
-        return self.wf0_x * self.bs_t * self.smp_c * self.wf0_y.max()
-
-    def det_wavefronts(self):
-        """Return beam's wavefront profiles along the x axis at the
-        detector's plane.
-
-        Returns
-        -------
-        numpy.ndarray
-            Beam's wavefront at the detector's plane.
-        """
-        return self.wf1_x * self.det_c * self.wf1_y.max()
-
-    def frames(self):
+    def frames(self, apply_noise=True):
         """Return intensity frames at the detector plane. Applies
         Poisson noise.
 
@@ -255,16 +177,14 @@ class STSim:
         numpy.ndarray
             Intensity frames.
         """
-        self.logger.info("Making frames at the detector's plane...")
-        self.logger.info("Source blur size: {:f} um".format(self.th_s * self.det_dist))
-        s_arr = self.source_curve(self.det_dist, self.pix_size)
-        frames = make_frames(i_x=self.i0 * np.abs(self.wf1_x * self.det_c)**2,
-                             i_y=np.abs(self.wf1_y)**2, sc_x=s_arr, sc_y=s_arr,
-                             pix_size=self.pix_size)
-        self.logger.info("The frames are generated, data shape: {:s}".format(str(frames.shape)))
+        dx = self.params.fs_size * self.params.pix_size / self.n_x
+        dy = self.params.ss_size * self.params.pix_size / self.n_y
+        frames = make_frames(i_x=self.det_ix, i_y=self.det_iy, dx=dx, dy=dy,
+                             ss=self.params.ss_size, fs=self.params.fs_size,
+                             apply_noise=apply_noise)
         return frames
 
-    def ptychograph(self):
+    def ptychograph(self, apply_noise=True):
         """Return a ptychograph of intensity frames. Applies Poisson
         noise.
 
@@ -273,22 +193,7 @@ class STSim:
         numpy.ndarray
             Ptychograph.
         """
-        self.logger.info("Making ptychograph...")
-        self.logger.info("Source blur size: {:f} um".format(self.th_s * self.det_dist))
-        s_arr = self.source_curve(self.det_dist, self.pix_size)
-        ptych = make_frames(i_x=self.i0 * np.abs(self.wf1_x * self.det_c)**2,
-                            i_y=(np.abs(self.wf1_y)**2).sum() * np.ones(1),
-                            sc_x=s_arr, sc_y=np.ones(1), pix_size=self.pix_size)
-        self.logger.info("The ptychograph is generated, data shape: {:s}".format(str(ptych.shape)))
-        return ptych
-
-    def close(self):
-        """Close logging handlers.
-        """
-        handlers = self.logger.handlers[:]
-        for handler in handlers:
-            handler.close()
-            self.logger.removeHandler(handler)
+        return self.frames(apply_noise=apply_noise).sum(axis=1)[:, None]
 
 class STConverter:
     """
@@ -470,10 +375,9 @@ class STConverter:
           Andrew's `speckle_tracking <https://github.com/andyofmelbourne/speckle-tracking>`_
           GUI.
         """
-        self.save(data=data, st_params=st_sim.parameters,
-                  dir_path=dir_path, logger=st_sim.logger)
+        self.save(data=data, st_params=st_sim.params, dir_path=dir_path)
 
-    def save(self, data, st_params, dir_path, logger=None):
+    def save(self, data, st_params, dir_path):
         """Export simulated data `data` (fetched from :func:`STSim.frames`
         or :func:`STSim.ptychograph`) and `st_params` to `dir_path` folder.
 
@@ -485,33 +389,20 @@ class STConverter:
             Experimental parameters.
         dir_path : str
             Path to the folder, where all the files are saved.
-        logger : logging.Logger, optional
-            Logging interface.
 
         See Also
         --------
         STConverter.save_sim : Full list of the files saved in `dir_path`.
         """
-        if logger:
-            logger.info("Saving data in the directory: {:s}".format(dir_path))
-            logger.info("Making ini files...")
         os.makedirs(dir_path, exist_ok=True)
         for name, parser in self._ini_parsers(st_params).items():
             ini_path = os.path.join(dir_path, name + '.ini')
             with open(ini_path, 'w') as ini_file:
                 parser.write(ini_file)
-            if logger:
-                logger.info('{:s} saved'.format(ini_path))
-        if logger:
-            logger.info("Making a cxi file...")
-            logger.info("Using the following cxi protocol:")
-            self.protocol.log(logger)
         data_dict = self.export_dict(data, st_params)
         with h5py.File(os.path.join(dir_path, 'data.cxi'), 'w') as cxi_file:
             for attr in data_dict:
                 self.protocol.write_cxi(attr, data_dict[attr], cxi_file)
-        if logger:
-            logger.info("{:s} saved".format(os.path.join(dir_path, 'data.cxi')))
 
 def converter(coord_ratio=1e-6, float_precision='float64'):
     """Return the default simulation converter.
@@ -556,7 +447,7 @@ def main():
     parser.add_argument('--ap_y', type=float, help="Lens size along the y axis [um]")
     parser.add_argument('--focus', type=float, help="Focal distance [um]")
     parser.add_argument('--alpha', type=float, help="Third order abberations [rad/mrad^3]")
-    parser.add_argument('--x0', type=float, help="Lens' abberations center point [0.0 - 1.0]")
+    parser.add_argument('--ab_cnt', type=float, help="Lens' abberations center point [0.0 - 1.0]")
     parser.add_argument('--bar_size', type=float, help="Average bar size [um]")
     parser.add_argument('--bar_sigma', type=float, help="Bar haziness width [um]")
     parser.add_argument('--bar_atn', type=float, help="Bar attenuation")
@@ -575,9 +466,10 @@ def main():
         st_params = STParams.import_dict(**args)
 
     st_converter = STConverter()
-    with STSim(st_params) as sim_obj:
-        if args['ptych']:
-            data = sim_obj.ptychograph()
-        else:
-            data = sim_obj.frames()
-        st_converter.save_sim(data, sim_obj, args['out_path'])
+    sim_obj = STSim(params=st_params)
+    if args['ptych']:
+        data = sim_obj.ptychograph()
+    else:
+        data = sim_obj.frames()
+    st_converter.save_sim(data, sim_obj, args['out_path'])
+    print('The simulation results have been saved to {:s}'.format(os.path.abspath(args['out_path'])))

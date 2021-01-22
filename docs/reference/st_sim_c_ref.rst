@@ -12,10 +12,12 @@ the wavefronts. All the functions are written in `Cython`_.
     :maxdepth: 1
     :caption: Contents
 
-    c_funcs/lens_wp
-    c_funcs/aperture_wp
-    c_funcs/fraunhofer_1d
-    c_funcs/fraunhofer_1d_scan
+    c_funcs/rsc_wp
+    c_funcs/fhf_wp
+    c_funcs/fhf_wp_scan
+    c_funcs/bar_positions
     c_funcs/barcode_profile
+    c_funcs/fft_convolve
+    c_funcs/fft_convolve_scan
     c_funcs/make_frames
     c_funcs/make_whitefield

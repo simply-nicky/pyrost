@@ -19,14 +19,14 @@ pyrost has the following **mandatory** runtime dependencies:
 
 Packages
 --------
-pyrost packages are available through `pypi <https://pypi.org/project/pyrost/>`_ on
-OS X as for now.
+pyrost packages are available through `pypi <https://pypi.org/project/pyrost/>`_ and
+`conda <https://anaconda.org/conda-forge/pyrost>`_ on OS X and Linux platforms.
 
 conda
 ^^^^^
 pyrost binary distribution is available via the `conda <https://anaconda.org/conda-forge/pyrost>`_
 package manager for Linux and OSX (Windows is **not** supported)in `conda-forge <https://conda-forge.org/>`_
-channel. In order to install pyrost via conda, you just need to add ``conda-forge``
+channel. In order to install pyrost via conda, you just need to add `conda-forge`
 to the channels, and install as following:
 
 .. code-block:: console
