@@ -14,7 +14,7 @@ Perform the simulation for a given :class:`pyrost.simulation.STParams` object.
 
 >>> import pyrost.simulation as st_sim
 >>> st_params = st_sim.parameters()
->>> sim_obj = st_sim.STSim(params=st_params)
+>>> sim_obj = st_sim.STSim(st_params)
 
 Return an array of intensity frames at the detector's plane.
 
@@ -91,7 +91,8 @@ class STSim(DataContainer):
     init_set = {'b_steps', 'b_profile', 'det_wfx', 'det_wfy', 'det_ix', 'det_iy',
                 'lens_wfx', 'lens_wfy','n_x', 'n_y', 'sample_wfx', 'sample_wfy'}
 
-    def __init__(self, **kwargs):
+    def __init__(self, params, **kwargs):
+        kwargs['params'] = params
         super(STSim, self).__init__(**kwargs)
         self._init_dict()
 
@@ -466,7 +467,7 @@ def main():
         st_params = STParams.import_dict(**args)
 
     st_converter = STConverter()
-    sim_obj = STSim(params=st_params)
+    sim_obj = STSim(st_params)
     if args['ptych']:
         data = sim_obj.ptychograph()
     else:

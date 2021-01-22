@@ -75,8 +75,8 @@ def test_st_params(st_params, ini_path):
 
 @pytest.mark.st_sim
 def test_st_sim(st_params):
-    with st_sim.STSim(st_params) as sim_obj:
-        ptych = sim_obj.ptychograph()
+    sim_obj = st_sim.STSim(st_params)
+    ptych = sim_obj.ptychograph()
     assert len(ptych.shape) == 3
     assert ptych.shape[0] == st_params.n_frames
 
@@ -119,9 +119,9 @@ def test_data_process_routines(exp_data_2d, loader):
 
 @pytest.mark.standalone
 def test_full(st_params, converter):
-    with st_sim.STSim(st_params) as sim_obj:
-        ptych = sim_obj.ptychograph()
-        data = converter.export_data(ptych, st_params)
+    sim_obj = st_sim.STSim(st_params)
+    ptych = sim_obj.ptychograph()
+    data = converter.export_data(ptych, st_params)
     assert data.data.dtype == converter.protocol.known_types['float']
     st_obj = data.get_st()
     st_res = st_obj.iter_update(sw_fs=20, ls_pm=3, ls_ri=5,
