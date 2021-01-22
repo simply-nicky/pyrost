@@ -12,7 +12,7 @@ from libc.math cimport sqrt, exp, pi, erf, floor, ceil
 from libc.time cimport time, time_t
 from libc.string cimport memcpy
 
-cdef extern from "fft.c":
+cdef extern from "pyrost/bin/fft.c":
 
     int good_size_real(int n)
     int good_size_cmplx(int n)
