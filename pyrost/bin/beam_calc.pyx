@@ -394,7 +394,7 @@ cdef void barcode_c(double[::1] b_tr, double[::1] b_steps, double b_atn, double 
             if j > 0 and j < b - 1:
                 x0 = (xx - b_steps[j - 1]) / sqrt(2) / b_sgm
                 x1 = (xx - b_steps[j]) / sqrt(2) / b_sgm
-                tr += b_atn * 0.5 * (0.5 - j % 2) * (erf(x0) - erf(x1))
+                tr += b_atn * (b_steps[j] - b_steps[j - 1]) / b_dx * 0.5 * (0.5 - j % 2) * (erf(x0) - erf(x1))
         tr -= (0.25 * b_atn + 0.5 * blk_atn) * erf((xx - b_steps[0]) / sqrt(2 + 2 * (blk_atn / b_atn)**2) / b_sgm)
         tr += (0.25 * b_atn + 0.5 * blk_atn) * erf((xx - b_steps[b - 1]) / sqrt(2 + 2 * (blk_atn / b_atn)**2) / b_sgm)
         b_tr[i] = sqrt(1 + tr)
