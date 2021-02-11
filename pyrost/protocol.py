@@ -1,69 +1,29 @@
-"""Speckle Tracking data protocol for `CXI`_ format files.
-The :class:`pyrost.Protocol` class provides paths to the necessary
-data attribute in a `CXI`_ file and corresponding data types.
-The :class:`pyrost.STLoader` automatically loads all the necessary
-data from a `CXI`_ file and returns an :class:`pyrost.STData` data
-container object.
-
-.. _CXI: https://www.cxidb.org/cxi.html
-
+"""
 Examples
 --------
 Generate the default CXI protocol.
 
 >>> import pyrost as rst
 >>> rst.cxi_protocol()
-<pyrost.protocol.Protocol at 0x7fd7c0c965d0>
+{'config': {'float_precision': 'float64'}, 'datatypes': {'basis_vectors':
+'float', 'data': 'float', 'defocus': 'float', '...': '...'}, 'default_paths':
+{'basis_vectors': '/entry_1/instrument_1/detector_1/basis_vectors',
+'data': '/entry_1/data_1/data', 'defocus': '/speckle_tracking/defocus', '...': '...'}}
 
 Or generate the default CXI loader.
 
 >>> rst.loader()
-<pyrost.protocol.STLoader at 0x7fd7e0d0f590>
-
-Notes
------
-Data attributes necessary for the Speckle Tracking
-algorithm:
-
-* basis_vectors : Detector basis vectors [m].
-* data : Measured intensity frames.
-* defocus : Defocus distance (supersedes defocus_ss
-  and defocus_fs values) [m].
-* defocus_ss : Defocus distance for the slow detector
-  axis [m].
-* defocus_fs : Defocus distance for the fast detector
-  axis [m].
-* distance : Sample-to-detector distance [m].
-* energy : Incoming beam photon energy [eV].
-* good_frames : An array of good frames' indices.
-* m0 : The lower bounds of the fast detector axis of
-  the reference image at the reference frame in pixels.
-* mask : Bad pixels mask.
-* n0 : The lower bounds of the slow detector axis of
-  the reference image at the reference frame in pixels.
-* phase : Phase profile of lens' abberations.
-* pixel_map : The pixel mapping between the data at
-  the detector's plane and the reference image at
-  the reference plane.
-* pixel_abberations : Lens' abberations along
-  the fast and slow axes in pixels.
-* pixel_translations : Sample's translations in
-  the detector plane in pixels.
-* reference_image : The unabberated reference image
-  of the sample.
-* roi : Region of interest in the detector's plane.
-* translations : Sample's translations [m].
-* wavelength : Incoming beam's wavelength [m].
-* whitefield : Measured frames' whitefield.
-* x_pixel_size : Pixel's size along the fast detector
-  axis [m].
-* y_pixel_size : Pixel's size along the slow detector
-  axis [m].
-
-Configuration parameters:
-
-* float_precision ('float32', 'float64') : Floating point
-  precision.
+{'config': {'float_precision': 'float64'}, 'datatypes': {'basis_vectors':
+'float', 'data': 'float', 'defocus': 'float', '...': '...'}, 'default_paths':
+{'basis_vectors': '/entry_1/instrument_1/detector_1/basis_vectors', 'data':
+'/entry_1/data_1/data', 'defocus': '/speckle_tracking/defocus', '...': '...'},
+'load_paths': {'good_frames': ['/speckle_tracking/good_frames',
+'/frame_selector/good_frames', '/process_3/good_frames', '...'], 'mask':
+['/speckle_tracking/mask', '/mask_maker/mask', '/entry_1/instrument_1/detector_1/mask',
+'...'], 'translations': ['/entry_1/sample_1/geometry/translations',
+'/entry_1/sample_1/geometry/translation', '/pos_refine/translation', '...'],
+'...': '...'}, 'policy': {'basis_vectors': 'True', 'data': 'True', 'defocus':
+'True', '...': '...'}}
 """
 import os
 import configparser
@@ -168,6 +128,7 @@ class INIParser:
     attr_dict, fmt_dict = {}, {}
     LIST_SPLITTER = r'\s*,\s*'
     LIST_MATCHER = r'^\[([\s\S]*)\]$'
+    FMT_LEN = 3
 
     def __init__(self, **kwargs):
         for section in self.attr_dict:
@@ -268,6 +229,23 @@ class INIParser:
             return fmt(string.strip())
 
     @classmethod
+    def _import_ini(cls, protocol_file):
+        ini_parser = cls.read_ini(protocol_file)
+        kwargs = {}
+        for section in cls.attr_dict:
+            kwargs[section] = {}
+            if 'ALL' in cls.attr_dict[section]:
+                if section in ini_parser:
+                    for option in ini_parser[section]:
+                        val = cls.get_value(ini_parser, section, option)
+                        kwargs[section][option] = val
+            else:
+                for option in cls.attr_dict[section]:
+                    val = cls.get_value(ini_parser, section, option)
+                    kwargs[section][option] = val
+        return kwargs
+
+    @classmethod
     def import_ini(cls, protocol_file):
         """Initialize an :class:`INIParser` object class with an
         ini file.
@@ -283,23 +261,28 @@ class INIParser:
             An :class:`INIParser` object with all the attributes imported
             from the INI file.
         """
-        ini_parser = cls.read_ini(protocol_file)
-        param_dict = {}
-        for section in cls.attr_dict:
-            param_dict[section] = {}
-            if 'ALL' in cls.attr_dict[section]:
-                if section in ini_parser:
-                    for option in ini_parser[section]:
-                        val = cls.get_value(ini_parser, section, option)
-                        param_dict[section][option] = val
-            else:
-                for option in cls.attr_dict[section]:
-                    val = cls.get_value(ini_parser, section, option)
-                    param_dict[section][option] = val
-        return cls(**param_dict)
+        return cls(**cls._import_ini(protocol_file))
+
+    @classmethod
+    def _format(cls, obj):
+        crop_obj = {}
+        for key, val in list(obj.items())[:cls.FMT_LEN]:
+            if isinstance(val, dict):
+                val = cls._format(val)
+            elif isinstance(val, list):
+                val = val[:cls.FMT_LEN] + ['...']
+            crop_obj[key] = val
+        if len(obj) > cls.FMT_LEN:
+            crop_obj['...'] = '...'
+        return crop_obj
+
+    def __repr__(self):
+        crop_dict = {key: self._format(val) for key, val in self.export_dict().items()}
+        return crop_dict.__repr__()
 
     def __str__(self):
-        return self.export_dict().__str__()
+        crop_dict = {key: self._format(val) for key, val in self.export_dict().items()}
+        return crop_dict.__str__()
 
     def export_dict(self):
         """Return a :class:`dict` object with all the attributes.
@@ -352,42 +335,47 @@ class INIParser:
 
 class Protocol(INIParser):
     """CXI protocol class. Contains a CXI file tree path with
-    the paths written to all the data attributes necessary
-    for the Speckle Tracking algorithm (enlisted in `datatypes_lookup`),
-    corresponding attributes' data types, and global configuration
-    parameters.
+    the paths written to all the data attributes necessary for
+    the Speckle Tracking algorithm, corresponding attributes'
+    data types, and floating point precision.
 
     Parameters
     ----------
-    **kwargs : dict
-        Values for the attributes specified in
-        `datatypes_lookup` and configuration parameters.
+    datatypes : dict, optional
+        Dictionary with attributes' datatypes. 'float', 'int', or 'bool'
+        are allowed.
+    default_paths : dict, optional
+        Dictionary with attributes' CXI default file paths.
+    float_precision : {'float32', 'float64'}, optional
+        Floating point precision.
 
     Attributes
     ----------
-    datatypes_lookup : dict
-        Dictionary which enlists all the data attributes
-        necessary for the Speckle Tracking algorithm and
-        their corresponding data types.
+    config : dict
+        Protocol configuration.
+    datatypes : dict
+        Dictionary with attributes' datatypes. 'float', 'int', or 'bool'
+        are allowed.
+    default_paths : dict
+        Dictionary with attributes' CXI default file paths.
 
     See Also
     --------
     protocol : Full list of data attributes and configuration
         parameters.
     """
-    datatypes_lookup = {'basis_vectors': 'float', 'data': 'float', 'defocus': 'float',
-                        'defocus_fs': 'float', 'defocus_ss': 'float', 'distance': 'float',
-                        'energy': 'float', 'error_frame': 'float', 'good_frames': 'int',
-                        'm0': 'int', 'mask': 'bool', 'n0': 'int', 'phase': 'float',
-                        'pixel_map': 'float', 'pixel_abberations': 'float',
-                        'pixel_translations': 'float', 'reference_image': 'float',
-                        'roi': 'int', 'translations': 'float', 'wavelength': 'float',
-                        'whitefield': 'float', 'x_pixel_size': 'float', 'y_pixel_size': 'float'}
-    attr_dict = {'default_paths': list(datatypes_lookup), 'config': ('float_precision', )}
-    fmt_dict = {'default_paths': 'str', 'config': 'str'}
+    attr_dict = {'config': ('float_precision', ), 'datatypes': ('ALL', ), 'default_paths': ('ALL', )}
+    fmt_dict = {'config': 'str','datatypes': 'str', 'default_paths': 'str'}
 
-    def __init__(self, **kwargs):
-        super(Protocol, self).__init__(**kwargs)
+    def __init__(self, datatypes=None, default_paths=None, float_precision='float64'):
+        if datatypes is None:
+            datatypes = {}
+        if default_paths is None:
+            default_paths = {}
+        datatypes = {attr: val for attr, val in datatypes.items() if attr in default_paths}
+        default_paths = {attr: val for attr, val in default_paths.items() if attr in datatypes}
+        super(Protocol, self).__init__(config={'float_precision': float_precision},
+                                       datatypes=datatypes, default_paths=default_paths)
 
         if self.config['float_precision'] == 'float32':
             self.known_types['float'] = np.float32
@@ -395,6 +383,26 @@ class Protocol(INIParser):
             self.known_types['float'] = np.float64
         else:
             raise ValueError('Invalid float precision: {:s}'.format(self.config['float_precision']))
+
+    @classmethod
+    def import_ini(cls, protocol_file):
+        """Initialize an :class:`Protocol` object class with an
+        ini file.
+
+        Parameters
+        ----------
+        protocol_file : str
+            Path to the file.
+
+        Returns
+        -------
+        Protocol
+            An :class:`Protocol` object with all the attributes imported
+            from the INI file.
+        """
+        kwargs = cls._import_ini(protocol_file)
+        return cls(datatypes=kwargs['datatypes'], default_paths=kwargs['default_paths'],
+                   float_precision=kwargs['config']['float_precision'])
 
     def parser_from_template(self, path):
         """Return a :class:`configparser.ConfigParser` object using
@@ -425,8 +433,8 @@ class Protocol(INIParser):
     def __contains__(self, attr):
         return attr in self.default_paths
 
-    def get_path(self, attr, value=None):
-        """Return the atrribute's path in the cxi file.
+    def get_default_path(self, attr, value=None):
+        """Return the atrribute's default path in the CXI file.
         Return `value` if `attr` is not found.
 
         Parameters
@@ -461,7 +469,7 @@ class Protocol(INIParser):
         type or None
             Attribute's data type.
         """
-        return self.known_types.get(self.datatypes_lookup.get(attr), value)
+        return self.known_types.get(self.datatypes.get(attr), value)
 
     def read_cxi(self, attr, cxi_file, cxi_path=None, dtype=None):
         """Read `attr` from the CXI file `cxi_file` at the path
@@ -487,7 +495,7 @@ class Protocol(INIParser):
             The value of the attribute extracted from the CXI file.
         """
         if cxi_path is None:
-            cxi_path = self.get_path(attr, cxi_path)
+            cxi_path = self.get_default_path(attr, cxi_path)
         if cxi_path in cxi_file:
             return cxi_file[cxi_path][...].astype(self.get_dtype(attr, dtype))
         else:
@@ -525,7 +533,7 @@ class Protocol(INIParser):
             pass
         else:
             if cxi_path is None:
-                cxi_path = self.get_path(attr, cxi_path)
+                cxi_path = self.get_default_path(attr, cxi_path)
             if cxi_path in cxi_file:
                 if overwrite:
                     del cxi_file[cxi_path]
@@ -535,12 +543,16 @@ class Protocol(INIParser):
             data = np.asarray(data, dtype=self.get_dtype(attr, dtype))
             cxi_file.create_dataset(cxi_path, data=data)
 
-def cxi_protocol(float_precision='float64'):
-    """Return the default CXI :class:`Protocol` object, with
-    the floating point precision specified by `float_precision`.
+def cxi_protocol(datatypes=None, default_paths=None, float_precision=None):
+    """Return the default CXI porotocol.
 
     Parameters
     ----------
+    datatypes : dict, optional
+        Dictionary with attributes' datatypes. 'float', 'int', or 'bool'
+        are allowed.
+    default_paths : dict, optional
+        Dictionary with attributes' CXI default file paths.
     float_precision : {'float32', 'float64'}, optional
         Floating point precision.
 
@@ -554,32 +566,52 @@ def cxi_protocol(float_precision='float64'):
     protocol : Full list of data attributes and configuration
         parameters.
     """
-    protocol = Protocol.import_ini(PROTOCOL_FILE).export_dict()
-    protocol.update(config={'float_precision': float_precision})
-    return Protocol(**protocol)
+    if datatypes is None:
+        datatypes = {}
+    if default_paths is None:
+        default_paths = {}
+    kwargs = Protocol.import_ini(PROTOCOL_FILE).export_dict()
+    kwargs['datatypes'].update(**datatypes)
+    kwargs['default_paths'].update(**default_paths)
+    if float_precision is None:
+        float_precision = kwargs['config']['float_precision']
+    return Protocol(datatypes=kwargs['datatypes'], default_paths=kwargs['default_paths'],
+                    float_precision=float_precision)
 
-class STLoader(INIParser):
-    """Speckle Tracking data loader class.
-    Looks for all the necessary data attributes
-    in a cxi file and returns an :class:`STData` object.
-    Search data in the paths provided by the `protocol`
-    and the paths parsed to the constructor with `**kwargs`.
+class STLoader(Protocol):
+    """Speckle Tracking data loader class. Loads data from a
+    CXI file and returns a :class:`STData` container or a
+    :class:`dict` with the data. Search data in the paths
+    provided by `protocol` and `load_paths`.
 
     Parameters
     ----------
     protocol : Protocol
         Protocol object.
-    **kwargs : dict
+    load_paths : dict, optional
         Extra paths to the data attributes in a CXI file,
-        which override `protocol`.
+        which override `protocol`. Accepts only the attributes
+        enlisted in `protocol`.
+    policy : dict, optional
+        A dictionary with loading policy. Contains all the
+        attributes that are available in `protocol` and the
+        corresponding flags. If a flag is True, the attribute
+        will be loaded from a file. By default only the attributes
+        necessary for a :class:`STData` container will be loaded.
 
     Attributes
     ----------
-    protocol : Protocol
-        Protocol object.
-    **kwargs : dict
-        Extra paths to the data attributes in a CXI file,
-        which override `protocol`.
+    config : dict
+        Protocol configuration.
+    datatypes : dict
+        Dictionary with attributes' datatypes. 'float', 'int', or 'bool'
+        are allowed.
+    default_paths : dict
+        Dictionary with attributes' CXI default file paths.
+    load_paths : dict
+        Extra set of paths to the attributes enlisted in `datatypes`.
+    policy: dict
+        Loading policy.
 
     See Also
     --------
@@ -588,12 +620,90 @@ class STLoader(INIParser):
     STData : Data container with all the data  necessary for
         Speckle Tracking.
     """
-    attr_dict = {'paths': ('ALL',)}
-    fmt_dict = {'paths': 'str'}
+    attr_dict = {'config': ('float_precision', ), 'datatypes': ('ALL', ), 'default_paths': ('ALL', ),
+                 'load_paths': ('ALL',), 'policy': ('ALL', )}
+    fmt_dict = {'config': 'str','datatypes': 'str', 'default_paths': 'str', 'load_paths': 'str', 'policy': 'str'}
 
-    def __init__(self, protocol=cxi_protocol(), **kwargs):
-        super(STLoader, self).__init__(**kwargs)
-        self.protocol = protocol
+    def __init__(self, protocol, load_paths=None, policy=None):
+        if load_paths is None:
+            load_paths = {}
+        else:
+            load_paths = {attr: paths for attr, paths in load_paths.items()
+                          if attr in protocol.default_paths}
+        if policy is None:
+            policy = {}
+        else:
+            policy = {attr: paths for attr, paths in policy.items()
+                          if attr in protocol.default_paths}
+        super(Protocol, self).__init__(config=protocol.config, datatypes=protocol.datatypes,
+                                       default_paths=protocol.default_paths, load_paths=load_paths, policy=policy)
+
+        if self.config['float_precision'] == 'float32':
+            self.known_types['float'] = np.float32
+        elif self.config['float_precision'] == 'float64':
+            self.known_types['float'] = np.float64
+        else:
+            raise ValueError('Invalid float precision: {:s}'.format(self.config['float_precision']))
+
+    @classmethod
+    def import_ini(cls, protocol_file):
+        """Initialize an :class:`STLoader` object class with an
+        ini file.
+
+        Parameters
+        ----------
+        protocol_file : str
+            Path to the file.
+
+        Returns
+        -------
+        STLoader
+            An :class:`STLoader` object with all the attributes imported
+            from the INI file.
+        """
+        kwargs = cls._import_ini(protocol_file)
+        protocol = Protocol.import_ini(protocol_file)
+        return cls(protocol=protocol, load_paths=kwargs['load_paths'], policy=kwargs['policy'])
+
+    def get_load_paths(self, attr, value=None):
+        """Return the atrribute's path in the cxi file.
+        Return `value` if `attr` is not found.
+
+        Parameters
+        ----------
+        attr : str
+            The attribute to look for.
+
+        value : str, optional
+            value which is returned if the `attr` is not found.
+
+        Returns
+        -------
+        list
+            Set of attribute's paths.
+        """
+        paths = [super(STLoader, self).get_default_path(attr, value)]
+        if attr in self.load_paths:
+            paths.extend(self.load_paths[attr])
+        return paths
+
+    def get_policy(self, attr, value=None):
+        policy = self.policy.get(attr, value)
+        if isinstance(policy, str):
+            return policy == 'True'
+        else:
+            return bool(policy)
+
+    def get_protocol(self):
+        """Return a CXI protocol from the loader.
+
+        Returns
+        -------
+        Protocol
+            CXI protocol.
+        """
+        return Protocol(datatypes=self.datatypes, default_paths=self.default_paths,
+                        float_precision=self.config['float_precision'])
 
     def find_path(self, attr, cxi_file):
         """Find attribute's path in a CXI file `cxi_file`.
@@ -611,10 +721,10 @@ class STLoader(INIParser):
             Atrribute's path in the CXI file,
             return None if the attribute is not found.
         """
-        if attr in self.paths:
-            for path in self.paths[attr]:
-                if path in cxi_file:
-                    return path
+        paths = self.get_load_paths(attr)
+        for path in paths:
+            if path is None or path in cxi_file:
+                return path
         else:
             return None
 
@@ -626,7 +736,7 @@ class STLoader(INIParser):
         ----------
         path : str
             Path to the cxi file.
-        **kwargs : dict
+        **kwargs : dict, optional
             Dictionary of attribute values,
             which will be parsed to the `STData` object instead.
 
@@ -637,12 +747,15 @@ class STLoader(INIParser):
         """
         data_dict = {}
         with h5py.File(path, 'r') as cxi_file:
-            for attr in self.protocol:
-                cxi_path = self.find_path(attr, cxi_file)
-                if attr in kwargs and not kwargs[attr] is None:
-                    data_dict[attr] = np.asarray(kwargs[attr], dtype=self.protocol.get_dtype(attr))
+            for attr in self:
+                if self.get_policy(attr, False):
+                    cxi_path = self.find_path(attr, cxi_file)
+                    if attr in kwargs and not kwargs[attr] is None:
+                        data_dict[attr] = np.asarray(kwargs[attr], dtype=self.get_dtype(attr))
+                    else:
+                        data_dict[attr] = self.read_cxi(attr, cxi_file, cxi_path=cxi_path)
                 else:
-                    data_dict[attr] = self.protocol.read_cxi(attr, cxi_file, cxi_path=cxi_path)
+                    data_dict[attr] = None
         if not data_dict['defocus'] is None:
             data_dict['defocus_ss'] = data_dict['defocus']
             data_dict['defocus_fs'] = data_dict['defocus']
@@ -665,15 +778,26 @@ class STLoader(INIParser):
             Data container object with all the necessary data
             for the Speckle Tracking algorithm.
         """
-        return STData(self.protocol, **self.load_dict(path, **kwargs))
+        return STData(self.get_protocol(), **self.load_dict(path, **kwargs))
 
-def loader(float_precision='float64'):
+def loader(protocol=None, load_paths=None, policy=None):
     """Return the default CXI loader.
 
     Parameters
     ----------
     float_precision : {'float32', 'float64'}, optional
         Floating point precision.
+    load_paths : dict, optional
+        Extra paths to the data attributes in a CXI file,
+        which override the :func:`cxi_protocol`. Accepts
+        only the attributes enlisted in :func:`cxi_protocol`.
+    policy : dict, optional
+        A dictionary with loading policy. Contains all the
+        attributes that are available in :func:`cxi_protocol`
+        and the corresponding flags. If a flag is True, the
+        attribute will be loaded from a file. By default only
+        the attributes necessary for a :class:`STData` container
+        will be loaded.
 
     Returns
     -------
@@ -682,8 +806,21 @@ def loader(float_precision='float64'):
 
     See Also
     --------
+    cxi_protocol : Default CXI protocol.
     STLoader : Full loader class description.
+    STData : Data container with all the data  necessary for
+        Speckle Tracking.
     """
-    protocol = cxi_protocol(float_precision)
     kwargs = STLoader.import_ini(PROTOCOL_FILE).export_dict()
-    return STLoader(protocol, **kwargs)
+    if protocol is None:
+        protocol = Protocol(datatypes=kwargs['datatypes'],
+                            default_paths=kwargs['default_paths'],
+                            float_precision=kwargs['config']['float_precision'])
+    if load_paths is None:
+        load_paths = {}
+    if policy is None:
+        policy = {}
+    kwargs['load_paths'].update(**load_paths)
+    kwargs['policy'].update(**policy)
+    return STLoader(protocol, load_paths=kwargs['load_paths'],
+                    policy=kwargs['policy'])

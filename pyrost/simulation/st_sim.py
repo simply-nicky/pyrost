@@ -250,7 +250,7 @@ class STConverter:
                    'energy', 'good_frames', 'mask', 'roi', 'translations',
                    'wavelength', 'whitefield', 'x_pixel_size', 'y_pixel_size'}
 
-    def __init__(self, protocol=cxi_protocol(), coord_ratio=1e-6):
+    def __init__(self, protocol, coord_ratio=1e-6):
         self.protocol, self.crd_rat = protocol, coord_ratio
 
     def _ini_parsers(self, st_params):
@@ -424,7 +424,7 @@ def converter(coord_ratio=1e-6, float_precision='float64'):
     --------
     STConverter : Full converter class description.
     """
-    return STConverter(protocol=cxi_protocol(float_precision),
+    return STConverter(protocol=cxi_protocol(float_precision=float_precision),
                        coord_ratio=coord_ratio)
 
 def main():

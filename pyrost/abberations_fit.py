@@ -325,7 +325,7 @@ class AbberationsFit(DataContainer):
             alpha = None
         return {'alpha': alpha, 'fit': fit, 'ph_fit': ph_fit, 'rel_err': np.abs(err / fit), 'r_sq': r_sq}
 
-    def fit_phase(self, max_order=3, xtol=1e-14, ftol=1e-14, loss='cauchy', roi=None):
+    def fit_phase(self, max_order=3, xtol=1e-14, ftol=1e-14, loss='linear', roi=None):
         """Fit lens' phase abberations with polynomial function using
         :func:`scipy.optimise.least_squares`.
 

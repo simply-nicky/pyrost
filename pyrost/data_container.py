@@ -79,11 +79,17 @@ class DataContainer:
         else:
             raise AttributeError(attr + " doesn't exist")
 
+    def __repr__(self):
+        return self.attr_dict.__repr__()
+
     def __setattr__(self, attr, value):
         if attr in self.__dict__['attr_dict']:
             self.__dict__['attr_dict'][attr] = value
         else:
             super(DataContainer, self).__setattr__(attr, value)
+
+    def __str__(self):
+        return self.attr_dict.__str__()
 
     def get(self, attr, value=None):
         """Retrieve a dataset, return `value` if the attribute is not found.

@@ -40,6 +40,7 @@ ctypedef np.npy_bool bool_t
 ctypedef np.uint64_t uint_t
 
 DEF FLOAT_MAX = 1.7976931348623157e+308
+DEF X_TOL = 4.320005384913445 # Y_TOL = 1e-9
 DEF NO_VAR = -1.0  
 
 cdef int fft(complex_t* arr, int n) nogil:
@@ -146,7 +147,7 @@ def irfft_python(complex_t[::1] arr):
         raise RuntimeError('IRFFT failed')
     return np.asarray(res)
 
-def st_update(I_n, W, dij, basis, x_ps, y_ps, z, df, sw_ss, sw_fs, ls, roi=None, n_iter=5):
+def st_update(I_n, dij, basis, x_ps, y_ps, z, df, sw_max=100, n_iter=5):
     """
     Andrew's speckle tracking update algorithm
     
@@ -160,27 +161,75 @@ def st_update(I_n, W, dij, basis, x_ps, y_ps, z, df, sw_ss, sw_fs, ls, roi=None,
     n_iter - number of iterations
     """
     M = np.ones((I_n.shape[1], I_n.shape[2]), dtype=bool)
-    u, dij_pix, res = st.generate_pixel_map(W.shape, dij, basis, x_ps,
-                                            y_ps, z, df, verbose=False)
-    I0, n0, m0 = st.make_object_map(I_n, M, W, dij_pix, u, ls, roi=roi)
+    W = st.make_whitefield(I_n, M)
+    print(W.shape)
+    u, dij_pix, res = st.generate_pixel_map(W.shape, dij, basis,
+                                            x_ps, y_ps, z,
+                                            df, verbose=False)
+    I0, n0, m0 = st.make_object_map(I_n, M, W, dij_pix, u, subpixel=False, verbose=False)
 
     es = []
     for i in range(n_iter):
 
         # calculate errors
-        error_total = st.calc_error(I_n, M, W, dij_pix, I0, u, n0, m0, ls=ls,
-                                    roi=roi, subpixel=True, verbose=False)[0]
+        error_total = st.calc_error(I_n, M, W, dij_pix, I0, u, n0, m0, subpixel=True, verbose=False)[0]
 
         # store total error
         es.append(error_total)
 
         # update pixel map
         u = st.update_pixel_map(I_n, M, W, I0, u, n0, m0, dij_pix,
-                                sw_ss, sw_fs, ls, roi=roi)
+                                search_window=[1, sw_max], subpixel=True,
+                                fill_bad_pix=True, integrate=False,
+                                quadratic_refinement=True, verbose=False)[0]
+        sw_max = int(np.max(np.abs(u - np.indices(W.shape))))
 
         # make reference image
-        I0, n0, m0 = st.make_object_map(I_n, M, W, dij_pix, u, ls, roi=roi)
+        I0, n0, m0 = st.make_object_map(I_n, M, W, dij_pix, u, subpixel=True, verbose=False)
+
+        # update translations
+        dij_pix = st.update_translations(I_n, M, W, I0, u, n0, m0, dij_pix)[0]
     return {'u':u, 'I0':I0, 'errors':es, 'n0': n0, 'm0': m0}
+
+# def st_update(I_n, dij, basis, x_ps, y_ps, z, df, sw_ss, sw_fs, ls, n_iter=5, filt=2.5, verbose=False):
+#     """
+#     Andrew's speckle tracking update algorithm
+    
+#     I_n - measured data
+#     W - whitefield
+#     basis - detector plane basis vectors
+#     x_ps, y_ps - x and y pixel sizes
+#     z - distance between the sample and the detector
+#     df - defocus distance
+#     sw_max - pixel mapping search window size
+#     n_iter - number of iterations
+#     """
+#     M = np.ones((I_n.shape[1], I_n.shape[2]), dtype=bool)
+#     W = st.make_whitefield(I_n, M, verbose=verbose).astype(I_n.dtype)
+#     u, dij_pix, res = st.generate_pixel_map(W.shape, dij, basis, x_ps,
+#                                             y_ps, z, df, verbose=verbose)
+#     I0, n0, m0 = st.make_object_map(data=I_n, mask=M, W=W, dij_n=dij_pix, pixel_map=u, ls=ls)
+
+#     es = []
+#     for i in range(n_iter):
+
+#         # calculate errors
+#         error_total = st.calc_error(data=I_n, mask=M, W=W, dij_n=dij_pix, O=I0,
+#                                     pixel_map=u, n0=n0, m0=m0, ls=ls,
+#                                     subpixel=False, verbose=verbose)[0]
+
+#         # store total error
+#         es.append(error_total)
+
+#         # update pixel map
+#         u += gaussian_filter(st.update_pixel_map(data=I_n, mask=M, W=W, O=I0,
+#                                                  pixel_map=u, n0=n0, m0=m0,
+#                                                  dij_n=dij_pix, sw_ss=0,
+#                                                  sw_fs=10, ls=ls) - u, (0, filt, filt))
+
+#         # make reference image
+#         I0, n0, m0 = st.make_object_map(data=I_n, mask=M, W=W, dij_n=dij_pix, pixel_map=u, ls=ls)
+#     return {'u':u, 'I0':I0, 'errors':es, 'n0': n0, 'm0': m0}
 
 def pixel_translations(basis, dij, df, z):
     dij_pix = (basis * dij[:, None]).sum(axis=-1)
@@ -270,23 +319,51 @@ def phase_fit(pixel_ab, x_ps, z, df, wl, max_order=2, pixels=None):
     return {'pixels': pixels, 'pix_fit': fit.x, 'ang_fit': ang_fit,
             'pix_err': err, 'ph_fit': ph_fit, 'r_sq': r_sq, 'fit': fit}
 
-# cdef float_t min_float(float_t* array, int a) nogil:
-#     cdef:
-#         int i
-#         float_t mv = array[0]
-#     for i in range(a):
-#         if array[i] < mv:
-#             mv = array[i]
-#     return mv
+cdef int binary_search(double[::1] values, int l, int r, double x) nogil:
+    cdef int m = l + (r - l) // 2
+    if l <= r:
+        if x == values[m]:
+            return m
+        elif x > values[m] and x <= values[m + 1]:
+            return m + 1
+        elif x < values[m]:
+            return binary_search(values, l, m, x)
+        else:
+            return binary_search(values, m + 1, r, x)
 
-# cdef float_t max_float(float_t* array, int a) nogil:
-#     cdef:
-#         int i
-#         float_t mv = array[0]
-#     for i in range(a):
-#         if array[i] > mv:
-#             mv = array[i]
-#     return mv
+cdef int searchsorted(double[::1] values, double x) nogil:
+    cdef int r = values.shape[0]
+    if x < values[0]:
+        return 0
+    elif x > values[r - 1]:
+        return r
+    else:
+        return binary_search(values, 0, r, x)
+
+cdef double barcode_c(double[::1] b_steps, double xx, double b_atn, double b_sgm, double blk_atn) nogil:
+    cdef:
+        int b = b_steps.shape[0], i, j0, j
+        double b_dx = (b_steps[b - 1] - b_steps[0]) / b
+        int bb = <int>(X_TOL * sqrt(2) * b_sgm / b_dx + 1)
+        double tr, x0, x1
+    j0 = searchsorted(b_steps, xx) # even '-', odd '+'
+    tr = 0
+    for j in range(j0 - bb, j0 + bb + 1):
+        if j > 0 and j < b - 1:
+            x0 = (xx - b_steps[j - 1]) / sqrt(2) / b_sgm
+            x1 = (xx - b_steps[j]) / sqrt(2) / b_sgm
+            tr += b_atn * (b_steps[j] - b_steps[j - 1]) / b_dx * 0.5 * (0.5 - j % 2) * (erf(x0) - erf(x1))
+    tr -= (0.25 * b_atn + 0.5 * blk_atn) * erf((xx - b_steps[0]) / sqrt(2 + 2 * (blk_atn / b_atn)**2) / b_sgm)
+    tr += (0.25 * b_atn + 0.5 * blk_atn) * erf((xx - b_steps[b - 1]) / sqrt(2 + 2 * (blk_atn / b_atn)**2) / b_sgm)
+    return sqrt(1 + tr)
+        
+def barcode_profile(double[::1] b_steps, double[::1] x_arr, double b_atn, double b_sgm, double blk_atn):
+    cdef:
+        int a = x_arr.shape[0], i
+        double[::1] b_tr = np.empty(a, dtype=np.float64)
+    for i in range(a):
+        b_tr[i] = barcode_c(b_steps, x_arr[i], b_atn, b_sgm, blk_atn)
+    return np.asarray(b_tr)
 
 # cdef float_t rbf(float_t dsq, float_t ls) nogil:
 #     return exp(-dsq / 2 / ls**2) / sqrt(2 * pi)
@@ -320,29 +397,6 @@ def phase_fit(pixel_ab, x_ps, z, df, wl, max_order=2, pixels=None):
 #                 dss * dfs * I0[ss1, fs1]
 #         SS_res += (I[i] - I0_bi)**2
 #         SS_tot += (I[i] - 1)**2
-#     m_ptr[0] = SS_res; m_ptr[1] = SS_tot
-#     if m_ptr[2] >= 0:
-#         m_ptr[2] = 4 * I[a] * (SS_res / SS_tot**2 + SS_res**2 / SS_tot**3)
-
-# cdef void mse_bi(float_t* m_ptr, float_t[::1] I, float_t[:, ::1] I0,
-#                  float_t[::1] di, float_t[::1] dj, float_t ux, float_t uy) nogil:
-#     cdef:
-#         int a = I.shape[0] - 1, aa = I0.shape[0], bb = I0.shape[1]
-#         int i, ss0, ss1, fs0, fs1
-#         float_t SS_res = 0, SS_tot = 0, ss, fs, dss, dfs, I0_bi
-#     for i in range(a):
-#         ss = ux - di[i]
-#         fs = uy - dj[i]
-#         if ss == 0 and fs > 0 and fs < bb - 1:
-#             dss = 0; ss0 = 0; ss1 = 0
-#             dfs = fs - floor(fs)
-#             fs0 = <int>(floor(fs)); fs1 = fs0 + 1
-#             I0_bi = (1 - dss) * (1 - dfs) * I0[ss0, fs0] + \
-#                     (1 - dss) * dfs * I0[ss0, fs1] + \
-#                     dss * (1 - dfs) * I0[ss1, fs0] + \
-#                     dss * dfs * I0[ss1, fs1]
-#             SS_res += (I[i] - I0_bi)**2
-#             SS_tot += (I[i] - 1)**2
 #     m_ptr[0] = SS_res; m_ptr[1] = SS_tot
 #     if m_ptr[2] >= 0:
 #         m_ptr[2] = 4 * I[a] * (SS_res / SS_tot**2 + SS_res**2 / SS_tot**3)

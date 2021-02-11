@@ -134,8 +134,15 @@ class STData(DataContainer):
             self.whitefield = make_whitefield(data=self.data[self.good_frames], mask=self.mask)
 
         # Set a pixel map, deviation angles, and phase
-        if self.pixel_map is None:
-            self._init_pixel_map()
+        if not self.pixel_map is None:
+            self.pixel_abberations = self.pixel_map
+        self.pixel_map = np.indices(self.whitefield.shape)
+        if self.pixel_abberations is None:
+            self.pixel_abberations = np.zeros(self.pixel_map.shape)
+        if self.phase is None:
+            self.phase = np.zeros(self.whitefield.shape)
+        if self.error_frame is None:
+            self.error_frame = np.zeros(self.whitefield.shape)
 
         if self._isdefocus:
             # Set a pixel translations
@@ -162,12 +169,6 @@ class STData(DataContainer):
     def _isphase(self):
         return not self.pixel_abberations is None and not self.phase is None
 
-    def _init_pixel_map(self):
-        self.pixel_map = np.indices(self.whitefield.shape)
-        self.pixel_abberations = np.zeros(self.pixel_map.shape)
-        self.phase = np.zeros(self.whitefield.shape)
-        self.error_frame = np.zeros(self.whitefield.shape)
-
     def __setattr__(self, attr, value):
         if attr in self.attr_set | self.init_set:
             value = np.array(value, dtype=self.protocol.get_dtype(attr))
@@ -189,7 +190,7 @@ class STData(DataContainer):
         STData
             New :class:`STData` object with the updated `roi`.
         """
-        return {'roi': np.asarray(roi, dtype=np.int)}
+        return {'roi': np.asarray(roi, dtype=int)}
 
     @dict_to_object
     def integrate_data(self, axis=1):
@@ -339,15 +340,17 @@ class STData(DataContainer):
         """
         if st_obj in self._st_objects:
             # Update phase, pixel_abberations, and reference_image
-            self._init_pixel_map()
             dev_ss, dev_fs = (st_obj.pixel_map - self.get('pixel_map'))
             dev_ss -= dev_ss.mean()
             dev_fs -= dev_fs.mean()
+            self.pixel_abberations = np.zeros(self.pixel_map.shape)
             self.pixel_abberations[:, self.roi[0]:self.roi[1], self.roi[2]:self.roi[3]] = np.stack((dev_ss, dev_fs))
             phase = ct_integrate(self.y_pixel_size**2 * dev_ss * self.defocus_ss / self.wavelength,
                                  self.x_pixel_size**2 * dev_fs * self.defocus_fs / self.wavelength) \
                     * 2 * np.pi / self.distance**2
+            self.phase = np.zeros(self.whitefield.shape)
             self.phase[self.roi[0]:self.roi[1], self.roi[2]:self.roi[3]] = phase
+            self.error_frame = np.zeros(self.whitefield.shape)
             self.error_frame[self.roi[0]:self.roi[1], self.roi[2]:self.roi[3]] = st_obj.error_frame
             self.reference_image = st_obj.reference_image
 
@@ -444,12 +447,12 @@ class STData(DataContainer):
         if defoci_ss is None:
             defoci_ss = defoci_fs.copy()
         sweep_scan = []
-        for defocus_fs, defocus_ss in zip(defoci_fs, defoci_ss):
+        for defocus_fs, defocus_ss in zip(defoci_fs.ravel(), defoci_ss.ravel()):
             st_data = self.update_defocus(defocus_fs, defocus_ss)
-            st_obj = st_data.get_st().update_reference(ls_ri=ls_ri)
+            st_obj = st_data.get_st().update_reference(ls_ri=ls_ri, sw_fs=0, sw_ss=0)
             ri_gm = gaussian_gradient_magnitude(st_obj.reference_image, sigma=ls_ri)
             sweep_scan.append(np.mean(ri_gm**2))
-        return np.array(sweep_scan)
+        return np.array(sweep_scan).reshape(defoci_fs.shape)
 
     def get(self, attr, value=None):
         """Return a dataset with `mask` and `roi` applied.
@@ -611,7 +614,7 @@ class SpeckleTracking(DataContainer):
         based on grid search.
     """
     attr_set = {'data', 'dref', 'dfs_pix', 'dss_pix', 'pixel_map', 'whitefield'}
-    init_set = {'error_frame', 'n0', 'm0', 'reference_image'}
+    init_set = {'error_frame', 'ls_ri', 'n0', 'm0', 'reference_image'}
 
     def __init__(self, **kwargs):
         super(SpeckleTracking, self).__init__(**kwargs)
@@ -642,7 +645,7 @@ class SpeckleTracking(DataContainer):
                    pixel_map=pixel_map, whitefield=whitefield)
 
     @dict_to_object
-    def update_reference(self, ls_ri=10., sw_ss=0, sw_fs=0):
+    def update_reference(self, ls_ri,  sw_fs, sw_ss=0):
         """Return a new :class:`SpeckleTracking` object
         with the updated `reference_image`.
 
@@ -671,10 +674,10 @@ class SpeckleTracking(DataContainer):
         I0, n0, m0 = make_reference(I_n=self.data, W=self.whitefield, u=self.pixel_map,
                                     di=self.dss_pix, dj=self.dfs_pix, sw_ss=sw_ss,
                                     sw_fs=sw_fs, ls=ls_ri)
-        return {'reference_image': I0, 'n0': n0, 'm0': m0}
+        return {'ls_ri': ls_ri, 'n0': n0, 'm0': m0, 'reference_image': I0}
 
     @dict_to_object
-    def update_pixel_map(self, sw_fs, sw_ss=0, ls_pm=3., method='search'):
+    def update_pixel_map(self, ls_pm, sw_fs, sw_ss=0, method='search'):
         """Return a new :class:`SpeckleTracking` object with
         the updated `pixel_map`.
 
@@ -734,7 +737,7 @@ class SpeckleTracking(DataContainer):
             return {'pixel_map': pixel_map}
     
     @dict_to_object
-    def update_errors(self, ls_ri=5.):
+    def update_errors(self):
         """Return a new :class:`SpeckleTracking` object with
         the updated `error_frame`.
 
@@ -761,13 +764,13 @@ class SpeckleTracking(DataContainer):
         if self.reference_image is None:
             raise AttributeError('The reference image has not been generated')
         else:
-            error_frame = mse_frame(I_n=self.data, W=self.whitefield, ls=ls_ri,
+            error_frame = mse_frame(I_n=self.data, W=self.whitefield, ls=self.ls_ri,
                                     I0=self.reference_image, u=self.pixel_map,
                                     di=self.dss_pix - self.n0, dj=self.dfs_pix - self.m0)
             return {'error_frame': error_frame}
 
     @dict_to_object
-    def update_translations(self, sw_fs, sw_ss=0, ls_ri=5.):
+    def update_translations(self, sw_fs, sw_ss=0):
         """Return a new :class:`SpeckleTracking` object with
         the updated sample pixel translations (`dss_pix`,
         `dfs_pix`).
@@ -813,14 +816,110 @@ class SpeckleTracking(DataContainer):
                                          I0=self.reference_image, u=self.pixel_map,
                                          di=self.dss_pix - self.n0,
                                          dj=self.dfs_pix - self.m0,
-                                         sw_ss=sw_ss, sw_fs=sw_fs, ls=ls_ri)
+                                         sw_ss=sw_ss, sw_fs=sw_fs, ls=self.ls_ri)
             dss_pix = np.ascontiguousarray(dij[:, 0]) + self.n0
             dfs_pix = np.ascontiguousarray(dij[:, 1]) + self.m0
             return {'dss_pix': dss_pix, 'dfs_pix': dfs_pix}
 
-    def iter_update(self, sw_fs, sw_ss=0, ls_pm=3., ls_ri=5.,
-                    n_iter=5, f_tol=1e-3, verbose=True, method='search',
-                    update_translations=False, return_errors=True):
+    def iter_update_gd(self, ls_ri, ls_pm, sw_fs, sw_ss=0, n_iter=30, f_tol=1e-6, momentum=0.,
+                       learning_rate=1e3, gstep=.1, method='search', update_translations=False,
+                       verbose=False, return_extra=False):
+        """Perform iterative Robust Speckle Tracking update. `ls_ri` and
+        `ls_pm` define high frequency cut-off to supress the noise. `ls_ri`
+        is iteratively updated by dint of Gradient Descent with momentum
+        update procedure. Iterative update terminates when the difference
+        between total mean-squared-error (MSE) values of the two last iterations
+        is less than `f_tol`.
+
+        Parameters
+        ----------
+        sw_fs : int
+            Search window size in pixels along the fast detector
+            axis.
+        sw_ss : int, optional
+            Search window size in pixels along the slow detector
+            axis.
+        ls_pm : float, optional
+            `pixel_map` length scale in pixels.
+        ls_ri : float, optional
+            Initial `reference_image` length scale in pixels.
+        n_iter : int, optional
+            Maximum number of iterations.
+        f_tol : float, optional
+            Tolerance for termination by the change of the total MSE.
+        momentum : float, optional
+            hyperparameter in interval (0.0-1.0) that accelerates gradient
+            descent of `ls_ri` in the relevant direction and dampens oscillations.
+        learning_rate : float, optional
+            Learning rate for `ls_ri` update procedure.
+        gstep : float, optional
+            `ls_ri` step used to numerically calculate the MSE gradient.
+        method : {'search', 'newton'}, optional
+            `pixel_map` update algorithm. The following keyword
+            values are allowed:
+
+            * 'newton' : Iterative Newton's method based on
+              finite difference gradient approximation.
+            * 'search' : Grid search along the search window.
+        update_translations : bool, optional
+            Update sample pixel translations if True.
+        return_extra : bool, optional
+            Return errors and `ls_ri` array if True.
+
+        Returns
+        -------
+        SpeckleTracking
+            A new :class:`SpeckleTracking` object with the updated
+            `pixel_map` and `reference_image`. `dss_pix` and `dfs_pix`
+            are also updated if `update_translations` is True.
+        list
+            List of total MSE values for each iteration.  Only if
+            `return_errors` is True.
+        """
+        velocity = 0.0
+        obj = self.update_reference(ls_ri=ls_ri, sw_ss=sw_ss, sw_fs=sw_fs)
+        obj.update_errors.inplace_update()
+        extra = {'errors': [obj.error_frame.mean()],
+                 'lss_ri': [ls_ri]}
+        if verbose:
+            print('Initial MSE = {:.6f}, Initial ls_ri = {:.2f}'.format(extra['errors'][-1],
+                                                                        extra['lss_ri'][-1]))
+        for it in range(1, n_iter + 1):
+            # Update pixel_map
+            new_obj = obj.update_pixel_map(ls_pm=ls_pm, sw_fs=sw_fs, sw_ss=sw_ss, method=method)
+            obj.pixel_map += gaussian_filter(new_obj.pixel_map - obj.pixel_map,
+                                             (0, ls_pm, ls_pm))
+
+            # Update dss_pix, dfs_pix
+            if update_translations:
+                new_obj.update_translations.inplace_update(sw_ss=sw_ss, sw_fs=sw_fs)
+                obj.dss_pix, obj.dfs_pix = new_obj.dss_pix, new_obj.dfs_pix
+
+            # Update reference_image
+            obj.update_reference.inplace_update(ls_ri=ls_ri, sw_fs=sw_fs, sw_ss=sw_ss)
+            obj.update_errors.inplace_update()
+            extra['errors'].append(obj.error_frame.mean())
+
+            # Update ls_ri
+            grad = (obj.mse_total(ls_ri + gstep) - extra['errors'][-1]) / gstep
+            velocity = np.clip(momentum * velocity - learning_rate * grad,
+                               -0.75 * ls_ri, 0.75 * ls_ri)
+            ls_ri += velocity
+            extra['lss_ri'].append(ls_ri)
+            if verbose:
+                print('Iteration No. {:d}: Total MSE = {:.6f}, ls_ri = {:.2f}'.format(it, extra['errors'][-1],
+                                                                                      extra['lss_ri'][-1]))
+
+            # Break if function tolerance is satisfied
+            if (extra['errors'][-2] - extra['errors'][-1]) <= f_tol:
+                break
+        if return_extra:
+            return obj, extra
+        else:
+            return obj
+
+    def iter_update(self, ls_ri, ls_pm, sw_fs, sw_ss=0, n_iter=5, f_tol=1e-3,
+                    method='search', update_translations=False, verbose=False, return_errors=False):
         """Perform iterative Robust Speckle Tracking update. `ls_ri` and
         `ls_pm` define high frequency cut-off to supress the noise.
         Iterative update terminates when the difference between total
@@ -866,46 +965,32 @@ class SpeckleTracking(DataContainer):
             `return_errors` is True.
         """
         obj = self.update_reference(ls_ri=ls_ri, sw_ss=sw_ss, sw_fs=sw_fs)
-        obj.update_errors.inplace_update(ls_ri=ls_ri)
+        obj.update_errors.inplace_update()
         errors = [obj.error_frame.mean()]
         if verbose:
-            print('Iteration No. 0: Total MSE = {:.3f}'.format(errors[0]))
+            print('Initial MSE = {:.6f}'.format(errors[0]))
         for it in range(1, n_iter + 1):
-            # Update pixel_map, reference_image
-            new_obj = obj.update_reference(ls_ri=ls_ri)
-            new_obj.update_pixel_map.inplace_update(sw_ss=sw_ss, sw_fs=sw_fs,
-                                                    ls_pm=ls_pm, method=method)
-            new_obj.update_errors.inplace_update(ls_ri=ls_ri)
-
-            # Update dss_pix, dfs_pix
-            if update_translations:
-                new_obj.update_translations.inplace_update(sw_ss=sw_ss, sw_fs=sw_fs,
-                                                           ls_ri=ls_ri)
-
-            # Apply pixel_map update
+            # Update pixel_map
+            new_obj = obj.update_pixel_map(ls_pm=ls_pm, sw_fs=sw_fs, sw_ss=sw_ss, method=method)
             obj.pixel_map += gaussian_filter(new_obj.pixel_map - obj.pixel_map,
                                              (0, ls_pm, ls_pm))
 
-            # Apply reference_image update
-            ss_roi = np.clip([obj.n0 - new_obj.n0,
-                              new_obj.reference_image.shape[0] + obj.n0 - new_obj.n0],
-                             0, obj.reference_image.shape[0]) - obj.n0
-            fs_roi = np.clip([obj.m0 - new_obj.m0,
-                              new_obj.reference_image.shape[1] + obj.m0 - new_obj.m0],
-                             0, obj.reference_image.shape[1]) - obj.m0
-            ss_s0, fs_s0 = slice(*(ss_roi + obj.n0)), slice(*(fs_roi + obj.m0))
-            ss_s1, fs_s1 = slice(*(ss_roi + new_obj.n0)), slice(*(fs_roi + new_obj.m0))
-            d_ri = new_obj.reference_image[ss_s1, fs_s1] - obj.reference_image[ss_s0, fs_s0]
-            obj.reference_image[ss_s0, fs_s0] += gaussian_filter(d_ri, (ls_ri, ls_ri))
-            obj.error_frame = new_obj.error_frame
+            # Update dss_pix, dfs_pix
+            if update_translations:
+                new_obj.update_translations.inplace_update(sw_ss=sw_ss, sw_fs=sw_fs)
+                obj.dss_pix, obj.dfs_pix = new_obj.dss_pix, new_obj.dfs_pix
 
-            # Apply dss_pix, dfs_pix update
-            obj.dss_pix, obj.dfs_pix = new_obj.dss_pix, new_obj.dfs_pix
+            # Update reference_image
+            obj.update_reference.inplace_update(ls_ri=ls_ri, sw_fs=sw_fs, sw_ss=sw_ss)
+            obj.update_errors.inplace_update()
 
             # Calculate errors
             errors.append(obj.error_frame.mean())
             if verbose:
-                print('Iteration No. {:d}: Total MSE = {:.3f}'.format(it, errors[-1]))
+                print('Iteration No. {:d}: Total MSE = {:.6f}'.format(it, errors[-1]))
+
+
+            # Break if function tolerance is satisfied
             if (errors[-2] - errors[-1]) <= f_tol * errors[0]:
                 break
         if return_errors:
@@ -913,8 +998,9 @@ class SpeckleTracking(DataContainer):
         else:
             return obj
 
-    def mse_total(self, ls_ri=5.):
-        """Return average total mean-squared-error (MSE).
+    def mse_total(self, ls_ri):
+        """Generate a reference image with the given `ls_ri` and return
+        average total mean-squared-error (MSE).
 
         Parameters
         ----------
@@ -926,37 +1012,35 @@ class SpeckleTracking(DataContainer):
         float
             Average total mean-squared-error (MSE).
 
-        Raises
-        ------
-        AttributeError
-            If `reference_image` was not generated beforehand.
 
         See Also
         --------
         bin.mse_total : Full details of the error metric.
         """
-        if self.reference_image is None:
-            raise AttributeError('The reference image hsa not been generated')
-        else:
-            return mse_total(I_n=self.data, W=self.whitefield, I0=self.reference_image,
-                             u=self.pixel_map, di=self.dss_pix - self.n0,
-                             dj=self.dfs_pix - self.m0, ls=ls_ri)
+        I0, n0, m0 = make_reference(I_n=self.data, W=self.whitefield, u=self.pixel_map,
+                                    di=self.dss_pix, dj=self.dfs_pix, sw_ss=0, sw_fs=0, ls=ls_ri)
+        return mse_total(I_n=self.data, W=self.whitefield, I0=I0,
+                         u=self.pixel_map, di=self.dss_pix - n0,
+                         dj=self.dfs_pix - m0, ls=ls_ri)
 
-    def var_pixel_map(self, ls_ri=20.):
-        """Return `pixel_map` variance.
+    def mse_curve(self, lss_ri):
+        """Return a mean-squared-error (MSE) survace.
 
         Parameters
         ----------
-        ls_ri : float
-            `reference_image` length scale in pixels.
+        lss_ri : numpy.ndarray
+            Set of `reference_image` length scales in pixels.
 
         Returns
         -------
-        float
-            `pixel_map` variance.
+        numpy.ndarray
+            A mean-squared-error (MSE) surface.
+
+        See Also
+        --------
+        bin.mse_total : Full details of the error metric.
         """
-        var_psn = np.mean(self.data)
-        ri = self.update_reference.dict_func(ls_ri=ls_ri)
-        dri_ss = np.mean(np.gradient(ri['reference_image'][0])**2)
-        N, K = self.data.shape[0], self.data.shape[-1] / (self.dfs_pix[0] - self.dfs_pix[1])
-        return var_psn * (1 / N + 1 / N / K) / dri_ss / np.mean(self.whitefield**2)
+        mse_list = []
+        for ls_ri in np.array(lss_ri, ndmin=1):
+            mse_list.append(self.mse_total(ls_ri))
+        return np.array(mse_list)

@@ -1,9 +1,4 @@
-"""Experimental parameters for the one-dimenional Speckle Tracking
-scan. :class:`pyrost.simulation.STParams` contains all the parameters
-and provides tools to import and export parameters from an INI file.
-Invoke :func:`pyrost.simulation.parameters` to get the default
-experimental parameters.
-
+"""
 Examples
 --------
 
@@ -13,56 +8,8 @@ in order to perform the simulation.
 >>> import pyrost.simulation as st_sim
 >>> st_params = st_sim.parameters()
 >>> print(st_params)
-{'defocus': 400.0, 'det_dist': 2000000.0, 'step_size': 0.1,
-'n_frames': 300, 'fs_size': 2000, 'ss_size': 1000, 'pix_size': 55.0,
-'p0': 200000.0, 'wl': 7.29e-05, 'th_s': 0.0002, 'ap_x': 40.0,
-'ap_y': 2.0, 'focus': 1500.0, 'alpha': -0.05, 'ab_cnt': 0.5,
-'bar_size': 0.1, 'bar_sigma': 0.01, 'bar_atn': 0.3, 'bulk_atn': 0.0,
-'rnd_dev': 0.6, 'offset': 0.0, 'verbose': True}
-
-Notes
------
-List of experimental parameters:
-
-* Experimental geometry parameters:
-
-    * defocus : Lens' defocus distance [um].
-    * det_dist : Distance between the barcode and the
-      detector [um].
-    * step_size : Scan step size [um].
-    * n_frames : Number of frames.
-
-* Detector parameters:
-
-    * fs_size : Detector's size along the fast axis in
-      pixels.
-    * ss_size : Detector's size along the slow axis in
-      pixels.
-    * pix_size : Detector's pixel size [um].
-
-* Source parameters:
-
-    * p0 : Source beam flux [cnt / s].
-    * wl : Incoming beam's wavelength [um].
-    * th_s : Source rocking curve width [rad].
-
-* Lens parameters:
-
-    * ap_x : Lens' aperture size along the x axis [um].
-    * ap_y : Lens' aperture size along the y axis [um].
-    * focus : Focal distance [um].
-    * alpha : Third order abberations ceofficient [rad/mrad^3].
-    * ab_cnt : Lens' abberations center point [0.0 - 1.0].
-
-* Barcode sample parameters:
-
-    * bar_size : Average bar's size [um].
-    * bar_sigma : Bar bluriness width [um].
-    * bar_atn : Bar's attenuation coefficient [0.0 - 1.0].
-    * bulk_atn : Barcode's bulk attenuation coefficient [0.0 - 1.0].
-    * rnd_dev : Bar's coordinates random deviation [0.0 - 1.0].
-    * offset : Barcode's offset at the beginning and at the end
-      of the scan from the detector's bounds [um].
+{'defocus': 400.0, 'det_dist': 2000000.0, 'step_size': 0.1, 'n_frames': 300,
+'fs_size': 2000, 'ss_size': 1000, 'pix_size': 55.0, '...': '...'}
 """
 import os
 import numpy as np
@@ -108,6 +55,7 @@ class STParams(INIParser):
                 'detector': 'int', 'detector/pix_size': 'float',
                 'source': 'float', 'lens': 'float', 'barcode': 'float',
                 'system/verbose': 'bool'}
+    FMT_LEN = 7
 
     @classmethod
     def lookup_dict(cls):
@@ -146,6 +94,12 @@ class STParams(INIParser):
             self.__dict__[self._lookup[attr]][attr] = fmt(value)
         else:
             raise AttributeError(attr + ' not allowed')
+
+    def __repr__(self):
+        return self._format(self.export_dict()).__repr__()
+
+    def __str__(self):
+        return self._format(self.export_dict()).__str__()
 
     @classmethod
     def import_dict(cls, **kwargs):

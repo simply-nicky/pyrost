@@ -32,22 +32,22 @@ def exp_data(request):
     params['path'] = 'results/exp/Scan_{:d}.cxi'.format(request.param['scan_num'])
     return params
 
-@pytest.fixture(params=[{'name': 'diatom.cxi', 'good_frames': np.arange(1, 121),
-                         'defocus': 2.23e-3, 'roi': (70, 420, 50, 460)}])
+@pytest.fixture(params=[{'path': 'results/exp/diatom.cxi', 'good_frames': np.arange(1, 121),
+                         'defocus': 2.23e-3, 'roi': (70, 420, 50, 460)},
+                         {'path': 'results/defocus/defocus_alpha_50/defocus_49um/data.cxi'}])
 def exp_data_2d(request):
     """Return the data path and all the necessary parameters
     of the experimental speckle tracking 2d scan.
     """
-    params = {key: request.param[key] for key in request.param.keys() if key != 'name'}
-    params['path'] = os.path.join('results/exp', request.param['name'])
-    return params
+    return request.param
 
 @pytest.fixture(params=['float32', 'float64'])
 def loader(request):
     """
     Return the default loader.
     """
-    return rst.loader(request.param)
+    protocol = rst.cxi_protocol(float_precision=request.param)
+    return rst.loader(protocol=protocol, policy={'phase': True})
 
 @pytest.fixture(params=['float32', 'float64'])
 def converter(request):
@@ -102,13 +102,13 @@ def test_iter_update(sim_data, loader):
     data_path = os.path.join(sim_data, 'data.cxi')
     assert os.path.isfile(data_path)
     st_data = loader.load(data_path, roi=(0, 1, 400, 1450))
-    assert st_data.data.dtype == loader.protocol.known_types['float']
+    assert st_data.data.dtype == loader.known_types['float']
     st_obj = st_data.get_st()
     pixel_map0 = st_obj.pixel_map.copy()
     st_obj.iter_update(sw_ss=0, sw_fs=150, ls_pm=2.5, ls_ri=15,
                        verbose=True, n_iter=5)
     assert (st_obj.pixel_map == pixel_map0).all()
-    assert st_obj.pixel_map.dtype == loader.protocol.known_types['float']
+    assert st_obj.pixel_map.dtype == loader.known_types['float']
 
 @pytest.mark.rst
 def test_data_process_routines(exp_data_2d, loader):
