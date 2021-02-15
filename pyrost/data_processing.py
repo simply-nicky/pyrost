@@ -137,12 +137,6 @@ class STData(DataContainer):
         if not self.pixel_map is None:
             self.pixel_abberations = self.pixel_map
         self.pixel_map = np.indices(self.whitefield.shape)
-        if self.pixel_abberations is None:
-            self.pixel_abberations = np.zeros(self.pixel_map.shape)
-        if self.phase is None:
-            self.phase = np.zeros(self.whitefield.shape)
-        if self.error_frame is None:
-            self.error_frame = np.zeros(self.whitefield.shape)
 
         if self._isdefocus:
             # Set a pixel translations
