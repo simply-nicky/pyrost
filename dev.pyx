@@ -147,50 +147,7 @@ def irfft_python(complex_t[::1] arr):
         raise RuntimeError('IRFFT failed')
     return np.asarray(res)
 
-# def st_update(I_n, dij, basis, x_ps, y_ps, z, df, sw_max=100, n_iter=5, filter=None):
-#     """
-#     Andrew's speckle tracking update algorithm
-    
-#     I_n - measured data
-#     W - whitefield
-#     basis - detector plane basis vectors
-#     x_ps, y_ps - x and y pixel sizes
-#     z - distance between the sample and the detector
-#     df - defocus distance
-#     sw_max - pixel mapping search window size
-#     n_iter - number of iterations
-#     """
-#     M = np.ones((I_n.shape[1], I_n.shape[2]), dtype=bool)
-#     W = st.make_whitefield(I_n, M)
-#     u, dij_pix, res = st.generate_pixel_map(W.shape, dij, basis,
-#                                             x_ps, y_ps, z,
-#                                             df, verbose=False)
-#     I0, n0, m0 = st.make_object_map(I_n, M, W, dij_pix, u, subpixel=False, verbose=False)
-
-#     es = []
-#     for i in range(n_iter):
-
-#         # calculate errors
-#         error_total = st.calc_error(I_n, M, W, dij_pix, I0, u, n0, m0, subpixel=True, verbose=False)[0]
-
-#         # store total error
-#         es.append(error_total)
-
-#         # update pixel map
-#         u = st.update_pixel_map(I_n, M, W, I0, u, n0, m0, dij_pix,
-#                                 search_window=[1, sw_max], subpixel=True,
-#                                 fill_bad_pix=True, integrate=False,
-#                                 quadratic_refinement=True, verbose=False,
-#                                 filter=filter)[0]
-
-#         # make reference image
-#         I0, n0, m0 = st.make_object_map(I_n, M, W, dij_pix, u, subpixel=True, verbose=False)
-
-#         # update translations
-#         dij_pix = st.update_translations(I_n, M, W, I0, u, n0, m0, dij_pix)[0]
-#     return {'u':u, 'I0':I0, 'errors':es, 'n0': n0, 'm0': m0}
-
-def st_update(I_n, dij, basis, x_ps, y_ps, z, df, sw_ss, sw_fs, ls, n_iter=5, filt=2.5, verbose=False):
+def st_update(I_n, dij, basis, x_ps, y_ps, z, df, sw_max=100, n_iter=5, filter=None):
     """
     Andrew's speckle tracking update algorithm
     
@@ -204,30 +161,33 @@ def st_update(I_n, dij, basis, x_ps, y_ps, z, df, sw_ss, sw_fs, ls, n_iter=5, fi
     n_iter - number of iterations
     """
     M = np.ones((I_n.shape[1], I_n.shape[2]), dtype=bool)
-    W = st.make_whitefield(I_n, M, verbose=verbose).astype(I_n.dtype)
-    u, dij_pix, res = st.generate_pixel_map(W.shape, dij, basis, x_ps,
-                                            y_ps, z, df, verbose=verbose)
-    I0, n0, m0 = st.make_object_map(data=I_n, mask=M, W=W, dij_n=dij_pix, pixel_map=u, ls=ls)
+    W = st.make_whitefield(I_n, M)
+    u, dij_pix, res = st.generate_pixel_map(W.shape, dij, basis,
+                                            x_ps, y_ps, z,
+                                            df, verbose=False)
+    I0, n0, m0 = st.make_object_map(I_n, M, W, dij_pix, u, subpixel=False, verbose=False)
 
     es = []
     for i in range(n_iter):
 
         # calculate errors
-        error_total = st.calc_error(data=I_n, mask=M, W=W, dij_n=dij_pix, O=I0,
-                                    pixel_map=u, n0=n0, m0=m0, ls=ls,
-                                    subpixel=False, verbose=verbose)[0]
+        error_total = st.calc_error(I_n, M, W, dij_pix, I0, u, n0, m0, subpixel=True, verbose=False)[0]
 
         # store total error
         es.append(error_total)
 
         # update pixel map
-        u += gaussian_filter(st.update_pixel_map(data=I_n, mask=M, W=W, O=I0,
-                                                 pixel_map=u, n0=n0, m0=m0,
-                                                 dij_n=dij_pix, sw_ss=0,
-                                                 sw_fs=10, ls=ls) - u, (0, filt, filt))
+        u = st.update_pixel_map(I_n, M, W, I0, u, n0, m0, dij_pix,
+                                search_window=[1, sw_max], subpixel=True,
+                                fill_bad_pix=True, integrate=False,
+                                quadratic_refinement=True, verbose=False,
+                                filter=filter)[0]
 
         # make reference image
-        I0, n0, m0 = st.make_object_map(data=I_n, mask=M, W=W, dij_n=dij_pix, pixel_map=u, ls=ls)
+        I0, n0, m0 = st.make_object_map(I_n, M, W, dij_pix, u, subpixel=True, verbose=False)
+
+        # update translations
+        dij_pix = st.update_translations(I_n, M, W, I0, u, n0, m0, dij_pix)[0]
     return {'u':u, 'I0':I0, 'errors':es, 'n0': n0, 'm0': m0}
 
 def pixel_translations(basis, dij, df, z):

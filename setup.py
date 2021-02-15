@@ -14,7 +14,7 @@ else:
 ext = '.pyx' if USE_CYTHON else '.c'
 extension_args = {'language': 'c',
                   'extra_compile_args': ['-fopenmp', '-std=c99'],
-                  'extra_link_args': ['-fopenmp', '-Wl,-rpath,/usr/local/lib'],
+                  'extra_link_args': ['-lgomp', '-Wl,-rpath,/usr/local/lib'],
                   'libraries': ['gsl', 'gslcblas'],
                   'library_dirs': ['/usr/local/lib',
                                    os.path.join(sys.prefix, 'lib')],
