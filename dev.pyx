@@ -339,29 +339,29 @@ cdef int searchsorted(double[::1] values, double x) nogil:
     else:
         return binary_search(values, 0, r, x)
 
-cdef double barcode_c(double[::1] b_steps, double xx, double b_atn, double b_sgm, double blk_atn) nogil:
+cdef double barcode_c(double[::1] bar_pos, double xx, double b_atn, double b_sgm, double blk_atn) nogil:
     cdef:
-        int b = b_steps.shape[0], i, j0, j
-        double b_dx = (b_steps[b - 1] - b_steps[0]) / b
+        int b = bar_pos.shape[0], i, j0, j
+        double b_dx = (bar_pos[b - 1] - bar_pos[0]) / b
         int bb = <int>(X_TOL * sqrt(2) * b_sgm / b_dx + 1)
         double tr, x0, x1
-    j0 = searchsorted(b_steps, xx) # even '-', odd '+'
+    j0 = searchsorted(bar_pos, xx) # even '-', odd '+'
     tr = 0
     for j in range(j0 - bb, j0 + bb + 1):
         if j > 0 and j < b - 1:
-            x0 = (xx - b_steps[j - 1]) / sqrt(2) / b_sgm
-            x1 = (xx - b_steps[j]) / sqrt(2) / b_sgm
-            tr += b_atn * (b_steps[j] - b_steps[j - 1]) / b_dx * 0.5 * (0.5 - j % 2) * (erf(x0) - erf(x1))
-    tr -= (0.25 * b_atn + 0.5 * blk_atn) * erf((xx - b_steps[0]) / sqrt(2 + 2 * (blk_atn / b_atn)**2) / b_sgm)
-    tr += (0.25 * b_atn + 0.5 * blk_atn) * erf((xx - b_steps[b - 1]) / sqrt(2 + 2 * (blk_atn / b_atn)**2) / b_sgm)
+            x0 = (xx - bar_pos[j - 1]) / sqrt(2) / b_sgm
+            x1 = (xx - bar_pos[j]) / sqrt(2) / b_sgm
+            tr += b_atn * (bar_pos[j] - bar_pos[j - 1]) / b_dx * 0.5 * (0.5 - j % 2) * (erf(x0) - erf(x1))
+    tr -= (0.25 * b_atn + 0.5 * blk_atn) * erf((xx - bar_pos[0]) / sqrt(2 + 2 * (blk_atn / b_atn)**2) / b_sgm)
+    tr += (0.25 * b_atn + 0.5 * blk_atn) * erf((xx - bar_pos[b - 1]) / sqrt(2 + 2 * (blk_atn / b_atn)**2) / b_sgm)
     return sqrt(1 + tr)
         
-def barcode_profile(double[::1] b_steps, double[::1] x_arr, double b_atn, double b_sgm, double blk_atn):
+def barcode_profile(double[::1] bar_pos, double[::1] x_arr, double b_atn, double b_sgm, double blk_atn):
     cdef:
         int a = x_arr.shape[0], i
         double[::1] b_tr = np.empty(a, dtype=np.float64)
     for i in range(a):
-        b_tr[i] = barcode_c(b_steps, x_arr[i], b_atn, b_sgm, blk_atn)
+        b_tr[i] = barcode_c(bar_pos, x_arr[i], b_atn, b_sgm, blk_atn)
     return np.asarray(b_tr)
 
 cdef float_t rbf(float_t dsq, float_t ls) nogil:

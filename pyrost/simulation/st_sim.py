@@ -16,7 +16,7 @@ Perform the simulation for a given :class:`pyrost.simulation.STParams` object.
 >>> st_params = st_sim.parameters()
 >>> sim_obj = st_sim.STSim(st_params)
 
-Return an array of intensity frames at the detector's plane.
+Return an array of intensity frames at the detector plane.
 
 >>> data = sim_obj.frames()
 
@@ -48,11 +48,18 @@ class STSim(DataContainer):
 
     Parameters
     ----------
-    st_params : STParams
+    params : STParams
         Experimental parameters.
-    bsteps : numpy.ndarray, optional
-        Array of barcode's bar coordinates. Generates the array
-        automatically if it's not provided.
+    **kwargs : dict, optional
+        Attributes specified in `init_set`.
+
+    Attributes
+    ----------
+    attr_set : set
+        Set of attributes in the container which are necessary
+        to initialize in the constructor.
+    init_set : set
+        Set of optional data attributes.
 
     Notes
     -----
@@ -62,25 +69,26 @@ class STSim(DataContainer):
 
     Optional attributes:
 
-    * b_steps : Barcode's bar positions [um].
-    * b_profile : Barcode's transmission profile.
-    * det_wfx : Wavefront at the detector's plane along the x
+    * bar_pos : Barcode's bar positions [um].
+    * det_wfx : Wavefront at the detector plane along the x
       axis.
-    * det_wfy : Wavefront at the detector's plane along the y
+    * det_wfy : Wavefront at the detector plane along the y
       axis.
-    * det_iy : Intensity profile at the detector's plane along
+    * det_iy : Intensity profile at the detector plane along
       the x axis.
-    * det_iy : Intensity profile at the detector's plane along
+    * det_iy : Intensity profile at the detector plane along
       the y axis.
-    * lens_wfx : Wavefront at the lens' plane along the x
+    * lens_wfx : Wavefront at the lens plane along the x
       axis.
-    * lens_wfy : Wavefront at the lens' plane along the y
+    * lens_wfy : Wavefront at the lens plane along the y
       axis.
     * n_x : Wavefront size along the x axis.
     * n_y : Wavefront size along the y axis.
-    * sample_wfx : Wavefront at the sample's plane along the x
+    * smp_pos : Sample translations along the x axis.
+    * smp_profile : Barcode's transmission profile.
+    * smp_wfx : Wavefront at the sample plane along the x
       axis.
-    * sample_wfy : Wavefront at the sample's plane along the y
+    * smp_wfy : Wavefront at the sample plane along the y
       axis.
 
     See Also
@@ -88,8 +96,8 @@ class STSim(DataContainer):
     st_sim_param : Full list of experimental parameters.
     """
     attr_set = {'params'}
-    init_set = {'b_steps', 'b_profile', 'det_wfx', 'det_wfy', 'det_ix', 'det_iy',
-                'lens_wfx', 'lens_wfy','n_x', 'n_y', 'sample_wfx', 'sample_wfy'}
+    init_set = {'bar_pos', 'det_wfx', 'det_wfy', 'det_ix', 'det_iy', 'lens_wfx',
+                'lens_wfy','n_x', 'n_y', 'smp_pos', 'smp_profile', 'smp_wfx', 'smp_wfy'}
 
     def __init__(self, params, **kwargs):
         kwargs['params'] = params
@@ -98,8 +106,8 @@ class STSim(DataContainer):
 
     def _init_dict(self):
         # Initialize barcode's bar positions
-        if self.b_steps is None:
-            self.b_steps = self.params.bar_positions(dist=self.params.defocus)
+        if self.bar_pos is None:
+            self.bar_pos = self.params.bar_positions(dist=self.params.defocus)
 
         # Initialize wavefronts' sizes
         if self.n_x is None:
@@ -107,39 +115,44 @@ class STSim(DataContainer):
         if self.n_y is None:
             self.n_y = self.params.y_wavefront_size()
 
-        # Initialize wavefronts at the lens' plane
+        # Initialize wavefronts at the lens plane
         if self.lens_wfx is None or self.lens_wfy is None:
             self.lens_wfx, self.lens_wfy = self.params.lens_wavefronts(n_x=self.n_x, n_y=self.n_y)
 
-        # Initialize wavefronts at the sample's plane
-        if self.sample_wfx is None:
+        # Initialize wavefronts at the sample plane
+        if self.smp_wfx is None:
             dx0 = 2 * self.params.ap_x / self.n_x
             dx1 = dx0 * self.params.defocus / self.params.focus
             z01 = self.params.focus + self.params.defocus
-            self.sample_wfx = rsc_wp(u0=self.lens_wfx, dx0=dx0, dx=dx1, z=z01, wl=self.params.wl)
-        if self.sample_wfy is None:
+            self.smp_wfx = rsc_wp(u0=self.lens_wfx, dx0=dx0, dx=dx1, z=z01, wl=self.params.wl)
+        if self.smp_wfy is None:
             dy0 = 2 * self.params.ap_y / self.n_y
             z01 = self.params.focus + self.params.defocus
-            self.sample_wfy = rsc_wp(u0=self.lens_wfy, dx0=dy0, dx=dy0, z=z01, wl=self.params.wl)
+            self.smp_wfy = rsc_wp(u0=self.lens_wfy, dx0=dy0, dx=dy0, z=z01, wl=self.params.wl)
 
-        # Initialize barcode's transmission profile
-        if self.b_profile is None:
+        # Initialize sample's translations
+        if self.smp_pos is None:
+            self.smp_pos = self.params.sample_positions()
+
+        # Initialize sample's transmission profile
+        if self.smp_profile is None:
             dx1 = 2 * self.params.ap_x * self.params.defocus / self.params.focus / self.n_x
-            self.b_profile = self.params.barcode_profile(b_steps=self.b_steps, dx=dx1, n_x=self.n_x)
+            x1_arr = dx1 * np.arange(-self.n_x // 2, self.n_x // 2) + self.smp_pos[:, None]
+            self.smp_profile = self.params.barcode_profile(bar_pos=self.bar_pos, x_arr=x1_arr)
 
-        # Initialize wavefronts at the detector's plane
+        # Initialize wavefronts at the detector plane
         if self.det_wfx is None:
             dx1 = 2 * self.params.ap_x * self.params.defocus / self.params.focus / self.n_x
             dx2 = self.params.fs_size * self.params.pix_size / self.n_x
-            self.det_wfx = fhf_wp_scan(u0=self.sample_wfx * self.b_profile, dx0=dx1, dx=dx2,
+            self.det_wfx = fhf_wp_scan(u0=self.smp_wfx * self.smp_profile, dx0=dx1, dx=dx2,
                                     z=self.params.det_dist, wl=self.params.wl)
         if self.det_wfy is None:
             dy1 = 2 * self.params.ap_y / self.n_y
             dy2 = self.params.ss_size * self.params.pix_size / self.n_y
-            self.det_wfy = fhf_wp(u0=self.sample_wfy, dx0=dy1, dx=dy2,
+            self.det_wfy = fhf_wp(u0=self.smp_wfy, dx0=dy1, dx=dy2,
                                   z=self.params.det_dist, wl=self.params.wl)
 
-        # Initialize intensity profiles at the detector's plane
+        # Initialize intensity profiles at the detector plane
         if self.det_ix is None:
             dx = self.params.fs_size * self.params.pix_size / self.n_x
             sc_x = self.params.source_curve(dist=self.params.defocus + self.params.det_dist, dx=dx)
@@ -152,26 +165,31 @@ class STSim(DataContainer):
             self.det_iy = fft_convolve(a1=det_iy, a2=sc_y)
 
     @dict_to_object
-    def update_bar_positions(self, b_steps):
+    def update_bar_positions(self, bar_pos):
         """Return a new :class:`STSim` object with the updated
-        `b_steps`.
+        `bar_pos`.
 
         Parameters
         ----------
-        b_steps : numpy.ndarray
+        bar_pos : numpy.ndarray
             Array of barcode's bar positions.
 
         Returns
         -------
         STSim
             A new :class:`STSim` object with the updated
-            `b_steps`.
+            `bar_pos`.
         """
-        return {'b_steps': b_steps, 'b_profile': None, 'det_wfx': None, 'det_ix': None}
+        return {'bar_pos': bar_pos, 'smp_profile': None, 'det_wfx': None, 'det_ix': None}
 
     def frames(self, apply_noise=True):
         """Return intensity frames at the detector plane. Applies
-        Poisson noise.
+        Poisson noise if `apply_noise` is True.
+
+        Parameters
+        ----------
+        apply_noise : bool, optional
+            Apply Poisson noise if it's True.
 
         Returns
         -------
@@ -187,7 +205,12 @@ class STSim(DataContainer):
 
     def ptychograph(self, apply_noise=True):
         """Return a ptychograph of intensity frames. Applies Poisson
-        noise.
+        noise if `apply_noise` is True.
+
+        Parameters
+        ----------
+        apply_noise : bool, optional
+            Apply Poisson noise if it's True.
 
         Returns
         -------
@@ -232,7 +255,7 @@ class STConverter:
     * energy : Incoming beam photon energy [eV].
     * good_frames : An array of good frames' indices.
     * mask : Bad pixels mask.
-    * roi : Region of interest in the detector's plane.
+    * roi : Region of interest in the detector plane.
     * translations : Sample's translations.
     * wavelength : Incoming beam's wavelength.
     * whitefield : Measured frames' whitefield.
@@ -266,7 +289,7 @@ class STConverter:
         ini_parsers['protocol'] = self.protocol.export_ini()
         return ini_parsers
 
-    def export_dict(self, data, st_params):
+    def export_dict(self, data, smp_pos, st_params):
         """Export simulated data `data` (fetched from :func:`STSim.frames`
         or :func:`STSim.ptychograph`) and `st_params` to :class:`dict` object.
 
@@ -274,6 +297,8 @@ class STConverter:
         ----------
         data : numpy.ndarray
             Simulated data.
+        smp_pos : numpy.ndarray
+            Sample translations.
         st_params : STParams
             Experimental parameters.
 
@@ -320,45 +345,47 @@ class STConverter:
 
         # Initialize sample translations
         t_arr = np.zeros((st_params.n_frames, 3), dtype=self.protocol.get_dtype('translations'))
-        t_arr[:, 0] = -np.arange(0, st_params.n_frames) * st_params.step_size
+        t_arr[:, 0] = -smp_pos
         data_dict['translations'] = self.crd_rat * t_arr
 
         for attr in data_dict:
             data_dict[attr] = np.asarray(data_dict[attr], dtype=self.protocol.get_dtype(attr))
         return data_dict
 
-    def export_data(self, data, st_params):
+    def export_data(self, data, sim_obj):
         """Export simulated data `data` (fetched from :func:`STSim.frames`
-        or :func:`STSim.ptychograph`) and `st_params` to a data container.
+        or :func:`STSim.ptychograph`) and a :class:`STSim` object `sim_obj`
+        to a data container.
 
         Parameters
         ----------
         data : numpy.ndarray
             Simulated data.
-        st_params : STParams
-            Experimental parameters.
+        sim_obj : STSim
+            Speckle Tracking simulation object.
 
         Returns
         -------
         STData
-            Data container with all the data from `data` and `st_params`.
+            Data container with all the data from `data` and `sim_obj`.
 
         See Also
         --------
         STConverter - full list of the attributes stored in `data_dict`.
         """
-        return STData(protocol=self.protocol, **self.export_dict(data, st_params))
+        return STData(protocol=self.protocol,
+                      **self.export_dict(data, smp_pos=sim_obj.smp_pos, st_params=sim_obj.params))
 
-    def save_sim(self, data, st_sim, dir_path):
+    def save_sim(self, data, sim_obj, dir_path):
         """Export simulated data `data` (fetched from :func:`STSim.frames`
         or :func:`STSim.ptychograph`) and a :class:`STSim` object
-        `st_sim` to `dir_path` folder.
+        `sim_obj` to `dir_path` folder.
 
         Parameters
         ----------
         data : numpy.ndarray
             Simulated data.
-        st_sim : STSim
+        sim_obj : STSim
             Speckle Tracking simulation object.
         dir_path : str
             Path to the folder, where all the files are saved.
@@ -376,16 +403,19 @@ class STConverter:
           Andrew's `speckle_tracking <https://github.com/andyofmelbourne/speckle-tracking>`_
           GUI.
         """
-        self.save(data=data, st_params=st_sim.params, dir_path=dir_path)
+        self.save(data=data, smp_pos=sim_obj.smp_pos, st_params=sim_obj.params, dir_path=dir_path)
 
-    def save(self, data, st_params, dir_path):
+    def save(self, data, smp_pos, st_params, dir_path):
         """Export simulated data `data` (fetched from :func:`STSim.frames`
-        or :func:`STSim.ptychograph`) and `st_params` to `dir_path` folder.
+        or :func:`STSim.ptychograph`), `smp_pos`, and `st_params` to `dir_path`
+        folder.
 
         Parameters
         ----------
         data : numpy.ndarray
             Simulated data.
+        smp_pos : numpy.ndarray
+            Sample translations.
         st_params : STParams
             Experimental parameters.
         dir_path : str
@@ -400,7 +430,7 @@ class STConverter:
             ini_path = os.path.join(dir_path, name + '.ini')
             with open(ini_path, 'w') as ini_file:
                 parser.write(ini_file)
-        data_dict = self.export_dict(data, st_params)
+        data_dict = self.export_dict(data, smp_pos, st_params)
         with h5py.File(os.path.join(dir_path, 'data.cxi'), 'w') as cxi_file:
             for attr in data_dict:
                 self.protocol.write_cxi(attr, data_dict[attr], cxi_file)
@@ -438,6 +468,7 @@ def main():
     parser.add_argument('--defocus', type=float, help="Lens defocus distance, [um]")
     parser.add_argument('--det_dist', type=float, help="Distance between the barcode and the detector [um]")
     parser.add_argument('--step_size', type=float, help="Scan step size [um]")
+    parser.add_argument('--step_rnd', type=float, help="Random deviation of sample translations [0.0 - 1.0]")
     parser.add_argument('--n_frames', type=int, help="Number of frames")
     parser.add_argument('--fs_size', type=int, help="Fast axis frames size in pixels")
     parser.add_argument('--ss_size', type=int, help="Slow axis frames size in pixels")
@@ -453,7 +484,7 @@ def main():
     parser.add_argument('--bar_sigma', type=float, help="Bar haziness width [um]")
     parser.add_argument('--bar_atn', type=float, help="Bar attenuation")
     parser.add_argument('--bulk_atn', type=float, help="Bulk attenuation")
-    parser.add_argument('--rnd_dev', type=float, help="Bar random deviation")
+    parser.add_argument('--bar_rnd', type=float, help="Bar random deviation")
     parser.add_argument('--offset', type=float,
                         help="sample's offset at the beginning and the end of the scan [um]")
     parser.add_argument('-v', '--verbose', action='store_true', help="Turn on verbosity")
@@ -466,7 +497,7 @@ def main():
     else:
         st_params = STParams.import_dict(**args)
 
-    st_converter = STConverter()
+    st_converter = converter()
     sim_obj = STSim(st_params)
     if args['ptych']:
         data = sim_obj.ptychograph()

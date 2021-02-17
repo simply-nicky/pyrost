@@ -48,7 +48,7 @@ List of experimental parameters:
     * `bar_sigma` : Bar bluriness width [um].
     * `bar_atn` : Bar's attenuation coefficient [0.0 - 1.0].
     * `bulk_atn` : Barcode's bulk attenuation coefficient [0.0 - 1.0].
-    * `rnd_dev` : Bar's coordinates random deviation [0.0 - 1.0].
+    * `bar_rnd` : Bar's coordinates random deviation [0.0 - 1.0].
     * `offset` : Barcode's offset at the beginning and at the end
       of the scan from the detector's bounds [um].
 
@@ -90,7 +90,7 @@ The parameters are given by:
     bar_sigma = 0.01
     bar_atn = 0.3
     bulk_atn = 0.0
-    rnd_dev = 0.6
+    bar_rnd = 0.6
     offset = 0
 
     [system]

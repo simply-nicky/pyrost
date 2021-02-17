@@ -349,14 +349,14 @@ def bar_positions(double x0, double x1, double b_dx, double rd):
     cdef:
         int br_n = 2 * (<int>((x1 - x0) / 2 / b_dx) + 1) if x1 > x0 else 0, i
         gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937)
-        double[::1] b_steps = np.empty(br_n, dtype=np.float64)
+        double[::1] bar_pos = np.empty(br_n, dtype=np.float64)
         time_t t = time(NULL)
     gsl_rng_set(r, t)
     if br_n:
         for i in range(br_n):
-            b_steps[i] = x0 + b_dx * (i + 2 * rd * (gsl_rng_uniform_pos(r) - 0.5))
+            bar_pos[i] = x0 + b_dx * (i + 2 * rd * (gsl_rng_uniform_pos(r) - 0.5))
     gsl_rng_free(r)
-    return np.asarray(b_steps)
+    return np.asarray(bar_pos)
 
 cdef int binary_search(double[::1] values, int l, int r, double x) nogil:
     cdef int m = l + (r - l) // 2
@@ -379,50 +379,40 @@ cdef int searchsorted(double[::1] values, double x) nogil:
     else:
         return binary_search(values, 0, r, x)
 
-cdef void barcode_c(double[::1] b_tr, double[::1] b_steps, double b_atn, double b_sgm,
-                    double blk_atn, double dx, double step) nogil:
+cdef double barcode_c(double[::1] bar_pos, double xx, double b_atn, double b_sgm, double blk_atn) nogil:
     cdef:
-        int a = b_tr.shape[0], b = b_steps.shape[0], i, j0, j
-        double b_dx = (b_steps[b - 1] - b_steps[0]) / b
+        int b = bar_pos.shape[0], i, j0, j
+        double b_dx = (bar_pos[b - 1] - bar_pos[0]) / b
         int bb = <int>(X_TOL * sqrt(2) * b_sgm / b_dx + 1)
-        double tr, xx, x0, x1
-    for i in range(a):
-        xx = dx * (i - a // 2) + step
-        j0 = searchsorted(b_steps, xx) # even '-', odd '+'
-        tr = 0
-        for j in range(j0 - bb, j0 + bb + 1):
-            if j > 0 and j < b - 1:
-                x0 = (xx - b_steps[j - 1]) / sqrt(2) / b_sgm
-                x1 = (xx - b_steps[j]) / sqrt(2) / b_sgm
-                tr += b_atn * (b_steps[j] - b_steps[j - 1]) / b_dx * 0.5 * (0.5 - j % 2) * (erf(x0) - erf(x1))
-        tr -= (0.25 * b_atn + 0.5 * blk_atn) * erf((xx - b_steps[0]) / sqrt(2 + 2 * (blk_atn / b_atn)**2) / b_sgm)
-        tr += (0.25 * b_atn + 0.5 * blk_atn) * erf((xx - b_steps[b - 1]) / sqrt(2 + 2 * (blk_atn / b_atn)**2) / b_sgm)
-        b_tr[i] = sqrt(1 + tr)
+        double tr, x0, x1
+    j0 = searchsorted(bar_pos, xx) # even '-', odd '+'
+    tr = 0
+    for j in range(j0 - bb, j0 + bb + 1):
+        if j > 0 and j < b - 1:
+            x0 = (xx - bar_pos[j - 1]) / sqrt(2) / b_sgm
+            x1 = (xx - bar_pos[j]) / sqrt(2) / b_sgm
+            tr += b_atn * (bar_pos[j] - bar_pos[j - 1]) / b_dx * 0.5 * (0.5 - j % 2) * (erf(x0) - erf(x1))
+    tr -= (0.25 * b_atn + 0.5 * blk_atn) * erf((xx - bar_pos[0]) / sqrt(2 + 2 * (blk_atn / b_atn)**2) / b_sgm)
+    tr += (0.25 * b_atn + 0.5 * blk_atn) * erf((xx - bar_pos[b - 1]) / sqrt(2 + 2 * (blk_atn / b_atn)**2) / b_sgm)
+    return sqrt(1 + tr)
         
-def barcode_profile(double[::1] b_steps, double b_atn, double b_sgm, double blk_atn,
-                    double dx, double step, int n_f, int n_x):
-    r"""Return an array of barcode's transmission profile.
-    Barcode is scanned accross the x axis with `ss` step size
-    and `nf` number of steps.
+def barcode_profile(double[::1] bar_pos, double[::1] x_arr, double b_atn, double b_sgm, double blk_atn):
+    r"""Return an array of barcode's transmission profile calculated
+    at `x_arr` coordinates.
 
     Parameters
     ----------
-    b_steps : numpy.ndarray
-        Coordinates of barcode's bar positions [um].    
+    bar_pos : numpy.ndarray
+        Coordinates of barcode's bar positions [um].
+    x_arr : numpy.ndarray
+        Array of the coordinates, where the transmission coefficients
+        are calculated [um].    
     b_atn : float
         Barcode's bar attenuation coefficient (0.0 - 1.0).
     b_sgm : float
         Bar's blurriness [um].
     blk_atn : float
         Barcode's bulk attenuation coefficient (0.0 - 1.0).
-    dx : float
-        Sampling interval [um].
-    step : float
-        Scan's step size [um].
-    n_f : int
-        Scan's number of frames.
-    n_x : int
-        Size of the wavefront array.
     
     Returns
     -------
@@ -450,10 +440,10 @@ def barcode_profile(double[::1] b_steps, double b_atn, double b_sgm, double blk_
     where :math:`x_{bar}` is an array of bar coordinates.
     """
     cdef:
-        int i
-        double[:, ::1] b_tr = np.empty((n_f, n_x), dtype=np.float64)
-    for i in prange(n_f, schedule='guided', nogil=True):
-        barcode_c(b_tr[i], b_steps, b_atn, b_sgm, blk_atn, dx, i * step)
+        int a = x_arr.shape[0], i
+        double[::1] b_tr = np.empty(a, dtype=np.float64)
+    for i in prange(a, schedule='guided', nogil=True):
+        b_tr[i] = barcode_c(bar_pos, x_arr[i], b_atn, b_sgm, blk_atn)
     return np.asarray(b_tr)
 
 cdef void fft_convolve_c(double[::1] b1, complex_t[::1] c1, double[::1] a1, complex_t[::1] c2) nogil:

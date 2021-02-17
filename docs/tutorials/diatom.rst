@@ -114,7 +114,7 @@ Let's update the data container with the defocus distance we got.
 Speckle Tracking update
 -----------------------
 Now we're ready to generate a :class:`pyrost.SpeckleTracking` object, which does the heavy
-lifting of calculating the pixel mapping between reference plane and detector's plane,
+lifting of calculating the pixel mapping between reference plane and detector plane,
 and generating the unabberated profile of the sample.
 
 .. note:: You should pay outmost attention to choose the right length scales of reference

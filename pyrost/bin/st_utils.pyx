@@ -75,7 +75,7 @@ def make_reference(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, :, ::1]
         Measured frames' whitefield.
     u : numpy.ndarray
         The pixel mapping between the data at
-        the detector's plane and the reference image at
+        the detector plane and the reference image at
         the reference plane.
     di : numpy.ndarray
         Sample's translations along the slow detector axis
@@ -636,7 +636,7 @@ def update_translations_gs(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:,
         Reference image of the sample.
     u : numpy.ndarray
         The pixel mapping between the data at
-        the detector's plane and the reference image at
+        the detector plane and the reference image at
         the reference plane.
     di : numpy.ndarray
         Initial sample's translations along the slow detector
@@ -727,7 +727,7 @@ def mse_frame(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0,
         Reference image of the sample.
     u : numpy.ndarray
         The pixel mapping between the data at
-        the detector's plane and the reference image at
+        the detector plane and the reference image at
         the reference plane.
     di : numpy.ndarray
         Sample's translations along the slow detector axis
@@ -778,7 +778,7 @@ def mse_total(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0,
         Reference image of the sample.
     u : numpy.ndarray
         The pixel mapping between the data at
-        the detector's plane and the reference image at
+        the detector plane and the reference image at
         the reference plane.
     di : numpy.ndarray
         Sample's translations along the slow detector axis
