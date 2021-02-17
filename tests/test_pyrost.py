@@ -4,7 +4,6 @@ from datetime import datetime
 import pytest
 import pyrost as rst
 import pyrost.simulation as st_sim
-import numpy as np
 
 @pytest.fixture(params=[{'det_dist': 5e5, 'n_frames': 10, 'ap_x': 4,
                          'ap_y': 1, 'focus': 3e3, 'defocus': 2e2},
