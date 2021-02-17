@@ -42,13 +42,13 @@ class STParams(INIParser):
     --------
     st_sim_param : Full list of experimental parameters.
     """
-    attr_dict = {'exp_geom': ('defocus', 'det_dist', 'step_size',
-                              'n_frames'),
-                 'detector': ('fs_size', 'ss_size', 'pix_size'),
-                 'source':   ('p0', 'wl', 'th_s'),
-                 'lens':     ('ap_x', 'ap_y', 'focus', 'alpha', 'ab_cnt'),
-                 'barcode':  ('bar_size', 'bar_sigma', 'bar_atn',
-                              'bulk_atn', 'rnd_dev', 'offset'),
+    attr_dict = {'exp_geom': ('defocus', 'det_dist', 'n_frames',
+                              'step_size', 'step_rnd'),
+                 'detector': ('fs_size', 'pix_size', 'ss_size'),
+                 'source':   ('p0', 'th_s', 'wl'),
+                 'lens':     ('alpha', 'ap_x', 'ap_y', 'focus', 'ab_cnt'),
+                 'barcode':  ('bar_atn', 'bar_rnd', 'bar_sigma', 'bar_size',
+                              'bulk_atn', 'offset'),
                  'system':   ('verbose',)}
 
     fmt_dict = {'exp_geom': 'float', 'exp_geom/n_frames': 'int',
@@ -188,7 +188,7 @@ class STParams(INIParser):
         Parameters
         ----------
         n_x : int, optional
-            Array size along the x axis. Equals to 
+            Array size along the x axis. Equals to
             :func:`STParams.x_wavefront_size` if it's None.
         n_y : int, optional
             Array size along the y axis. Equals to
@@ -211,7 +211,7 @@ class STParams(INIParser):
 
         Notes
         -----
-        The exit-surface at the lens' plane:
+        The exit-surface at the lens plane:
 
         .. math::
             U_0(x) = \Pi(a_x x) \exp
@@ -272,7 +272,7 @@ class STParams(INIParser):
 
         Returns
         -------
-        b_steps : numpy.ndarray
+        bar_pos : numpy.ndarray
             Array of barcode's bar coordinates.
 
         See Also
@@ -281,20 +281,31 @@ class STParams(INIParser):
             generation algorithm.
         """
         x0, x1 = self.beam_span(dist)
-        return bar_positions(x0=x0 + self.offset, b_dx=self.bar_size, rd=self.rnd_dev,
+        return bar_positions(x0=x0 + self.offset, b_dx=self.bar_size, rd=self.bar_rnd,
                              x1=x1 + self.step_size * self.n_frames - self.offset)
 
-    def barcode_profile(self, b_steps, dx, n_x):
-        """Generate a barcode's transmission profile.
+    def sample_positions(self):
+        """Generate an array of sample's translations with random deviation.
+
+        Returns
+        -------
+        smp_pos : numpy.ndarray
+            Array of sample translations [um].
+        """
+        rnd_arr = 2 * self.step_rnd * (np.random.random(self.n_frames) - 0.5)
+        return self.step_size * (np.arange(self.n_frames) + rnd_arr)
+
+    def barcode_profile(self, bar_pos, x_arr):
+        """Generate a barcode's transmission profile at `x_arr`
+        coordinates.
 
         Parameters
         ----------
-        b_steps : numpy.ndarray
+        bar_pos : numpy.ndarray
             Array of barcode's bar positions [um].
-        dx : float
-            Sampling distance [um].
-        n_x : int
-            Wavefront size.
+        x_arr : numpy.ndarray
+            Array of the coordinates, where the transmission
+            coefficients are calculated [um].
 
         Returns
         -------
@@ -306,9 +317,8 @@ class STParams(INIParser):
         bin.barcode_profile : Full details of barcode's transmission
             profile generation algorithm.
         """
-        return barcode_profile(b_steps=b_steps, b_atn=self.bar_atn, b_sgm=self.bar_sigma,
-                               blk_atn=self.bulk_atn, dx=dx, step=self.step_size, n_f=self.n_frames,
-                               n_x=n_x)
+        return barcode_profile(bar_pos=bar_pos, x_arr=x_arr.ravel(), b_atn=self.bar_atn,
+                               b_sgm=self.bar_sigma, blk_atn=self.bulk_atn).reshape(x_arr.shape)
 
     def source_curve(self, dist, dx):
         """Return source's rocking curve profile at `dist` distance from

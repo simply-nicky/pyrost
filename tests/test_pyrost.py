@@ -1,45 +1,29 @@
 import os
+import shutil
+from datetime import datetime
 import pytest
 import pyrost as rst
 import pyrost.simulation as st_sim
-import numpy as np
 
 @pytest.fixture(params=[{'det_dist': 5e5, 'n_frames': 10, 'ap_x': 4,
                          'ap_y': 1, 'focus': 3e3, 'defocus': 2e2},
                         {'det_dist': 4.5e5, 'n_frames': 5, 'ap_x': 3,
-                         'ap_y': 1.5, 'focus': 2e3, 'defocus': 1e2}])
+                         'ap_y': 1.5, 'focus': 2e3, 'defocus': 1e2}],
+                scope='session')
 def st_params(request):
     """Return a default instance of simulation parameters.
     """
     return st_sim.parameters(**request.param)
 
-@pytest.fixture(params=['results/test', 'results/test_ideal'])
-def sim_data(request):
-    """Return the data path and all the necessary parameters
-    of the simulated speckle tracking 1d scan.
-    """
-    return request.param
+@pytest.fixture(scope='session')
+def sim_obj(st_params):
+    sim_obj = st_sim.STSim(st_params)
+    return sim_obj
 
-@pytest.fixture(params=[{'scan_num': 1986, 'roi': (0, 1, 360, 1090),
-                         'defocus': 1.0e-4},
-                        {'scan_num': 1740, 'roi': (0, 1, 350, 1065),
-                         'defocus': 1.5e-4}])
-def exp_data(request):
-    """Return the data path and all the necessary parameters
-    of the experimental speckle tracking 1d scan.
-    """
-    params = {key: request.param[key] for key in request.param.keys() if key != 'scan_num'}
-    params['path'] = 'results/exp/Scan_{:d}.cxi'.format(request.param['scan_num'])
-    return params
-
-@pytest.fixture(params=[{'path': 'results/exp/diatom.cxi', 'good_frames': np.arange(1, 121),
-                         'defocus': 2.23e-3, 'roi': (70, 420, 50, 460)},
-                         {'path': 'results/defocus/defocus_alpha_50/defocus_49um/data.cxi'}])
-def exp_data_2d(request):
-    """Return the data path and all the necessary parameters
-    of the experimental speckle tracking 2d scan.
-    """
-    return request.param
+@pytest.fixture(scope='session')
+def ptych(sim_obj):
+    data = sim_obj.ptychograph()
+    return data
 
 @pytest.fixture(params=['float32', 'float64'])
 def loader(request):
@@ -47,7 +31,7 @@ def loader(request):
     Return the default loader.
     """
     protocol = rst.cxi_protocol(float_precision=request.param)
-    return rst.loader(protocol=protocol, policy={'phase': True})
+    return rst.loader(protocol=protocol)
 
 @pytest.fixture(params=['float32', 'float64'])
 def converter(request):
@@ -56,11 +40,19 @@ def converter(request):
     """
     return st_sim.converter(float_precision=request.param)
 
+@pytest.fixture(scope='session')
+def temp_dir():
+    now = datetime.now()
+    path = now.strftime("temp_%m_%d_%H%M%S")
+    os.mkdir(path)
+    yield path
+    shutil.rmtree(path)
+
 @pytest.fixture(scope='function')
-def ini_path():
+def ini_path(temp_dir):
     """Return a path to the experimental speckle tracking data.
     """
-    path = 'test.ini'
+    path = os.path.join(temp_dir, 'test.ini')
     yield path
     os.remove(path)
 
@@ -74,58 +66,45 @@ def test_st_params(st_params, ini_path):
     assert new_params.export_dict() == st_params.export_dict()
 
 @pytest.mark.st_sim
-def test_st_sim(st_params):
-    sim_obj = st_sim.STSim(st_params)
-    ptych = sim_obj.ptychograph()
+def test_ptych(ptych, st_params):
     assert len(ptych.shape) == 3
     assert ptych.shape[0] == st_params.n_frames
 
 @pytest.mark.rst
-def test_loader_exp(exp_data, loader):
-    assert os.path.isfile(exp_data['path'])
-    data_dict = loader.load_dict(**exp_data)
+def test_load_exp(path, roi, defocus, loader):
+    assert os.path.isfile(path)
+    data_dict = loader.load_dict(path=path, roi=roi, defocus=defocus)
     for attr in rst.STData.attr_set:
         assert not data_dict[attr] is None
 
 @pytest.mark.rst
-def test_loader_sim(sim_data, loader):
-    assert os.path.isdir(sim_data)
-    data_path = os.path.join(sim_data, 'data.cxi')
-    assert os.path.isfile(data_path)
-    data_dict = loader.load_dict(data_path)
+def test_save_and_load_sim(converter, loader, ptych, sim_obj, temp_dir):
+    assert os.path.isdir(temp_dir)
+    converter.save_sim(ptych, sim_obj, temp_dir)
+    cxi_path = os.path.join(temp_dir, 'data.cxi')
+    assert os.path.isfile(cxi_path)
+    data_dict = loader.load_dict(cxi_path)
     for attr in rst.STData.attr_set:
         assert not data_dict[attr] is None
 
 @pytest.mark.rst
-def test_iter_update(sim_data, loader):
-    assert os.path.isdir(sim_data)
-    data_path = os.path.join(sim_data, 'data.cxi')
-    assert os.path.isfile(data_path)
-    st_data = loader.load(data_path, roi=(0, 1, 400, 1450))
-    assert st_data.data.dtype == loader.known_types['float']
+def test_st_update_sim(converter, ptych , sim_obj):
+    st_data = converter.export_data(ptych, sim_obj)
+    assert st_data.data.dtype == converter.protocol.known_types['float']
     st_obj = st_data.get_st()
     pixel_map0 = st_obj.pixel_map.copy()
-    st_obj.iter_update(sw_ss=0, sw_fs=150, ls_pm=2.5, ls_ri=15,
-                       verbose=True, n_iter=5)
+    st_obj.iter_update(sw_fs=10, ls_pm=2.5, ls_ri=15,
+                       verbose=True, n_iter=10)
     assert (st_obj.pixel_map == pixel_map0).all()
-    assert st_obj.pixel_map.dtype == loader.known_types['float']
-
-@pytest.mark.rst
-def test_data_process_routines(exp_data_2d, loader):
-    assert os.path.isfile(exp_data_2d['path'])
-    data = loader.load(**exp_data_2d)
-    data = data.make_mask(method='eiger-bad')
-    assert (data.get('whitefield') <= 65535).all()
+    assert st_obj.pixel_map.dtype == converter.protocol.known_types['float']
 
 @pytest.mark.standalone
-def test_full(st_params, converter):
-    sim_obj = st_sim.STSim(st_params)
-    ptych = sim_obj.ptychograph()
-    data = converter.export_data(ptych, st_params)
+def test_full(converter, ptych, sim_obj):
+    data = converter.export_data(ptych, sim_obj)
     assert data.data.dtype == converter.protocol.known_types['float']
     st_obj = data.get_st()
-    st_res = st_obj.iter_update(sw_fs=20, ls_pm=3, ls_ri=5,
-                                verbose=True, n_iter=10, return_errors=False)
+    st_res = st_obj.iter_update(sw_fs=10, ls_pm=2.5, ls_ri=15,
+                                verbose=True, n_iter=10)
     data = data.update_phase(st_res)
     fit = data.fit_phase(axis=1)
     assert (st_obj.pixel_map != st_res.pixel_map).any()

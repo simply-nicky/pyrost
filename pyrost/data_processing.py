@@ -100,7 +100,7 @@ class STData(DataContainer):
     * pixel_translations : Sample's translations in the detector's
       plane in pixels.
     * reference_image : The unabberated reference image of the sample.
-    * roi : Region of interest in the detector's plane.
+    * roi : Region of interest in the detector plane.
     * whitefield : Measured frames' whitefield.
     """
     attr_set = {'basis_vectors', 'data', 'distance', 'translations', 'wavelength',
@@ -137,12 +137,6 @@ class STData(DataContainer):
         if not self.pixel_map is None:
             self.pixel_abberations = self.pixel_map
         self.pixel_map = np.indices(self.whitefield.shape)
-        if self.pixel_abberations is None:
-            self.pixel_abberations = np.zeros(self.pixel_map.shape)
-        if self.phase is None:
-            self.phase = np.zeros(self.whitefield.shape)
-        if self.error_frame is None:
-            self.error_frame = np.zeros(self.whitefield.shape)
 
         if self._isdefocus:
             # Set a pixel translations
@@ -183,7 +177,7 @@ class STData(DataContainer):
         Parameters
         ----------
         roi : iterable
-            Region of interest in the detector's plane.
+            Region of interest in the detector plane.
 
         Returns
         -------
