@@ -413,12 +413,12 @@ class STData(DataContainer):
         else:
             return None
 
-    def defocus_sweep(self, defoci_fs, defoci_ss=None, ls_ri=30):
-        """Calculate an array of `reference_image` for `defoci`
-        and return fugures of merit of `reference_image` sharpness
-        (the higher the value the sharper `reference_image` is).
-        `ls_ri` should be large enough in order to supress
-        high frequency noise.
+    def defocus_sweep(self, defoci_fs, defoci_ss=None, ls_ri=30, return_sweep=True):
+        """Calculate a set of `reference_image` for each defocus in `defoci` and
+        return a gradient magnitude for each `reference_image` as a figure of
+        merit of it's sharpness (the higher the value the sharper `reference_image`
+        is). `ls_ri` should be large enough in order to supress high frequency noise.
+        Return a sweep image if `return_sweep` is True.
 
         Parameters
         ----------
@@ -428,11 +428,15 @@ class STData(DataContainer):
             Array of defocus distances along the slow detector axis [m].
         ls_ri : float, optional
             `reference_image` length scale in pixels.
+        return_sweep : bool, optional
+            Return a sweep image if it's True.
 
         Returns
         -------
-        numpy.ndarray
+        grad_mag : numpy.ndarray
             Array of the average values of `reference_image` gradients squared.
+        sweep_img : numpy.ndarray
+            Defocus sweep image. Only if `return_sweep` is True.
 
         See Also
         --------
@@ -440,13 +444,22 @@ class STData(DataContainer):
         """
         if defoci_ss is None:
             defoci_ss = defoci_fs.copy()
-        sweep_scan = []
+        grad_mag, sweep_scan = [], []
         for defocus_fs, defocus_ss in zip(defoci_fs.ravel(), defoci_ss.ravel()):
             st_data = self.update_defocus(defocus_fs, defocus_ss)
             st_obj = st_data.get_st().update_reference(ls_ri=ls_ri, sw_fs=0, sw_ss=0)
             ri_gm = gaussian_gradient_magnitude(st_obj.reference_image, sigma=ls_ri)
-            sweep_scan.append(np.mean(ri_gm**2))
-        return np.array(sweep_scan).reshape(defoci_fs.shape)
+            sweep_scan.append(st_obj.reference_image)
+            grad_mag.append(np.mean(ri_gm**2))
+        grad_mag = np.array(grad_mag).reshape(defoci_fs.shape)
+        if return_sweep:
+            shape = tuple(np.max([ref_img.shape for ref_img in sweep_scan], axis=0))
+            sweep_img = np.zeros((defoci_fs.shape + shape))
+            for idx, ref_img in zip(np.ndindex(defoci_fs.shape), sweep_scan):
+                sweep_img[idx][:ref_img.shape[0], :ref_img.shape[1]] = ref_img
+            return grad_mag, sweep_img
+        else:
+            return grad_mag
 
     def get(self, attr, value=None):
         """Return a dataset with `mask` and `roi` applied.
