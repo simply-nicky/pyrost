@@ -152,8 +152,8 @@ class STData(DataContainer):
         # Initialize a list of AbberationsFit objects
         self._ab_fits = []
         if self._isphase:
-            self._ab_fits.extend([AbberationsFit.import_data(self, 0),
-                                  AbberationsFit.import_data(self, 1)])
+            self._ab_fits.extend([AbberationsFit.import_data(self, axis=0),
+                                  AbberationsFit.import_data(self, axis=1)])
 
     @property
     def _isdefocus(self):
@@ -350,8 +350,8 @@ class STData(DataContainer):
 
             # Initialize AbberationsFit objects
             self._ab_fits.clear()
-            self._ab_fits.extend([AbberationsFit.import_data(self, 0),
-                                  AbberationsFit.import_data(self, 1)])
+            self._ab_fits.extend([AbberationsFit.import_data(self, axis=0),
+                                  AbberationsFit.import_data(self, axis=1)])
             return self
         else:
             raise ValueError("the SpeckleTracking object doesn't belong to the data container")
