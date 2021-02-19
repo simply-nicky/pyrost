@@ -24,7 +24,7 @@ parameters. You can do it with :class:`pyrost.simulation.STParams` or
     >>> params = st_sim.parameters(bar_size=0.7, bar_sigma=0.12, bar_atn=0.18,
     >>>                            bulk_atn=0.2, p0 = 5e4, th_s=8e-5, n_frames=100,
     >>>                            offset=2.0, step_size=0.1, defocus=150, alpha=0.05,
-    >>>                            ab_cnt=0.7, rnd_dev=0.8)
+    >>>                            ab_cnt=0.7, bar_rnd=0.8)
 
 Performing the simulation
 ^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -77,7 +77,7 @@ just type :code:`python -m pyrost.simulation --help`.
                        [--ap_x AP_X] [--ap_y AP_Y] [--focus FOCUS] [--alpha ALPHA]
                        [--ab_cnt AB_CNT] [--bar_size BAR_SIZE] [--bar_sigma BAR_SIGMA]
                        [--bar_atn BAR_ATN] [--bulk_atn BULK_ATN]
-                       [--rnd_dev RND_DEV] [--offset OFFSET] [-v] [-p]
+                       [--bar_rnd BAR_RND] [--offset OFFSET] [-v] [-p]
                        out_path
 
     Run Speckle Tracking simulation
@@ -112,7 +112,7 @@ just type :code:`python -m pyrost.simulation --help`.
                             Bar haziness width [um] (default: 0.01)
       --bar_atn BAR_ATN     Bar attenuation (default: 0.3)
       --bulk_atn BULK_ATN   Bulk attenuation (default: 0.0)
-      --rnd_dev RND_DEV     Bar random deviation (default: 0.6)
+      --bar_rnd BAR_RND     Bar random deviation (default: 0.6)
       --offset OFFSET       sample's offset at the beginning and the end of the
                             scan [um] (default: 0.0)
       -v, --verbose         Turn on verbosity (default: True)
@@ -120,7 +120,7 @@ just type :code:`python -m pyrost.simulation --help`.
 
     $ python -m pyrost.simulation results/sim_results --bar_size 0.7 --bar_sigma 0.12 \
     --bar_atn 0.18 --bulk_atn 0.2 --p0 5e4 --th_s 8e-5 --n_frames 200 --offset 2 \
-    --step_size 0.1 --defocus 150 --alpha 0.05 --ab_cnt 0.7 --rnd_dev 0.8 -p -v
+    --step_size 0.1 --defocus 150 --alpha 0.05 --ab_cnt 0.7 --bar_rnd 0.8 -p -v
     The simulation results have been saved to results/sim_results
 
 As you can see below, the simulated Speckle Tracking scan was saved to a CXI file.

@@ -100,7 +100,7 @@ class STData(DataContainer):
     * pixel_translations : Sample's translations in the detector's
       plane in pixels.
     * reference_image : The unabberated reference image of the sample.
-    * roi : Region of interest in the detector's plane.
+    * roi : Region of interest in the detector plane.
     * whitefield : Measured frames' whitefield.
     """
     attr_set = {'basis_vectors', 'data', 'distance', 'translations', 'wavelength',
@@ -177,7 +177,7 @@ class STData(DataContainer):
         Parameters
         ----------
         roi : iterable
-            Region of interest in the detector's plane.
+            Region of interest in the detector plane.
 
         Returns
         -------
