@@ -409,44 +409,26 @@ cdef void krig_data_c(float_t[::1] I, float_t[:, :, ::1] I_n, float_t[:, ::1] W,
         int jj1 = j + djk if j + djk < b else b
         int kk0 = k - djk if k - djk > 0 else 0
         int kk1 = k + djk if k + djk < c else c
-        float_t w0 = 0, rss = 0, r
+        float_t w0 = 0, r
     for i in range(a + 1):
         I[i] = 0
     for jj in range(jj0, jj1):
         for kk in range(kk0, kk1):
             r = rbf((u[0, jj, kk] - u[0, j, k])**2 + (u[1, jj, kk] - u[1, j, k])**2, ls)
-            w0 += r * W[jj, kk]**2
-            rss += W[jj, kk]**3 * r**2
+            w0 += r
+            I[a] += r**2 / W[jj, kk]
             for i in range(a):
-                I[i] += I_n[i, jj, kk] * W[jj, kk] * r
+                I[i] += r / w0 * (I_n[i, jj, kk] / W[jj, kk] - I[i])
     if w0:
-        for i in range(a):
-            I[i] /= w0
-        I[a] = rss / w0**2
+        I[a] /= w0**2
 
 def krig_data(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, :, ::1] u,
               int j, int k, float_t ls):
     dtype = np.float64 if float_t is np.float64_t else np.float32
     cdef:
-        int a = I_n.shape[0], b = I_n.shape[1], c = I_n.shape[2], i, jj, kk
+        int a = I_n.shape[0]
         float_t[::1] I = np.zeros(a + 1, dtype=dtype)
-        int djk = <int>(ceil(2 * ls))
-        int jj0 = j - djk if j - djk > 0 else 0
-        int jj1 = j + djk if j + djk < b else b
-        int kk0 = k - djk if k - djk > 0 else 0
-        int kk1 = k + djk if k + djk < c else c
-        float_t w0 = 0, rss = 0, r
-    for jj in range(jj0, jj1):
-        for kk in range(kk0, kk1):
-            r = rbf((u[0, jj, kk] - u[0, j, k])**2 + (u[1, jj, kk] - u[1, j, k])**2, ls)
-            w0 += r * W[jj, kk]**2
-            rss += W[jj, kk]**3 * r**2
-            for i in range(a):
-                I[i] += I_n[i, jj, kk] * W[jj, kk] * r
-    if w0:
-        for i in range(a):
-            I[i] /= w0
-        I[a] = rss / w0**2
+    krig_data_c(I, I_n, W, u, j, k, ls)
     return np.asarray(I)
 
 # cdef void mse_diff_bi(float_t* m_ptr, float_t[:, :, ::1] SS_m, float_t[:, ::1] I,
@@ -560,8 +542,8 @@ cdef void upm_surface_c(float_t[:, ::1] mse_m, float_t[:, ::1] mse_var, float_t[
             mse_var[ss + sw_ss, fs + sw_fs] = mv_ptr[2]
 
 def upm_surface(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0,
-           float_t[:, :, ::1] u, float_t[::1] di, float_t[::1] dj,
-           int sw_ss, int sw_fs, float_t ls):
+                float_t[:, :, ::1] u, float_t[::1] di, float_t[::1] dj,
+                int sw_ss, int sw_fs, float_t ls):
     dtype = np.float64 if float_t is np.float64_t else np.float32
     cdef:
         int a = I_n.shape[0], b = I_n.shape[1], c = I_n.shape[2]
