@@ -2,6 +2,7 @@
 /figures/
 /results/
 /logs/
+dev.ipynb
 
 #jupyter checkpoints
 .ipynb_checkpoints/
