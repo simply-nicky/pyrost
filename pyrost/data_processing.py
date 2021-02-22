@@ -829,7 +829,7 @@ class SpeckleTracking(DataContainer):
             return {'dss_pix': dss_pix, 'dfs_pix': dfs_pix}
 
     def iter_update_gd(self, ls_ri, ls_pm, sw_fs, sw_ss=0, n_iter=30, f_tol=1e-6, momentum=0.,
-                       learning_rate=1e3, gstep=.1, method='search', update_translations=False,
+                       learning_rate=1e2, gstep=.1, method='search', update_translations=False,
                        verbose=False, return_extra=False):
         """Perform iterative Robust Speckle Tracking update. `ls_ri` and
         `ls_pm` define high frequency cut-off to supress the noise. `ls_ri`
@@ -902,17 +902,17 @@ class SpeckleTracking(DataContainer):
                 new_obj.update_translations.inplace_update(sw_ss=sw_ss, sw_fs=sw_fs)
                 obj.dss_pix, obj.dfs_pix = new_obj.dss_pix, new_obj.dfs_pix
 
-            # Update reference_image
-            obj.update_reference.inplace_update(ls_ri=ls_ri, sw_fs=sw_fs, sw_ss=sw_ss)
-            obj.update_errors.inplace_update()
-            extra['errors'].append(obj.error_frame.mean())
-
             # Update ls_ri
             grad = (obj.mse_total(ls_ri + gstep) - extra['errors'][-1]) / gstep
             velocity = np.clip(momentum * velocity - learning_rate * grad,
                                -0.75 * ls_ri, 0.75 * ls_ri)
             ls_ri += velocity
             extra['lss_ri'].append(ls_ri)
+
+            # Update reference_image
+            obj.update_reference.inplace_update(ls_ri=ls_ri, sw_fs=sw_fs, sw_ss=sw_ss)
+            obj.update_errors.inplace_update()
+            extra['errors'].append(obj.error_frame.mean())
             if verbose:
                 print('Iteration No. {:d}: Total MSE = {:.6f}, ls_ri = {:.2f}'.format(it, extra['errors'][-1],
                                                                                       extra['lss_ri'][-1]))
