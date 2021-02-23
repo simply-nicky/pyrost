@@ -28,6 +28,7 @@ cdef extern from "fft.c":
 
 ctypedef np.complex128_t complex_t
 ctypedef np.uint64_t uint_t
+ctypedef np.uint32_t uint32_t
 ctypedef np.npy_bool bool_t
 
 ctypedef fused numeric:
@@ -552,7 +553,7 @@ cdef void make_frame_nc(uint_t[:, ::1] frame, double[::1] i_x, double[::1] i_ss,
         for i in range(ss):
             frame[i, j] = <int>(i_fs * i_ss[i])
 
-cdef void make_frame_c(uint_t[:, ::1] frame, double[::1] i_x, double[::1] i_ss, double dx, unsigned long seed) nogil:
+cdef uint32_t make_frame_c(uint_t[:, ::1] frame, double[::1] i_x, double[::1] i_ss, double dx, uint32_t seed) nogil:
     cdef:
         int a = i_x.shape[0], ss = frame.shape[0], fs = frame.shape[1], i, j, jj, j0, j1
         gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937)
@@ -576,6 +577,9 @@ cdef void make_frame_c(uint_t[:, ::1] frame, double[::1] i_x, double[::1] i_ss, 
             i_fs += i_x[jj] * dx
         for i in range(ss):
             frame[i, j] = gsl_ran_poisson(r, i_fs * i_ss[i])
+    seed = gsl_rng_get(r)
+    gsl_rng_free(r)
+    return seed
 
 def make_frames(double[:, ::1] i_x, double[::1] i_y, double dx, double dy,
                 int ss, int fs, bool_t apply_noise):
@@ -608,11 +612,12 @@ def make_frames(double[:, ::1] i_x, double[::1] i_y, double dx, double dy,
     """
     cdef:
         int nf = i_x.shape[0], a = i_x.shape[1], b = i_y.shape[0], i, ii, i0, i1
+        int max_threads = openmp.omp_get_max_threads(), t
         uint_t[:, :, ::1] frames = np.zeros((nf, ss, fs), dtype=np.uint64)
         double[::1] i_ss = np.zeros(ss, dtype=np.float64)
         gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937)
-        time_t t = time(NULL)
-        unsigned long seed
+        time_t tm = time(NULL)
+        uint32_t[::1] seeds = np.empty(max_threads, dtype=np.uint32)
     i1 = <int>(0.5 * b // ss)
     for ii in range(i1):
         i_ss[0] += i_y[ii] * dy
@@ -623,10 +628,12 @@ def make_frames(double[:, ::1] i_x, double[::1] i_y, double dx, double dy,
         for ii in range(i0, i1):
             i_ss[i] += i_y[ii] * dy
     if apply_noise:
-        gsl_rng_set(r, t)
+        gsl_rng_set(r, tm)
+        for i in range(max_threads):
+            seeds[i] = gsl_rng_get(r)
         for i in prange(nf, schedule='guided', nogil=True):
-            seed = gsl_rng_get(r)
-            make_frame_c(frames[i], i_x[i], i_ss, dx, seed)
+            t = openmp.omp_get_thread_num()
+            seeds[t] = make_frame_c(frames[i], i_x[i], i_ss, dx, seeds[t])
         gsl_rng_free(r)
     else:
         for i in prange(nf, schedule='guided', nogil=True):
