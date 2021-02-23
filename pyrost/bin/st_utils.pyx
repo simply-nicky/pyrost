@@ -274,9 +274,10 @@ cdef void krig_data_c(float_t[::1] I, float_t[:, :, ::1] I_n, float_t[:, ::1] W,
         for kk in range(kk0, kk1):
             r = rbf((u[0, jj, kk] - u[0, j, k])**2 + (u[1, jj, kk] - u[1, j, k])**2, ls)
             w0 += r
-            I[a] += r**2 / W[jj, kk]
-            for i in range(a):
-                I[i] += r / w0 * (I_n[i, jj, kk] / W[jj, kk] - I[i])
+            if w0 * W[jj, kk]:
+                I[a] += r**2 / W[jj, kk]
+                for i in range(a):
+                    I[i] += r / w0 * (I_n[i, jj, kk] / W[jj, kk] - I[i])
     if w0:
         I[a] /= w0**2
 
