@@ -147,7 +147,8 @@ def irfft_python(complex_t[::1] arr):
         raise RuntimeError('IRFFT failed')
     return np.asarray(res)
 
-def st_update(I_n, dij, basis, x_ps, y_ps, z, df, sw_max=100, n_iter=5, filter=None):
+def st_update(I_n, dij, basis, x_ps, y_ps, z, df, sw_max=100, n_iter=5,
+              filter=None, update_translations=False):
     """
     Andrew's speckle tracking update algorithm
     
@@ -187,7 +188,8 @@ def st_update(I_n, dij, basis, x_ps, y_ps, z, df, sw_max=100, n_iter=5, filter=N
         I0, n0, m0 = st.make_object_map(I_n, M, W, dij_pix, u, subpixel=True, verbose=False)
 
         # update translations
-        dij_pix = st.update_translations(I_n, M, W, I0, u, n0, m0, dij_pix)[0]
+        if update_translations:
+            dij_pix = st.update_translations(I_n, M, W, I0, u, n0, m0, dij_pix)[0]
     return {'u':u, 'I0':I0, 'errors':es, 'n0': n0, 'm0': m0}
 
 def pixel_translations(basis, dij, df, z):
