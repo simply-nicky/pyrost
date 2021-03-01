@@ -128,10 +128,11 @@ class STData(DataContainer):
             self.roi = np.array([0, self.data.shape[1], 0, self.data.shape[2]])
         if self.good_frames is None:
             self.good_frames = np.arange(self.data.shape[0])
-        if self.mask is None or self.mask.shape != self.data.shape[1:]:
-            self.mask = np.ones(self.data.shape[1:])
+        if self.mask is None or self.mask.shape != self.data.shape:
+            self.mask = np.ones(self.data.shape)
         if self.whitefield is None:
-            self.whitefield = make_whitefield(data=self.data[self.good_frames], mask=self.mask)
+            self.whitefield = make_whitefield(data=self.data[self.good_frames],
+                                              mask=self.mask[self.good_frames])
 
         # Set a pixel map, deviation angles, and phase
         if not self.pixel_map is None:
@@ -227,7 +228,8 @@ class STData(DataContainer):
                 'whitefield': None}
 
     @dict_to_object
-    def make_mask(self, method='no-bad', percentile=99.99):
+    def update_mask(self, method='no-bad', pmin = 0., pmax=99.99, vmin=0, vmax=65535,
+                    update='reset'):
         """Return a new :class:`STData` object with the updated
         bad pixels mask.
 
@@ -237,14 +239,18 @@ class STData(DataContainer):
             Bad pixels masking methods:
 
             * 'no-bad' (default) : No bad pixels.
-            * 'eiger-bad' : Mask the pixels which value are higher
-              than 65535 a.u. (for EIGER detector).
-            * 'perc-bad' : mask the pixels which values lie outside
-              of the q-th percentile. Provide percentile value with
-              `percentile` argument.
+            * 'range-bad' : Mask the pixels which values lie outside
+              of (`vmin`, `vmax`) range.
+            * 'perc-bad' : Mask the pixels which values lie outside
+              of the (`pmin`, `pmax`) percentiles.
 
-        percentile : float, optional
-            Percentile to compute. Defines the 'perc-bad' masking method.
+        vmin, vmax : float, optional
+            Lower and upper intensity values of 'range-bad' masking
+            method.
+
+        pmin, pmax : float, optional
+            Lower and upper percentage values of 'perc-bad' masking
+            method.
 
         Returns
         -------
@@ -252,15 +258,19 @@ class STData(DataContainer):
             New :class:`STData` object with the updated `mask`.
         """
         if method == 'no-bad':
-            mask = np.ones(self.data.shape[1:])
-        elif method == 'eiger-bad':
-            mask = (self.data < 65535).all(axis=0)
+            mask = np.ones(self.data.shape)
+        elif method == 'range-bad':
+            mask = (self.data > vmin) & (self.data < vmax)
         elif method == 'perc-bad':
-            data_offset = (self.data - np.median(self.data))**2
-            mask = (data_offset < np.percentile(data_offset, percentile)).all(axis=0)
+            offsets = (self.data - np.median(self.data))
+            mask = (offsets > np.percentile(offsets, pmin)) & \
+                   (offsets < np.percentile(offsets, pmax))
         else:
             ValueError('invalid method argument')
-        return {'mask': mask, 'whitefield': None}
+        if update == 'reset':
+            return {'mask': mask, 'whitefield': None}
+        if update == 'multiply':
+            return {'mask': self.mask * mask, 'whitefield': None}
 
     @dict_to_object
     def make_whitefield(self):
@@ -484,11 +494,10 @@ class STData(DataContainer):
                 if attr in ['data', 'error_frame', 'mask', 'phase',
                             'pixel_abberations', 'pixel_map', 'whitefield']:
                     val = val[..., self.roi[0]:self.roi[1], self.roi[2]:self.roi[3]]
-                    val = np.ascontiguousarray(val)
-                if attr in ['basis_vectors', 'data', 'pixel_translations', 'translations']:
+                if attr in ['basis_vectors', 'data', 'mask', 'pixel_translations',
+                            'translations']:
                     val = val[self.good_frames]
-                    val = np.ascontiguousarray(val)
-            return val
+            return np.ascontiguousarray(val)
         else:
             return value
 
@@ -643,13 +652,11 @@ class SpeckleTracking(DataContainer):
         SpeckleTracking
             A new :class:`SpeckleTracking` object.
         """
-        mask = st_data.get('mask')
-        data = mask * st_data.get('data')
-        whitefield = mask * st_data.get('whitefield')
+        data = st_data.get('mask') * st_data.get('data')
         pixel_map = st_data.get('pixel_map')
         dij_pix = np.ascontiguousarray(np.swapaxes(st_data.get('pixel_translations'), 0, 1))
         return cls(data=data, dref=st_data, dfs_pix=dij_pix[1], dss_pix=dij_pix[0],
-                   pixel_map=pixel_map, whitefield=whitefield)
+                   pixel_map=pixel_map, whitefield=st_data.get('whitefield'))
 
     @dict_to_object
     def update_reference(self, ls_ri,  sw_fs, sw_ss=0):
@@ -829,7 +836,7 @@ class SpeckleTracking(DataContainer):
             return {'dss_pix': dss_pix, 'dfs_pix': dfs_pix}
 
     def iter_update_gd(self, ls_ri, ls_pm, sw_fs, sw_ss=0, n_iter=30, f_tol=1e-6, momentum=0.,
-                       learning_rate=1e2, gstep=.1, method='search', update_translations=False,
+                       learning_rate=1e1, gstep=.1, method='search', update_translations=False,
                        verbose=False, return_extra=False):
         """Perform iterative Robust Speckle Tracking update. `ls_ri` and
         `ls_pm` define high frequency cut-off to supress the noise. `ls_ri`

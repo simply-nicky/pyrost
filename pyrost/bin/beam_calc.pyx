@@ -646,7 +646,7 @@ cdef numeric wirthselect(numeric[::1] array, int k) nogil:
         if k < i: m = j 
     return array[k]
 
-def make_whitefield(numeric[:, :, ::1] data, bool_t[:, ::1] mask):
+def make_whitefield(numeric[:, :, ::1] data, bool_t[:, :, ::1] mask):
     """Generate a whitefield using the median filtering.
 
     Parameters
@@ -668,16 +668,17 @@ def make_whitefield(numeric[:, :, ::1] data, bool_t[:, ::1] mask):
     else:
         dtype = np.uint64
     cdef:
-        int a = data.shape[0], b = data.shape[1], c = data.shape[2], i, j, k
+        int a = data.shape[0], b = data.shape[1], c = data.shape[2], t, i, j, k, ii
         int max_threads = openmp.omp_get_max_threads()
         numeric[:, ::1] wf = np.empty((b, c), dtype=dtype)
         numeric[:, ::1] array = np.empty((max_threads, a), dtype=dtype)
     for j in prange(b, schedule='guided', nogil=True):
-        i = openmp.omp_get_thread_num()
+        t = openmp.omp_get_thread_num()
         for k in range(c):
-            if mask[j, k]:
-                array[i] = data[:, j, k]
-                wf[j, k] = wirthselect(array[i], a // 2)
-            else:
-                wf[j, k] = 0
+            ii = 0
+            for i in range(a):
+                if mask[i, j, k]:
+                    array[t, ii] = data[i, j, k]
+                    ii = ii + 1
+            wf[j, k] = wirthselect(array[t], ii // 2)
     return np.asarray(wf)

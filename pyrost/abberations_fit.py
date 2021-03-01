@@ -23,7 +23,7 @@ order polynomial:
 """
 import numpy as np
 from scipy.optimize import least_squares
-from .data_container import DataContainer
+from .data_container import DataContainer, dict_to_object
 
 class LeastSquares:
     """Basic nonlinear least-squares fit class.
@@ -154,8 +154,11 @@ class AbberationsFit(DataContainer):
     * defocus : Defocus distance [m].
     * distance : Sample-to-detector distance [m].
     * phase : Abberations phase profile [rad].
+    * pixels : Pixel coordinates [pixels].
     * pixel_abberations : Pixel abberations profile [pixels].
     * pixel_size : Pixel's size [m].
+    * roi : Region of interest.
+    * theta_abberations : 
     * wavelength : Incoming beam's wavelength [m].
 
     See Also
@@ -163,16 +166,19 @@ class AbberationsFit(DataContainer):
     :func:`scipy.optimize.least_squares` : Full nonlinear least-squares
         algorithm description.
     """
-    attr_set = {'defocus', 'distance', 'phase', 'pixel_abberations',
-                'pixel_size', 'roi', 'wavelength'}
+    attr_set = {'defocus', 'distance', 'phase', 'pixels', 'pixel_abberations',
+                'pixel_size', 'wavelength'}
+    init_set = {'roi', 'theta_abberations'}
     fs_lookup = {'defocus': 'defocus_fs', 'pixel_size': 'x_pixel_size'}
     ss_lookup = {'defocus': 'defocus_ss', 'pixel_size': 'y_pixel_size'}
 
     def __init__(self, **kwargs):
         super(AbberationsFit, self).__init__(**kwargs)
-        self.pixels = np.arange(self.roi[0], self.roi[1])
         self.pix_ap = self.pixel_size / self.distance
-        self.theta_abberations = self.pixel_abberations * self.pix_ap
+        if self.roi is None:
+            self.roi = np.array([0, self.pixels.size])
+        if self.theta_abberations is None:
+            self.theta_abberations = self.pixel_abberations * self.pix_ap
 
     @classmethod
     def import_data(cls, st_data, center=0, axis=1):
@@ -200,11 +206,53 @@ class AbberationsFit(DataContainer):
         else:
             raise ValueError('invalid axis value: {:d}'.format(axis))
         data_dict['pixel_abberations'] = data_dict['pixel_abberations'][axis].mean(axis=1 - axis)
+        data_dict['pixels'] = np.arange(st_data.roi[2 * axis], st_data.roi[2 * axis + 1]) - center
         data_dict['phase'] = data_dict['phase'].mean(axis=1 - axis)
-        data_dict['roi'] = data_dict['roi'][2 * axis:2 * (axis + 1)] - center
         return cls(**data_dict)
 
-    def model(self, fit, roi=None):
+    @dict_to_object
+    def crop_data(self, roi):
+        """Return a new :class:`AbberationsFit` object with the updated `roi`.
+
+        Parameters
+        ----------
+        roi : iterable
+            Region of interest in the detector plane.
+
+        Returns
+        -------
+        STData
+            New :class:`AbberationsFit` object with the updated `roi`.
+        """
+        return {'roi': np.asarray(roi, dtype=int)}
+
+    def get(self, attr, value=None):
+        """Return a dataset with `mask` and `roi` applied.
+        Return `value` if the attribute is not found.
+
+        Parameters
+        ----------
+        attr : str
+            Attribute to fetch.
+        value : object, optional
+            Return if `attr` is not found.
+
+        Returns
+        -------
+        numpy.ndarray or object
+            `attr` dataset with `mask` and `roi` applied.
+            `value` if `attr` is not found.
+        """
+        if attr in self:
+            val = super(AbberationsFit, self).get(attr)
+            if not val is None:
+                if attr in ['phase', 'pixels', 'pixel_abberations', 'theta_abberations']:
+                    val = val[self.roi[0]:self.roi[1]]
+            return val
+        else:
+            return value
+
+    def model(self, fit):
         """Return the polynomial function values of
         lens' deviation angles fit.
 
@@ -220,11 +268,9 @@ class AbberationsFit(DataContainer):
         numpy.ndarray
             Array of polynomial function values.
         """
-        if roi is None:
-            roi = (0, self.pixels.size)
-        return LeastSquares.model(fit, self.pixels, roi)
+        return LeastSquares.model(fit, self.pixels, self.roi)
 
-    def pix_to_phase(self, fit, roi=None):
+    def pix_to_phase(self, fit):
         """Convert fit coefficients from pixel
         abberations fit to abberations phase fit.
 
@@ -240,12 +286,10 @@ class AbberationsFit(DataContainer):
         numpy.ndarray
             Lens` phase abberations fit coefficients.
         """
-        if roi is None:
-            roi = (0, self.pixels.size)
         nfit = np.zeros(fit.size + 1)
         nfit[:-1] = 2 * np.pi * fit * self.pix_ap**2 * self.defocus / self.wavelength
         nfit[:-1] /= np.arange(1, fit.size + 1)[::-1]
-        nfit[-1] = -self.model(nfit, roi).mean()
+        nfit[-1] = -self.model(nfit).mean()
         return nfit
 
     def phase_to_pix(self, ph_fit):
@@ -266,7 +310,7 @@ class AbberationsFit(DataContainer):
         fit *= np.arange(1, ph_fit.size)[::-1]
         return fit
 
-    def fit(self, max_order=2, xtol=1e-14, ftol=1e-14, loss='cauchy', roi=None):
+    def fit(self, max_order=2, xtol=1e-14, ftol=1e-14, loss='cauchy'):
         """Fit lens' pixel abberations with polynomial function using
         :func:`scipy.optimise.least_squares`.
 
@@ -295,8 +339,6 @@ class AbberationsFit(DataContainer):
               process.
             * 'arctan' : ``rho(z) = arctan(z)``. Limits a maximum loss on
               a single residual, has properties similar to 'cauchy'.
-        roi : iterable, optional
-            Region of interest. Full region if `roi` is None.
 
         Returns
         -------
@@ -316,16 +358,16 @@ class AbberationsFit(DataContainer):
         :func:`scipy.optimize.least_squares` : Full nonlinear least-squares
             algorithm description.
         """
-        fit, err, r_sq = LeastSquares.fit(x=self.pixels, y=self.pixel_abberations, roi=roi,
+        fit, err, r_sq = LeastSquares.fit(x=self.pixels, y=self.pixel_abberations, roi=self.roi,
                                           max_order=max_order, xtol=xtol, ftol=ftol, loss=loss)
-        ph_fit = self.pix_to_phase(fit, roi)
+        ph_fit = self.pix_to_phase(fit)
         if ph_fit.size >= 4:
             alpha = ph_fit[-4] / self.pix_ap**3 * 1e-9
         else:
             alpha = None
         return {'alpha': alpha, 'fit': fit, 'ph_fit': ph_fit, 'rel_err': np.abs(err / fit), 'r_sq': r_sq}
 
-    def fit_phase(self, max_order=3, xtol=1e-14, ftol=1e-14, loss='linear', roi=None):
+    def fit_phase(self, max_order=3, xtol=1e-14, ftol=1e-14, loss='linear'):
         """Fit lens' phase abberations with polynomial function using
         :func:`scipy.optimise.least_squares`.
 
@@ -375,7 +417,7 @@ class AbberationsFit(DataContainer):
         :func:`scipy.optimize.least_squares` : Full nonlinear least-squares
             algorithm description.
         """
-        ph_fit, err, r_sq = LeastSquares.fit(x=self.pixels, y=self.phase, roi=roi,
+        ph_fit, err, r_sq = LeastSquares.fit(x=self.pixels, y=self.phase, roi=self.roi,
                                              max_order=max_order, xtol=xtol, ftol=ftol, loss=loss)
         fit = self.phase_to_pix(ph_fit)
         if ph_fit.size >= 4:

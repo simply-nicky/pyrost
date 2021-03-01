@@ -337,7 +337,7 @@ class STConverter:
         data_dict['data'] = data
         data_dict['good_frames'] = np.arange(data.shape[0],
                                              dtype=self.protocol.get_dtype('good_frames'))
-        data_dict['mask'] = np.ones(data.shape[1:], dtype=self.protocol.get_dtype('mask'))
+        data_dict['mask'] = np.ones(data.shape, dtype=self.protocol.get_dtype('mask'))
         data_dict['whitefield'] = make_whitefield(mask=data_dict['mask'], data=data)
 
         # Initialize defocus distances
