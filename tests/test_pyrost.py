@@ -71,13 +71,6 @@ def test_ptych(ptych, st_params):
     assert ptych.shape[0] == st_params.n_frames
 
 @pytest.mark.rst
-def test_load_exp(path, roi, defocus, loader):
-    assert os.path.isfile(path)
-    data_dict = loader.load_dict(path=path, roi=roi, defocus=defocus)
-    for attr in rst.STData.attr_set:
-        assert not data_dict[attr] is None
-
-@pytest.mark.rst
 def test_save_and_load_sim(converter, loader, ptych, sim_obj, temp_dir):
     assert os.path.isdir(temp_dir)
     converter.save_sim(ptych, sim_obj, temp_dir)
@@ -97,6 +90,25 @@ def test_st_update_sim(converter, ptych , sim_obj):
                        verbose=True, n_iter=10)
     assert (st_obj.pixel_map == pixel_map0).all()
     assert st_obj.pixel_map.dtype == converter.protocol.known_types['float']
+
+@pytest.mark.rst
+def test_load_exp(path, roi, defocus, loader):
+    assert os.path.isfile(path)
+    data_dict = loader.load_dict(path=path, roi=roi, defocus=defocus)
+    for attr in rst.STData.attr_set:
+        assert not data_dict[attr] is None
+
+@pytest.mark.rst
+def test_st_update_exp(path, roi, defocus, loader):
+    assert os.path.isfile(path)
+    data = loader.load(path=path, roi=roi, defocus=defocus)
+    assert data.data.dtype == loader.known_types['float']
+    st_obj = data.get_st()
+    pixel_map0 = st_obj.pixel_map.copy()
+    st_obj.iter_update_gd(sw_fs=10, ls_pm=2.5, ls_ri=30,
+                          verbose=True, n_iter=10)
+    assert (st_obj.pixel_map == pixel_map0).all()
+    assert st_obj.pixel_map.dtype == loader.known_types['float']
 
 @pytest.mark.standalone
 def test_full(converter, ptych, sim_obj):

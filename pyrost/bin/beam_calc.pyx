@@ -28,6 +28,7 @@ cdef extern from "fft.c":
 
 ctypedef np.complex128_t complex_t
 ctypedef np.uint64_t uint_t
+ctypedef np.uint32_t uint32_t
 ctypedef np.npy_bool bool_t
 
 ctypedef fused numeric:
@@ -529,7 +530,7 @@ def fft_convolve_scan(double[:, ::1] a1, double[::1] a2):
         fft_convolve_c(b1[i], c1[t], a1[i], c2)
     return np.asarray(b1[:, (n - a) // 2:(n + a) // 2], order='C')
 
-cdef void make_frame_nc(uint_t[:, ::1] frame, double[::1] i_x, double[::1] i_ss, double dx) nogil:
+cdef void make_frame_c(double[:, ::1] frame, double[::1] i_x, double[::1] i_ss, double dx) nogil:
     cdef:
         int a = i_x.shape[0], ss = frame.shape[0], fs = frame.shape[1], i, j, jj, j0, j1
         double i_fs = 0
@@ -550,35 +551,9 @@ cdef void make_frame_nc(uint_t[:, ::1] frame, double[::1] i_x, double[::1] i_ss,
         for jj in range(j0, j1):
             i_fs += i_x[jj] * dx
         for i in range(ss):
-            frame[i, j] = <int>(i_fs * i_ss[i])
+            frame[i, j] = i_fs * i_ss[i]
 
-cdef void make_frame_c(uint_t[:, ::1] frame, double[::1] i_x, double[::1] i_ss, double dx, unsigned long seed) nogil:
-    cdef:
-        int a = i_x.shape[0], ss = frame.shape[0], fs = frame.shape[1], i, j, jj, j0, j1
-        gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937)
-        double i_fs = 0
-    gsl_rng_set(r, seed)
-    j1 = <int>(0.5 * a / fs)
-    for jj in range(j1):
-        i_fs += i_x[jj] * dx
-    for i in range(ss):
-        frame[i, 0] = gsl_ran_poisson(r, i_fs * i_ss[i])
-    i_fs = 0
-    for jj in range(j1):
-        i_fs += i_x[a - 1 - jj] * dx
-    for i in range(ss):
-        frame[i, fs - 1] = gsl_ran_poisson(r, i_fs * i_ss[i])
-    for j in range(1, fs - 1):
-        i_fs = 0
-        j0 = <int>((j - 0.5) * a // fs)
-        j1 = <int>((j + 0.5) * a // fs)
-        for jj in range(j0, j1):
-            i_fs += i_x[jj] * dx
-        for i in range(ss):
-            frame[i, j] = gsl_ran_poisson(r, i_fs * i_ss[i])
-
-def make_frames(double[:, ::1] i_x, double[::1] i_y, double dx, double dy,
-                int ss, int fs, bool_t apply_noise):
+def make_frames(double[:, ::1] i_x, double[::1] i_y, double dx, double dy, int ss, int fs):
     """Generate intensity frames with Poisson noise
     from one-dimensional intensity profiles `i_x`
     and `i_y` convoluted with the source's rocking
@@ -608,11 +583,9 @@ def make_frames(double[:, ::1] i_x, double[::1] i_y, double dx, double dy,
     """
     cdef:
         int nf = i_x.shape[0], a = i_x.shape[1], b = i_y.shape[0], i, ii, i0, i1
-        uint_t[:, :, ::1] frames = np.zeros((nf, ss, fs), dtype=np.uint64)
+        int max_threads = openmp.omp_get_max_threads(), t
+        double[:, :, ::1] frames = np.zeros((nf, ss, fs), dtype=np.float64)
         double[::1] i_ss = np.zeros(ss, dtype=np.float64)
-        gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937)
-        time_t t = time(NULL)
-        unsigned long seed
     i1 = <int>(0.5 * b // ss)
     for ii in range(i1):
         i_ss[0] += i_y[ii] * dy
@@ -622,16 +595,38 @@ def make_frames(double[:, ::1] i_x, double[::1] i_y, double dx, double dy,
         i1 = <int>((i + 0.5) * b // ss)
         for ii in range(i0, i1):
             i_ss[i] += i_y[ii] * dy
-    if apply_noise:
-        gsl_rng_set(r, t)
-        for i in prange(nf, schedule='guided', nogil=True):
-            seed = gsl_rng_get(r)
-            make_frame_c(frames[i], i_x[i], i_ss, dx, seed)
-        gsl_rng_free(r)
-    else:
-        for i in prange(nf, schedule='guided', nogil=True):
-            make_frame_nc(frames[i], i_x[i], i_ss, dx)
+    for i in prange(nf, schedule='guided', nogil=True):
+        make_frame_c(frames[i], i_x[i], i_ss, dx)
     return np.asarray(frames)
+
+cdef uint32_t noisy_frame_c(uint32_t[:, ::1] noisy, double[:, ::1] frame, uint32_t seed) nogil:
+    cdef:
+        int ss = frame.shape[0], fs = frame.shape[1], i, j
+        gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937)
+    gsl_rng_set(r, seed)
+    for i in range(ss):
+        for j in range(fs):
+            noisy[i, j] = gsl_ran_poisson(r, frame[i, j])
+    seed = gsl_rng_get(r)
+    gsl_rng_free(r)
+    return seed
+
+def apply_poisson(double[:, :, ::1] frames):
+    cdef:
+        int nf = frames.shape[0], ss = frames.shape[1], fs = frames.shape[2], i
+        int max_threads = openmp.omp_get_max_threads(), t
+        gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937)
+        time_t tm = time(NULL)
+        uint32_t[::1] seeds = np.empty(max_threads, dtype=np.uint32)
+        uint32_t[:, :, ::1] noisy = np.empty((nf, ss, fs), dtype=np.uint32)
+    gsl_rng_set(r, tm)
+    for i in range(max_threads):
+        seeds[i] = gsl_rng_get(r)
+    for i in prange(nf, schedule='guided', nogil=True):
+        t = openmp.omp_get_thread_num()
+        seeds[t] = noisy_frame_c(noisy[i], frames[i], seeds[t])
+    gsl_rng_free(r)
+    return np.asarray(noisy)
 
 cdef numeric wirthselect(numeric[::1] array, int k) nogil:
     cdef:
@@ -651,7 +646,7 @@ cdef numeric wirthselect(numeric[::1] array, int k) nogil:
         if k < i: m = j 
     return array[k]
 
-def make_whitefield(numeric[:, :, ::1] data, bool_t[:, ::1] mask):
+def make_whitefield(numeric[:, :, ::1] data, bool_t[:, :, ::1] mask):
     """Generate a whitefield using the median filtering.
 
     Parameters
@@ -673,16 +668,17 @@ def make_whitefield(numeric[:, :, ::1] data, bool_t[:, ::1] mask):
     else:
         dtype = np.uint64
     cdef:
-        int a = data.shape[0], b = data.shape[1], c = data.shape[2], i, j, k
+        int a = data.shape[0], b = data.shape[1], c = data.shape[2], t, i, j, k, ii
         int max_threads = openmp.omp_get_max_threads()
         numeric[:, ::1] wf = np.empty((b, c), dtype=dtype)
         numeric[:, ::1] array = np.empty((max_threads, a), dtype=dtype)
     for j in prange(b, schedule='guided', nogil=True):
-        i = openmp.omp_get_thread_num()
+        t = openmp.omp_get_thread_num()
         for k in range(c):
-            if mask[j, k]:
-                array[i] = data[:, j, k]
-                wf[j, k] = wirthselect(array[i], a // 2)
-            else:
-                wf[j, k] = 0
+            ii = 0
+            for i in range(a):
+                if mask[i, j, k]:
+                    array[t, ii] = data[i, j, k]
+                    ii = ii + 1
+            wf[j, k] = wirthselect(array[t], ii // 2)
     return np.asarray(wf)

@@ -267,20 +267,19 @@ cdef void krig_data_c(float_t[::1] I, float_t[:, :, ::1] I_n, float_t[:, ::1] W,
         int jj1 = j + djk if j + djk < b else b
         int kk0 = k - djk if k - djk > 0 else 0
         int kk1 = k + djk if k + djk < c else c
-        float_t w0 = 0, rss = 0, r
+        float_t w0 = 0, r
     for i in range(a + 1):
         I[i] = 0
     for jj in range(jj0, jj1):
         for kk in range(kk0, kk1):
             r = rbf((u[0, jj, kk] - u[0, j, k])**2 + (u[1, jj, kk] - u[1, j, k])**2, ls)
-            w0 += r * W[jj, kk]**2
-            rss += W[jj, kk]**3 * r**2
-            for i in range(a):
-                I[i] += I_n[i, jj, kk] * W[jj, kk] * r
+            w0 += r
+            if w0 * W[jj, kk]:
+                I[a] += r**2 / W[jj, kk]
+                for i in range(a):
+                    I[i] += r / w0 * (I_n[i, jj, kk] / W[jj, kk] - I[i])
     if w0:
-        for i in range(a):
-            I[i] /= w0
-        I[a] = rss / w0**2
+        I[a] /= w0**2
 
 cdef void subpixel_ref_1d(float_t[::1] x, float_t* mse_m, float_t mu) nogil:
     cdef:

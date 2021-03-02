@@ -38,7 +38,7 @@ from ..data_container import DataContainer, dict_to_object
 from ..data_processing import STData
 from .st_sim_param import STParams, parameters
 from ..bin import rsc_wp, fhf_wp, fhf_wp_scan, fft_convolve, fft_convolve_scan
-from ..bin import make_frames, make_whitefield
+from ..bin import make_frames, apply_poisson, make_whitefield
 
 class STSim(DataContainer):
     """One-dimensional Speckle Tracking scan simulation class.
@@ -182,7 +182,7 @@ class STSim(DataContainer):
         """
         return {'bar_pos': bar_pos, 'smp_profile': None, 'det_wfx': None, 'det_ix': None}
 
-    def frames(self, apply_noise=True):
+    def frames(self, wfield_x=None, wfield_y=None, apply_noise=True):
         """Return intensity frames at the detector plane. Applies
         Poisson noise if `apply_noise` is True.
 
@@ -196,14 +196,25 @@ class STSim(DataContainer):
         numpy.ndarray
             Intensity frames.
         """
+        if wfield_x is None:
+            wfield_x = np.ones(self.params.fs_size)
+        else:
+            wfield_x /= wfield_x.mean()
+        if wfield_y is None:
+            wfield_y = np.ones(self.params.ss_size)
+        else:
+            wfield_y /= wfield_y.mean()
         dx = self.params.fs_size * self.params.pix_size / self.n_x
         dy = self.params.ss_size * self.params.pix_size / self.n_y
         frames = make_frames(i_x=self.det_ix, i_y=self.det_iy, dx=dx, dy=dy,
-                             ss=self.params.ss_size, fs=self.params.fs_size,
-                             apply_noise=apply_noise)
-        return frames
+                             ss=self.params.ss_size, fs=self.params.fs_size)
+        frames *= wfield_x * wfield_y[:, None]
+        if apply_noise:
+            return apply_poisson(frames)
+        else:
+            return frames.astype(int)
 
-    def ptychograph(self, apply_noise=True):
+    def ptychograph(self, wfield_x=None, wfield_y=None, apply_noise=True):
         """Return a ptychograph of intensity frames. Applies Poisson
         noise if `apply_noise` is True.
 
@@ -217,7 +228,8 @@ class STSim(DataContainer):
         numpy.ndarray
             Ptychograph.
         """
-        return self.frames(apply_noise=apply_noise).sum(axis=1)[:, None]
+        return self.frames(wfield_x=wfield_x, wfield_y=wfield_y,
+                           apply_noise=apply_noise).sum(axis=1)[:, None]
 
 class STConverter:
     """
@@ -325,7 +337,7 @@ class STConverter:
         data_dict['data'] = data
         data_dict['good_frames'] = np.arange(data.shape[0],
                                              dtype=self.protocol.get_dtype('good_frames'))
-        data_dict['mask'] = np.ones(data.shape[1:], dtype=self.protocol.get_dtype('mask'))
+        data_dict['mask'] = np.ones(data.shape, dtype=self.protocol.get_dtype('mask'))
         data_dict['whitefield'] = make_whitefield(mask=data_dict['mask'], data=data)
 
         # Initialize defocus distances
