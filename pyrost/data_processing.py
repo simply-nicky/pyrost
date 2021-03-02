@@ -166,7 +166,10 @@ class STData(DataContainer):
 
     def __setattr__(self, attr, value):
         if attr in self.attr_set | self.init_set:
-            value = np.array(value, dtype=self.protocol.get_dtype(attr))
+            if isinstance(value, np.ndarray):
+                value = np.array(value, dtype=self.protocol.get_dtype(attr))
+            elif not value is None:
+                value = self.protocol.get_dtype(attr)(value)
             super(STData, self).__setattr__(attr, value)
         else:
             super(STData, self).__setattr__(attr, value)
@@ -491,11 +494,12 @@ class STData(DataContainer):
             if not val is None:
                 if attr in ['data', 'error_frame', 'mask', 'phase',
                             'pixel_abberations', 'pixel_map', 'whitefield']:
-                    val = val[..., self.roi[0]:self.roi[1], self.roi[2]:self.roi[3]]
+                    val = np.ascontiguousarray(val[..., self.roi[0]:self.roi[1],
+                                                        self.roi[2]:self.roi[3]])
                 if attr in ['basis_vectors', 'data', 'mask', 'pixel_translations',
                             'translations']:
-                    val = val[self.good_frames]
-            return np.ascontiguousarray(val)
+                    val = np.ascontiguousarray(val[self.good_frames])
+            return val
         else:
             return value
 

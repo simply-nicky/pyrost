@@ -58,14 +58,14 @@ class DataContainer:
     attr_set, init_set = {}, {}
 
     def __init__(self, **kwargs):
-        self.__dict__['attr_dict'] = {}
+        self.__dict__['attr_dict'] = {key: None for key in self.attr_set | self.init_set}
         for attr in self.attr_set:
             if kwargs.get(attr) is None:
                 raise ValueError('Attribute {:s} has not been provided'.format(attr))
             else:
-                self.attr_dict[attr] = kwargs.get(attr)
+                self.__setattr__(attr, kwargs.get(attr))
         for attr in self.init_set:
-            self.attr_dict[attr] = kwargs.get(attr)
+            self.__setattr__(attr, kwargs.get(attr))
 
     def __iter__(self):
         return self.attr_dict.__iter__()

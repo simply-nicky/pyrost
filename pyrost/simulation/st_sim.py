@@ -359,9 +359,6 @@ class STConverter:
         t_arr = np.zeros((st_params.n_frames, 3), dtype=self.protocol.get_dtype('translations'))
         t_arr[:, 0] = -smp_pos
         data_dict['translations'] = self.crd_rat * t_arr
-
-        for attr in data_dict:
-            data_dict[attr] = np.asarray(data_dict[attr], dtype=self.protocol.get_dtype(attr))
         return data_dict
 
     def export_data(self, data, sim_obj):
