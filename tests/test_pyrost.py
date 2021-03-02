@@ -115,8 +115,8 @@ def test_full(converter, ptych, sim_obj):
     data = converter.export_data(ptych, sim_obj)
     assert data.data.dtype == converter.protocol.known_types['float']
     st_obj = data.get_st()
-    st_res = st_obj.iter_update(sw_fs=10, ls_pm=2.5, ls_ri=15,
-                                verbose=True, n_iter=10)
+    st_res = st_obj.iter_update_gd(sw_fs=10, ls_pm=2.5, ls_ri=15,
+                                   verbose=True, n_iter=10)
     data = data.update_phase(st_res)
     fit = data.fit_phase(axis=1)
     assert (st_obj.pixel_map != st_res.pixel_map).any()
