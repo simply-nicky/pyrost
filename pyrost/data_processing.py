@@ -366,7 +366,7 @@ class STData(DataContainer):
         else:
             raise ValueError("the SpeckleTracking object doesn't belong to the data container")
 
-    def fit_phase(self, axis=1, max_order=2, xtol=1e-14, ftol=1e-14, loss='cauchy', roi=None):
+    def fit_phase(self, axis=1, max_order=2, xtol=1e-14, ftol=1e-14, loss='cauchy'):
         """Fit `pixel_abberations` with the polynomial function
         using nonlinear least-squares algorithm. The function uses
         least-squares algorithm from :func:`scipy.optimize.least_squares`.
@@ -397,8 +397,6 @@ class STData(DataContainer):
               process.
             * 'arctan' : ``rho(z) = arctan(z)``. Limits a maximum loss on
               a single residual, has properties similar to 'cauchy'.
-        roi : iterable, optional
-            Region of interest. Full region if `roi` is None.
 
         Returns
         -------
@@ -419,7 +417,7 @@ class STData(DataContainer):
         """
         if self._isphase:
             return self._ab_fits[axis].fit(max_order=max_order, xtol=xtol,
-                                           ftol=ftol, loss=loss, roi=roi)
+                                           ftol=ftol, loss=loss)
         else:
             return None
 
