@@ -64,12 +64,12 @@ Load the CXI file into a data container :class:`pyrost.STData` with :class:`pyro
 
 Moreover, you can crop the data with the provided region of interest at the detector plane,
 or mask bad frames and bad pixels (See :func:`pyrost.STData.crop_data`,
-:func:`pyrost.STData.mask_frames`, :func:`pyrost.STData.make_mask`).
+:func:`pyrost.STData.mask_frames`, :func:`pyrost.STData.update_mask`).
 
 .. doctest::
 
     >>> data = loader.load('results/diatom.cxi', roi=(75, 420, 55, 455), good_frames=np.arange(1, 121))
-    >>> data = data.make_mask(method='perc-bad')
+    >>> data = data.update_mask(method='perc-bad')
 
 OR
 
@@ -77,7 +77,7 @@ OR
 
     >>> data = data.crop_data(roi=(75, 420, 55, 455))
     >>> data = data.mask_frames(good_frames=np.arange(1, 121))
-    >>> data = data.make_mask(method='perc-bad')
+    >>> data = data.update_mask(method='perc-bad')
 
 It worked! But still we can not perform the Speckle Tracking update procedure without the
 estimates of the defocus distance. You can estimate it with :func:`pyrost.STData.defocus_sweep`.
