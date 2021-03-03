@@ -497,7 +497,7 @@ class Protocol(INIParser):
         if cxi_path is None:
             cxi_path = self.get_default_path(attr, cxi_path)
         if cxi_path in cxi_file:
-            return cxi_file[cxi_path][...].astype(self.get_dtype(attr, dtype))
+            return cxi_file[cxi_path][()].astype(self.get_dtype(attr, dtype))
         else:
             return None
 
