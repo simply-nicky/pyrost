@@ -1,4 +1,4 @@
-pyrost aberrations Fitting
+pyrost Aberrations Fitting
 ==========================
 
 .. automodule:: pyrost.aberrations_fit
