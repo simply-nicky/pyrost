@@ -104,8 +104,8 @@ just type :code:`python -m pyrost.simulation --help`.
       --ap_x AP_X           Lens size along the x axis [um] (default: 40.0)
       --ap_y AP_Y           Lens size along the y axis [um] (default: 2.0)
       --focus FOCUS         Focal distance [um] (default: 1500.0)
-      --alpha ALPHA         Third order abberations [rad/mrad^3] (default: -0.05)
-      --ab_cnt AB_CNT       Lens' abberations center point [0.0 - 1.0] (default:
+      --alpha ALPHA         Third order aberrations [rad/mrad^3] (default: -0.05)
+      --ab_cnt AB_CNT       Lens' aberrations center point [0.0 - 1.0] (default:
                             0.5)
       --bar_size BAR_SIZE   Average bar size [um] (default: 0.1)
       --bar_sigma BAR_SIGMA

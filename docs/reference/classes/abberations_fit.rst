@@ -1,6 +1,6 @@
-AbberationsFit
+AberrationsFit
 ==============
 
-.. autoclass:: pyrost.AbberationsFit
+.. autoclass:: pyrost.AberrationsFit
     :members:
     :inherited-members:

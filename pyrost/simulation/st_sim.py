@@ -122,7 +122,7 @@ class STSim(DataContainer):
         # Initialize wavefronts at the sample plane
         if self.smp_wfx is None:
             dx0 = 2 * self.params.ap_x / self.n_x
-            dx1 = dx0 * self.params.defocus / self.params.focus
+            dx1 = np.abs(dx0 * self.params.defocus / self.params.focus)
             z01 = self.params.focus + self.params.defocus
             self.smp_wfx = rsc_wp(u0=self.lens_wfx, dx0=dx0, dx=dx1, z=z01, wl=self.params.wl)
         if self.smp_wfy is None:
@@ -136,13 +136,13 @@ class STSim(DataContainer):
 
         # Initialize sample's transmission profile
         if self.smp_profile is None:
-            dx1 = 2 * self.params.ap_x * self.params.defocus / self.params.focus / self.n_x
+            dx1 = np.abs(2 * self.params.ap_x * self.params.defocus / self.params.focus / self.n_x)
             x1_arr = dx1 * np.arange(-self.n_x // 2, self.n_x // 2) + self.smp_pos[:, None]
             self.smp_profile = self.params.barcode_profile(bar_pos=self.bar_pos, x_arr=x1_arr)
 
         # Initialize wavefronts at the detector plane
         if self.det_wfx is None:
-            dx1 = 2 * self.params.ap_x * self.params.defocus / self.params.focus / self.n_x
+            dx1 = np.abs(2 * self.params.ap_x * self.params.defocus / self.params.focus / self.n_x)
             dx2 = self.params.fs_size * self.params.pix_size / self.n_x
             self.det_wfx = fhf_wp_scan(u0=self.smp_wfx * self.smp_profile, dx0=dx1, dx=dx2,
                                     z=self.params.det_dist, wl=self.params.wl)
@@ -487,8 +487,8 @@ def main():
     parser.add_argument('--ap_x', type=float, help="Lens size along the x axis [um]")
     parser.add_argument('--ap_y', type=float, help="Lens size along the y axis [um]")
     parser.add_argument('--focus', type=float, help="Focal distance [um]")
-    parser.add_argument('--alpha', type=float, help="Third order abberations [rad/mrad^3]")
-    parser.add_argument('--ab_cnt', type=float, help="Lens' abberations center point [0.0 - 1.0]")
+    parser.add_argument('--alpha', type=float, help="Third order aberrations [rad/mrad^3]")
+    parser.add_argument('--ab_cnt', type=float, help="Lens' aberrations center point [0.0 - 1.0]")
     parser.add_argument('--bar_size', type=float, help="Average bar size [um]")
     parser.add_argument('--bar_sigma', type=float, help="Bar haziness width [um]")
     parser.add_argument('--bar_atn', type=float, help="Bar attenuation")

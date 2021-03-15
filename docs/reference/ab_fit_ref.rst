@@ -1,10 +1,10 @@
-pyrost Abberations Fitting
+pyrost aberrations Fitting
 ==========================
 
-.. automodule:: pyrost.abberations_fit
+.. automodule:: pyrost.aberrations_fit
 
 .. toctree::
     :maxdepth: 1
     :caption: Contents
 
-    classes/abberations_fit
+    classes/aberrations_fit

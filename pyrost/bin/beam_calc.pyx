@@ -1,7 +1,7 @@
 cimport numpy as np
 import numpy as np
 from .beam_calc cimport *
-from libc.math cimport sqrt, cos, sin, pi, erf
+from libc.math cimport sqrt, cos, sin, pi, erf, fabs
 from libc.time cimport time_t, time
 from libc.string cimport memcpy
 from cython.parallel import prange
@@ -214,12 +214,12 @@ def rsc_wp(complex_t[::1] u0, double dx0, double dx, double z, double wl):
     """
     cdef:
         int a = u0.shape[0], i
-        double alpha = dx0 / dx if dx0 <= dx else dx / dx0
+        double alpha = fabs(dx0 / dx) if fabs(dx0) <= fabs(dx) else fabs(dx / dx0)
         int n = good_size_cmplx(2 * (<int>(a * (1 + alpha) // 2) + 1))
         complex_t[::1] u = np.empty(n, dtype=np.complex128)
         complex_t[::1] k = np.empty(n, dtype=np.complex128)
         complex_t[::1] h = np.empty(n, dtype=np.complex128)
-    rsc_wp_c(u, k, h, u0, dx0, dx, z, wl)
+    rsc_wp_c(u, k, h, u0, fabs(dx0), fabs(dx), z, wl)
     return np.asarray(u[(n - a) // 2:(n + a) // 2])
 
 cdef void fhf_wp_c(complex_t[::1] u, complex_t[::1] k, complex_t[::1] u0,

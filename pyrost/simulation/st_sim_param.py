@@ -148,8 +148,8 @@ class STParams(INIParser):
             N_x >= \frac{\Delta x_{sample} \Delta x_{det}}{\lambda d} =
             \frac{2 a_x n_{fs} \Delta_{pix} df}{f \lambda d_{det}}
         """
-        nx_ltos = int(4 * self.ap_x**2 * max(self.focus, self.defocus) / self.focus**2 / self.wl)
-        nx_stod = int(2 * self.fs_size * self.pix_size * self.ap_x * self.defocus / self.focus / self.wl / self.det_dist)
+        nx_ltos = int(4 * self.ap_x**2 * max(self.focus, np.abs(self.defocus)) / self.focus**2 / self.wl)
+        nx_stod = int(2 * self.fs_size * self.pix_size * self.ap_x * np.abs(self.defocus) / self.focus / self.wl / self.det_dist)
         return max(nx_ltos, nx_stod, self.fs_size)
 
     def y_wavefront_size(self):

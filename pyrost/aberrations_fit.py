@@ -1,16 +1,16 @@
 """Routines for model regression based on nonlinear
-least-squares algorithm. :class:`pyrost.AbberationsFit` fit the
-lens' abberations profile with the polynomial function
+least-squares algorithm. :class:`pyrost.AberrationsFit` fit the
+lens' aberrations profile with the polynomial function
 using nonlinear least-squares algorithm.
 
 Examples
 --------
-Generate a :class:`pyrost.AbberationsFit` object from
+Generate a :class:`pyrost.AberrationsFit` object from
 :class:`pyrost.STData` container object `st_data` as follows:
 
->>> fit_obj = AbberationsFit.import_data(st_data)
+>>> fit_obj = AberrationsFit.import_data(st_data)
 
-Fit a pixel abberations profile with a third
+Fit a pixel aberrations profile with a third
 order polynomial:
 
 >>> fit = fit_obj.fit(max_order=3)
@@ -123,10 +123,10 @@ class LeastSquares:
             err = 0
         return fit.x, err, r_sq
 
-class AbberationsFit(DataContainer):
-    """Lens' abberations profile model regression using
-    nonlinear least-squares algorithm. :class:`AbberationsFit`
-    is capable of fitting lens' pixel abberations, deviation 
+class AberrationsFit(DataContainer):
+    """Lens' aberrations profile model regression using
+    nonlinear least-squares algorithm. :class:`AberrationsFit`
+    is capable of fitting lens' pixel aberrations, deviation 
     angles, and phase profile with polynomial function.
     Based on :func:`scipy.optimise.least_squares`.
 
@@ -153,12 +153,12 @@ class AbberationsFit(DataContainer):
 
     * defocus : Defocus distance [m].
     * distance : Sample-to-detector distance [m].
-    * phase : Abberations phase profile [rad].
+    * phase : aberrations phase profile [rad].
     * pixels : Pixel coordinates [pixels].
-    * pixel_abberations : Pixel abberations profile [pixels].
+    * pixel_aberrations : Pixel aberrations profile [pixels].
     * pixel_size : Pixel's size [m].
     * roi : Region of interest.
-    * theta_abberations : 
+    * theta_aberrations : 
     * wavelength : Incoming beam's wavelength [m].
 
     See Also
@@ -166,23 +166,23 @@ class AbberationsFit(DataContainer):
     :func:`scipy.optimize.least_squares` : Full nonlinear least-squares
         algorithm description.
     """
-    attr_set = {'defocus', 'distance', 'phase', 'pixels', 'pixel_abberations',
+    attr_set = {'defocus', 'distance', 'phase', 'pixels', 'pixel_aberrations',
                 'pixel_size', 'wavelength'}
-    init_set = {'roi', 'theta_abberations'}
+    init_set = {'roi', 'theta_aberrations'}
     fs_lookup = {'defocus': 'defocus_fs', 'pixel_size': 'x_pixel_size'}
     ss_lookup = {'defocus': 'defocus_ss', 'pixel_size': 'y_pixel_size'}
 
     def __init__(self, **kwargs):
-        super(AbberationsFit, self).__init__(**kwargs)
+        super(AberrationsFit, self).__init__(**kwargs)
         self.pix_ap = self.pixel_size / self.distance
         if self.roi is None:
             self.roi = np.array([0, self.pixels.size])
-        if self.theta_abberations is None:
-            self.theta_abberations = self.pixel_abberations * self.pix_ap
+        if self.theta_aberrations is None:
+            self.theta_aberrations = self.pixel_aberrations * self.pix_ap
 
     @classmethod
     def import_data(cls, st_data, center=0, axis=1):
-        """Return a new :class:`AbberationsFit` object
+        """Return a new :class:`AberrationsFit` object
         with all the necessary data attributes imported from
         the :class:`STData` container object `st_data`.
 
@@ -195,8 +195,8 @@ class AbberationsFit(DataContainer):
 
         Returns
         -------
-        AbberationsFit
-            A new :class:`AbberationsFit` object.
+        AberrationsFit
+            A new :class:`AberrationsFit` object.
         """
         data_dict = {attr: st_data.get(attr) for attr in cls.attr_set}
         if axis == 0:
@@ -205,14 +205,15 @@ class AbberationsFit(DataContainer):
             data_dict.update({attr: st_data.get(data_attr) for attr, data_attr in cls.fs_lookup.items()})
         else:
             raise ValueError('invalid axis value: {:d}'.format(axis))
-        data_dict['pixel_abberations'] = data_dict['pixel_abberations'][axis].mean(axis=1 - axis)
+        data_dict['pixel_aberrations'] = data_dict['pixel_aberrations'][axis].mean(axis=1 - axis)
         data_dict['pixels'] = np.arange(st_data.roi[2 * axis], st_data.roi[2 * axis + 1]) - center
         data_dict['phase'] = data_dict['phase'].mean(axis=1 - axis)
+        data_dict['defocus'] = np.abs(data_dict['defocus'])
         return cls(**data_dict)
 
     @dict_to_object
     def crop_data(self, roi):
-        """Return a new :class:`AbberationsFit` object with the updated `roi`.
+        """Return a new :class:`AberrationsFit` object with the updated `roi`.
 
         Parameters
         ----------
@@ -222,7 +223,7 @@ class AbberationsFit(DataContainer):
         Returns
         -------
         STData
-            New :class:`AbberationsFit` object with the updated `roi`.
+            New :class:`AberrationsFit` object with the updated `roi`.
         """
         return {'roi': np.asarray(roi, dtype=int)}
 
@@ -244,9 +245,9 @@ class AbberationsFit(DataContainer):
             `value` if `attr` is not found.
         """
         if attr in self:
-            val = super(AbberationsFit, self).get(attr)
+            val = super(AberrationsFit, self).get(attr)
             if not val is None:
-                if attr in ['phase', 'pixels', 'pixel_abberations', 'theta_abberations']:
+                if attr in ['phase', 'pixels', 'pixel_aberrations', 'theta_aberrations']:
                     val = val[self.roi[0]:self.roi[1]]
             return val
         else:
@@ -259,7 +260,7 @@ class AbberationsFit(DataContainer):
         Parameters
         ----------
         fit : numpy.ndarray
-            Lens` pixel abberations fit coefficients.
+            Lens` pixel aberrations fit coefficients.
         roi : iterable, optional
             Region of interest. Full region if `roi` is None.
 
@@ -272,19 +273,19 @@ class AbberationsFit(DataContainer):
 
     def pix_to_phase(self, fit):
         """Convert fit coefficients from pixel
-        abberations fit to abberations phase fit.
+        aberrations fit to aberrations phase fit.
 
         Parameters
         ----------
         fit : numpy.ndarray
-            Lens' pixel abberations fit coefficients.
+            Lens' pixel aberrations fit coefficients.
         roi : iterable, optional
             Region of interest. Full region if `roi` is None.
 
         Returns
         -------
         numpy.ndarray
-            Lens` phase abberations fit coefficients.
+            Lens` phase aberrations fit coefficients.
         """
         nfit = np.zeros(fit.size + 1)
         nfit[:-1] = 2 * np.pi * fit * self.pix_ap**2 * self.defocus / self.wavelength
@@ -294,24 +295,24 @@ class AbberationsFit(DataContainer):
 
     def phase_to_pix(self, ph_fit):
         """Convert fit coefficients from pixel
-        abberations fit to abberations phase fit.
+        aberrations fit to aberrations phase fit.
 
         Parameters
         ----------
         ph_fit : numpy.ndarray
-            Lens` phase abberations fit coefficients.
+            Lens` phase aberrations fit coefficients.
 
         Returns
         -------
         numpy.ndarray
-            Lens' pixel abberations fit coefficients.
+            Lens' pixel aberrations fit coefficients.
         """
         fit = self.wavelength * ph_fit[:-1] / (2 * np.pi * self.pix_ap**2 * self.defocus)
         fit *= np.arange(1, ph_fit.size)[::-1]
         return fit
 
     def fit(self, max_order=2, xtol=1e-14, ftol=1e-14, loss='cauchy'):
-        """Fit lens' pixel abberations with polynomial function using
+        """Fit lens' pixel aberrations with polynomial function using
         :func:`scipy.optimise.least_squares`.
 
         Parameters
@@ -345,11 +346,11 @@ class AbberationsFit(DataContainer):
         dict
             :class:`dict` with the following fields defined:
 
-            * alpha : Third order abberations ceofficient [rad/mrad^3].
+            * alpha : Third order aberrations ceofficient [rad/mrad^3].
             * fit : Array of the polynomial function coefficients of the
-              pixel abberations fit.
+              pixel aberrations fit.
             * ph_fit : Array of the polynomial function coefficients of
-              the phase abberations fit.
+              the phase aberrations fit.
             * rel_err : Vector of relative errors of the fit coefficients.
             * r_sq : ``R**2`` goodness of fit.
 
@@ -358,7 +359,7 @@ class AbberationsFit(DataContainer):
         :func:`scipy.optimize.least_squares` : Full nonlinear least-squares
             algorithm description.
         """
-        fit, err, r_sq = LeastSquares.fit(x=self.pixels, y=self.pixel_abberations, roi=self.roi,
+        fit, err, r_sq = LeastSquares.fit(x=self.pixels, y=self.pixel_aberrations, roi=self.roi,
                                           max_order=max_order, xtol=xtol, ftol=ftol, loss=loss)
         ph_fit = self.pix_to_phase(fit)
         if ph_fit.size >= 4:
@@ -368,7 +369,7 @@ class AbberationsFit(DataContainer):
         return {'alpha': alpha, 'fit': fit, 'ph_fit': ph_fit, 'rel_err': np.abs(err / fit), 'r_sq': r_sq}
 
     def fit_phase(self, max_order=3, xtol=1e-14, ftol=1e-14, loss='linear'):
-        """Fit lens' phase abberations with polynomial function using
+        """Fit lens' phase aberrations with polynomial function using
         :func:`scipy.optimise.least_squares`.
 
         Parameters
@@ -404,11 +405,11 @@ class AbberationsFit(DataContainer):
         dict
             :class:`dict` with the following fields defined:
 
-            * alpha : Third order abberations ceofficient [rad/mrad^3].
+            * alpha : Third order aberrations ceofficient [rad/mrad^3].
             * fit : Array of the polynomial function coefficients of the
-              pixel abberations fit.
+              pixel aberrations fit.
             * ph_fit : Array of the polynomial function coefficients of
-              the phase abberations fit.
+              the phase aberrations fit.
             * rel_err : Vector of relative errors of the fit coefficients.
             * r_sq : ``R**2`` goodness of fit.
 
