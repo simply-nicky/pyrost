@@ -8,7 +8,7 @@ from cython.parallel import prange
 from scipy.ndimage import gaussian_filter
 from scipy.optimize import least_squares
 cimport openmp
-from libc.math cimport sqrt, exp, pi, erf, floor, ceil
+from libc.math cimport sqrt, exp, pi, erf, floor, ceil, sin, cos
 from libc.time cimport time, time_t
 from libc.string cimport memcpy
 
@@ -109,46 +109,85 @@ cdef int irfft(double* res, complex_t* arr, int n) nogil:
         destroy_rfft_plan(plan)
     return 0
 
-def rfft_python(double[::1] arr):
+cdef void rsc_type1_c(complex_t[::1] u, complex_t[::1] k, complex_t[::1] h,
+                      double dx0, double dx, double z, double wl) nogil:
     cdef:
-        int n = arr.shape[0], fail = 0
-        complex_t[::1] res = np.empty(n // 2 + 1, dtype=np.complex128)
-    fail = rfft(&res[0], &arr[0], n)
-    if fail:
-        raise RuntimeError('FFT failed')
-    return np.asarray(res)
+        int n = u.shape[0], i
+        double ph, dist
+        complex_t u0
+    for i in range(n):
+        dist = (dx0 * (i - n // 2))**2 + z**2
+        ph = 2 * pi / wl * sqrt(dist)
+        k[i] = -dx0 * z / sqrt(wl) * (sin(ph) + 1j * cos(ph)) / dist**0.75
+    fft(&u[0], n)
+    fft(&k[0], n)
+    for i in range(n):
+        ph = pi * (<double>(i) / n - (2 * i) // n)**2 * dx / dx0 * n
+        u[i] = u[i] * k[i] * (cos(ph) - 1j * sin(ph))
+        k[i] = cos(ph) - 1j * sin(ph)
+        h[i] = cos(ph) + 1j * sin(ph)
+    ifft(&u[0], n)
+    ifft(&h[0], n)
+    for i in range(n):
+        u[i] = u[i] * h[i]
+    fft(&u[0], n)
+    for i in range(n // 2):
+        u0 = u[i] * k[i]; u[i] = u[i + n // 2] * k[i + n // 2]
+        u[i + n // 2] = u0
 
-def fft_python(complex_t[::1] arr):
+cdef void rsc_type2_c(complex_t[::1] u, complex_t[::1] k, complex_t[::1] h,
+                      double dx0, double dx, double z, double wl) nogil:
     cdef:
-        int n = arr.shape[0], fail = 0
-        complex_t[::1] res = np.empty(n, dtype=np.complex128)
-    res[...] = arr
-    fail = fft(&res[0], n)
-    if fail:
-        raise RuntimeError('RFFT failed')
-    return np.asarray(res)
+        int n = u.shape[0], i
+        double ph, ph2, dist
+    for i in range(n):
+        dist = (dx * (i - n // 2))**2 + z**2
+        ph = 2 * pi / wl * sqrt(dist)
+        k[i] = -dx0 * z / sqrt(wl) * (sin(ph) + 1j * cos(ph)) / dist**0.75
+    fft(&k[0], n)
+    for i in range(n):
+        ph = pi * (<double>(i) / n - (2 * i) // n)**2 * dx0 / dx * n
+        ph2 = pi * (i - n // 2)**2 * dx0 / dx / n
+        u[i] = u[i] * (cos(ph2) + 1j * sin(ph2))
+        k[i] = k[i] * (cos(ph) + 1j * sin(ph))
+        h[i] = cos(ph2) - 1j * sin(ph2)
+    fft(&u[0], n)
+    fft(&h[0], n)
+    for i in range(n):
+        u[i] = u[i] * h[i]
+    ifft(&u[0], n)
+    for i in range(n):
+        u[i] = u[i] * k[i]
+    ifft(&u[0], n)
 
-def ifft_python(complex_t[::1] arr):
+cdef void rsc_wp_c(complex_t[::1] u, complex_t[::1] k, complex_t[::1] h, complex_t[::1] u0,
+                   double dx0, double dx, double z, double wl) nogil:
     cdef:
-        int n = arr.shape[0], fail = 0
-        complex_t[::1] res = np.empty(n, dtype=np.complex128)
-    res[...] = arr
-    fail = ifft(&res[0], n)
-    if fail:
-        raise RuntimeError('IFFT failed')
-    return np.asarray(res)
+        int a = u0.shape[0], n = u.shape[0], i
+    for i in range((n - a) // 2 + 1):
+        u[i] = 0; u[n - 1 - i] = 0
+    for i in range(a):
+        u[i + (n - a) // 2] = u0[i]
+    if dx0 >= dx:
+        rsc_type1_c(u, k, h, dx0, dx, z, wl)
+    else:
+        rsc_type2_c(u, k, h, dx0, dx, z, wl)
 
-def irfft_python(complex_t[::1] arr):
+def rsc_wp_scan(complex_t[::1] u0, double dx0, double dx, double[::1] z_arr, double wl):
     cdef:
-        int n = arr.shape[0], fail = 0
-        double[::1] res = np.empty(2 * (n - 1), dtype=np.float64)
-    fail = irfft(&res[0], &arr[0], 2 * (n - 1))
-    if fail:
-        raise RuntimeError('IRFFT failed')
-    return np.asarray(res)
+        int a = z_arr.shape[0], b = u0.shape[0], i, t
+        int n = good_size_cmplx(2 * b - 1)
+        int max_threads = openmp.omp_get_max_threads()
+        complex_t[:, ::1] u = np.empty((a, n), dtype=np.complex128)
+        complex_t[:, ::1] k = np.empty((max_threads, n), dtype=np.complex128)
+        complex_t[:, ::1] h = np.empty((max_threads, n), dtype=np.complex128)
+    for i in prange(a, schedule='guided', nogil=True):
+        t = openmp.omp_get_thread_num()
+        rsc_wp_c(u[i], k[t], h[t], u0, dx0, dx, z_arr[i], wl)
+    return np.asarray(u[:, (n - b) // 2:(n + b) // 2], order='C')
 
 def st_update(I_n, dij, basis, x_ps, y_ps, z, df, sw_max=100, n_iter=5,
-              filter=None, update_translations=False):
+              filter=None, update_translations=False, verbose=False):
     """
     Andrew's speckle tracking update algorithm
     
@@ -162,17 +201,17 @@ def st_update(I_n, dij, basis, x_ps, y_ps, z, df, sw_max=100, n_iter=5,
     n_iter - number of iterations
     """
     M = np.ones((I_n.shape[1], I_n.shape[2]), dtype=bool)
-    W = st.make_whitefield(I_n, M)
+    W = st.make_whitefield(I_n, M, verbose=verbose)
     u, dij_pix, res = st.generate_pixel_map(W.shape, dij, basis,
                                             x_ps, y_ps, z,
-                                            df, verbose=False)
-    I0, n0, m0 = st.make_object_map(I_n, M, W, dij_pix, u, subpixel=False, verbose=False)
+                                            df, verbose=verbose)
+    I0, n0, m0 = st.make_object_map(I_n, M, W, dij_pix, u, subpixel=False, verbose=verbose)
 
     es = []
     for i in range(n_iter):
 
         # calculate errors
-        error_total = st.calc_error(I_n, M, W, dij_pix, I0, u, n0, m0, subpixel=True, verbose=False)[0]
+        error_total = st.calc_error(I_n, M, W, dij_pix, I0, u, n0, m0, subpixel=True, verbose=verbose)[0]
 
         # store total error
         es.append(error_total)
@@ -180,12 +219,12 @@ def st_update(I_n, dij, basis, x_ps, y_ps, z, df, sw_max=100, n_iter=5,
         # update pixel map
         u = st.update_pixel_map(I_n, M, W, I0, u, n0, m0, dij_pix,
                                 search_window=[1, sw_max], subpixel=True,
-                                fill_bad_pix=True, integrate=False,
-                                quadratic_refinement=True, verbose=False,
+                                fill_bad_pix=False, integrate=False,
+                                quadratic_refinement=False, verbose=verbose,
                                 filter=filter)[0]
 
         # make reference image
-        I0, n0, m0 = st.make_object_map(I_n, M, W, dij_pix, u, subpixel=True, verbose=False)
+        I0, n0, m0 = st.make_object_map(I_n, M, W, dij_pix, u, subpixel=True, verbose=verbose)
 
         # update translations
         if update_translations:
