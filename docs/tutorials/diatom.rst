@@ -153,7 +153,7 @@ Phase reconstruction
 --------------------
 We got the pixel map, which can be easily translated to the deviation angles of the lens
 wavefront. Now we're able to reconstruct the lens' phase profile. Besides, you can fit
-the phase profile with polynomial function using :class:`pyrost.AbberationsFit`.
+the phase profile with polynomial function using :class:`pyrost.AberrationsFit`.
 
 .. doctest::
 
@@ -231,7 +231,7 @@ In the end you can save the results to a CXI file.
     /speckle_tracking/dss    Dataset {SCALAR}
     /speckle_tracking/mask   Dataset {516, 1556}
     /speckle_tracking/phase  Dataset {516, 1556}
-    /speckle_tracking/pixel_abberations Dataset {2, 516, 1556}
+    /speckle_tracking/pixel_aberrations Dataset {2, 516, 1556}
     /speckle_tracking/pixel_map Dataset {2, 516, 1556}
     /speckle_tracking/pixel_translations Dataset {121, 2}
     /speckle_tracking/reference_image Dataset {1455, 1498}

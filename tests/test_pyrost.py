@@ -6,7 +6,7 @@ import pyrost as rst
 import pyrost.simulation as st_sim
 
 @pytest.fixture(params=[{'det_dist': 5e5, 'n_frames': 10, 'ap_x': 4,
-                         'ap_y': 1, 'focus': 3e3, 'defocus': 2e2},
+                         'ap_y': 1, 'focus': 3e3, 'defocus': -2e2},
                         {'det_dist': 4.5e5, 'n_frames': 5, 'ap_x': 3,
                          'ap_y': 1.5, 'focus': 2e3, 'defocus': 1e2}],
                 scope='session')

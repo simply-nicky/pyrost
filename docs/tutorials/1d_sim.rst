@@ -135,9 +135,9 @@ polynomial function.
 
     >>> fit_obj = data.get_fit(axis=1) # doctest: +SKIP
     >>> fig, axes = plt.subplots(1, 2, figsize=(16, 6)) # doctest: +SKIP
-    >>> axes[0].plot(fit_obj.pixels, fit_obj.pixel_abberations) # doctest: +SKIP
+    >>> axes[0].plot(fit_obj.pixels, fit_obj.pixel_aberrations) # doctest: +SKIP
     >>> axes[0].plot(fit_obj.pixels, fit_obj.model(fit['fit'])) # doctest: +SKIP
-    >>> axes[0].set_title('Pixel abberations', fontsize=20) # doctest: +SKIP
+    >>> axes[0].set_title('Pixel aberrations', fontsize=20) # doctest: +SKIP
     >>> axes[1].plot(fit_obj.pixels, fit_obj.phase) # doctest: +SKIP
     >>> axes[1].plot(fit_obj.pixels, fit_obj.model(fit['ph_fit']), # doctest: +SKIP
     >>>              label=r'$\alpha$ = {:.5f} rad/mrad^3'.format(fit['alpha'])) # doctest: +SKIP
@@ -187,7 +187,7 @@ In the end you can save the results to a CXI file.
     /speckle_tracking/dss    Dataset {SCALAR}
     /speckle_tracking/mask   Dataset {1, 2000}
     /speckle_tracking/phase  Dataset {1, 2000}
-    /speckle_tracking/pixel_abberations Dataset {2, 1, 2000}
+    /speckle_tracking/pixel_aberrations Dataset {2, 1, 2000}
     /speckle_tracking/pixel_map Dataset {2, 1, 2000}
     /speckle_tracking/pixel_translations Dataset {200, 2}
     /speckle_tracking/reference_image Dataset {1, 5754}

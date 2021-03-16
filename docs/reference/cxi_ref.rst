@@ -40,7 +40,7 @@ is given by:
     mask = bool
     n0 = int
     phase = float
-    pixel_abberations = float
+    pixel_aberrations = float
     pixel_map = float
     pixel_translations = float
     reference_image = float
@@ -65,7 +65,7 @@ is given by:
     mask = /speckle_tracking/mask
     n0 = /speckle_tracking/n0
     phase = /speckle_tracking/phase
-    pixel_abberations = /speckle_tracking/pixel_abberations
+    pixel_aberrations = /speckle_tracking/pixel_aberrations
     pixel_map = /speckle_tracking/pixel_map
     pixel_translations = /speckle_tracking/pixel_translations
     reference_image = /speckle_tracking/reference_image
@@ -126,7 +126,7 @@ is given by:
     mask = True
     n0 = False
     phase = False
-    pixel_abberations = False
+    pixel_aberrations = False
     pixel_map = False
     pixel_translations = False
     reference_image = False

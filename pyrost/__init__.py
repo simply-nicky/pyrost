@@ -11,6 +11,6 @@ algorithm in the case of the high noise present in the measured data.
 from __future__ import absolute_import
 
 from .data_processing import SpeckleTracking, STData
-from .abberations_fit import AbberationsFit
+from .aberrations_fit import AberrationsFit
 from .protocol import INIParser, Protocol, STLoader, loader, cxi_protocol
 from .bin import *

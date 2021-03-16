@@ -223,7 +223,7 @@ class INIParser:
         string = ini_parser.get(section, option)
         is_list = re.search(cls.LIST_MATCHER, string)
         if is_list:
-            return [fmt(part.strip())
+            return [fmt(part.strip('\'\"'))
                     for part in re.split(cls.LIST_SPLITTER, is_list.group(1))]
         else:
             return fmt(string.strip())
@@ -244,6 +244,27 @@ class INIParser:
                     val = cls.get_value(ini_parser, section, option)
                     kwargs[section][option] = val
         return kwargs
+
+    @classmethod
+    def import_dict(cls, **kwargs):
+        """Initialize experimental parameters from a dictionary `kwargs`.
+
+        Parameters
+        ----------
+        **kwargs : dict
+            Dictionary with experimental parameters.
+
+        Returns
+        -------
+        INIParser
+            An :class:`INIParser` object with the parameters from `kwargs`.
+        """
+        init_dict = {}
+        for section in cls.attr_dict:
+            init_dict[section] = {}
+            for option in cls.attr_dict[section]:
+                init_dict[section][option] = kwargs[section][option]
+        return cls(**init_dict)
 
     @classmethod
     def import_ini(cls, protocol_file):
@@ -269,7 +290,7 @@ class INIParser:
         for key, val in list(obj.items())[:cls.FMT_LEN]:
             if isinstance(val, dict):
                 val = cls._format(val)
-            elif isinstance(val, list):
+            elif isinstance(val, list) and len(val) > cls.FMT_LEN:
                 val = val[:cls.FMT_LEN] + ['...']
             crop_obj[key] = val
         if len(obj) > cls.FMT_LEN:

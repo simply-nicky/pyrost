@@ -39,8 +39,8 @@ List of experimental parameters:
     * `ap_x` : Lens' aperture size along the x axis [um].
     * `ap_y` : Lens' aperture size along the y axis [um].
     * `focus` : Focal distance [um].
-    * `alpha` : Third order abberations ceofficient [rad/mrad^3].
-    * `ab_cnt` : Lens' abberations center point [0.0 - 1.0].
+    * `alpha` : Third order aberrations ceofficient [rad/mrad^3].
+    * `ab_cnt` : Lens' aberrations center point [0.0 - 1.0].
 
 * **Barcode sample parameters**:
 
