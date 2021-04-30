@@ -2,5 +2,6 @@
 Speckle Tracking scans. Wavefront propagation is based on
 the Fresnel diffraction theory.
 """
-from .st_sim_param import STParams, parameters
+from .parameters import STParams, parameters
 from .st_sim import STSim, STConverter, converter
+from .materials import Element, Material, MLL

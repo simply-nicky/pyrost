@@ -1,22 +1,76 @@
 #cython: language_level=3, boundscheck=False, wraparound=False, initializedcheck=False, cdivision=True, embedsignature=True
-cdef extern from "gsl/gsl_rng.h":
+cdef extern from "Python.h":
+    int Py_AtExit(void(*func)())
 
-    ctypedef struct gsl_rng_type
-    ctypedef struct gsl_rng
+cdef extern from "st_gaussian.h":
+    void gauss_kernel1d(double *out, double sigma, unsigned order, unsigned long ksize) nogil
+    
+    void gauss_filter_fftw(double *out, double *inp, int ndim, unsigned long *dims, double *sigma,
+                           unsigned *order, int mode, double cval, double truncate, unsigned threads) nogil
 
-    cdef gsl_rng_type *gsl_rng_mt19937
+    int gauss_filter_np(double *out, double *inp, int ndim, unsigned long *dims, double *sigma,
+                        unsigned *order, int mode, double cval, double truncate) nogil
 
-    gsl_rng *gsl_rng_alloc ( gsl_rng_type * T) nogil
+    void gauss_grad_fftw(double *out, double *inp, int ndim, unsigned long *dims, double *sigma,
+                         int mode, double cval, double truncate, unsigned threads) nogil
 
-    unsigned long int gsl_rng_get ( gsl_rng * r) nogil
+    int gauss_grad_np(double *out, double *inp, int ndim, unsigned long *dims, double *sigma,
+                      int mode, double cval, double truncate) nogil
 
-    void gsl_rng_set ( gsl_rng * r, unsigned long int seed) nogil
+cdef extern from "st_waveprop_fftw.h":
+    unsigned long next_fast_len_fftw(unsigned long target) nogil
 
-    void gsl_rng_free (gsl_rng * r) nogil
+    void rsc_fftw(complex *out, complex *inp, unsigned long howmany, unsigned long npts,
+                  double dx0, double dx, double z, double wl, unsigned threads) nogil
 
-    double gsl_rng_uniform ( gsl_rng * r) nogil
-    double gsl_rng_uniform_pos ( gsl_rng * r) nogil
+    void fraunhofer_fftw(complex *out, complex *inp, unsigned long howmany, unsigned long npts,
+                         double dx0, double dx, double z, double wl, unsigned threads) nogil
 
-cdef extern from "gsl/gsl_randist.h":
+    void fft_convolve_fftw(double *out, double *inp, double *krn, unsigned long isize,
+                           unsigned long npts, unsigned long istride, unsigned long ksize,
+                           int mode, double cval, unsigned threads) nogil
 
-    unsigned int gsl_ran_poisson ( gsl_rng * r, double mu) nogil
+cdef extern from "st_waveprop_np.h":
+    unsigned long good_size(unsigned long n) nogil
+
+    int rsc_np(complex *out, complex *inp, unsigned long howmany, unsigned long npts,
+               double dx0, double dx, double z, double wl) nogil
+
+    int fraunhofer_np(complex *out, complex *inp, unsigned long howmany, unsigned long npts,
+                      double dx0, double dx, double z, double wl) nogil
+
+    int fft_convolve_np(double *out, double *inp, double *krn, unsigned long isize,
+                        unsigned long npts, unsigned long istride, unsigned long ksize,
+                        int mode, double cval) nogil
+
+cdef extern from "st_utils.h":
+    void extend_line_double(double *out, double *inp, int mode, double cval, unsigned long osize,
+                            unsigned long isize, unsigned long istride, unsigned long threads) nogil
+
+    void barcode_bars(double *bars, unsigned long size, double x0, double b_dx, double rd, long seed) nogil
+
+    void ml_profile(complex *out, double *x, double *layers, unsigned npts, unsigned nlyr,
+                    complex mt0, complex mt1, complex mt2, double sgm, unsigned threads) nogil
+
+    void frames(double *out, double *pfx, double *pfy, double *wfx, double *wfy, double dx,
+                double dy, unsigned long xpts, unsigned long ypts, unsigned long nframes,
+                unsigned long ss_size, unsigned long fs_size, long seed, unsigned threads) nogil
+
+    void whitefield(void *out, void *data, unsigned char *mask, unsigned long nframes,
+                    unsigned long frame_size, unsigned long size, int (*compare)(void *, void *),
+                    unsigned threads) nogil
+
+    int compare_double(void *a, void *b) nogil
+    int compare_float(void *a, void *b) nogil
+    int compare_long(void *a, void *b) nogil
+
+cdef extern from "fftw3.h":
+    void fftw_init_threads() nogil
+    void fftw_cleanup_threads() nogil
+
+cdef enum:
+    EXTEND_CONSTANT = 0
+    EXTEND_NEAREST = 1
+    EXTEND_MIRROR = 2
+    EXTEND_REFLECT = 3
+    EXTEND_WRAP = 4

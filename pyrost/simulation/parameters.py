@@ -15,6 +15,7 @@ import os
 import numpy as np
 from ..protocol import INIParser, ROOT_PATH
 from ..bin import bar_positions, barcode_profile
+from .materials import Material, MLL
 
 PARAMETERS_FILE = os.path.join(ROOT_PATH, 'config/parameters.ini')
 
@@ -49,12 +50,12 @@ class STParams(INIParser):
                  'lens':     ('alpha', 'ap_x', 'ap_y', 'focus', 'ab_cnt'),
                  'barcode':  ('bar_atn', 'bar_rnd', 'bar_sigma', 'bar_size',
                               'bulk_atn', 'offset'),
-                 'system':   ('verbose',)}
+                 'system':   ('seed',)}
 
     fmt_dict = {'exp_geom': 'float', 'exp_geom/n_frames': 'int',
                 'detector': 'int', 'detector/pix_size': 'float',
                 'source': 'float', 'lens': 'float', 'barcode': 'float',
-                'system/verbose': 'bool'}
+                'system/seed': 'int'}
     FMT_LEN = 7
 
     @classmethod
@@ -100,6 +101,13 @@ class STParams(INIParser):
 
     def __str__(self):
         return self._format(self.export_dict()).__str__()
+
+    def get_seed(self):
+        if self.seed > 0:
+            return self.seed
+        else:
+            return np.random.default_rng().integers(0, np.iinfo(np.int_).max,
+                                                    endpoint=False)
 
     @classmethod
     def import_dict(cls, **kwargs):
@@ -150,7 +158,7 @@ class STParams(INIParser):
         """
         nx_ltos = int(4 * self.ap_x**2 * max(self.focus, np.abs(self.defocus)) / self.focus**2 / self.wl)
         nx_stod = int(2 * self.fs_size * self.pix_size * self.ap_x * np.abs(self.defocus) / self.focus / self.wl / self.det_dist)
-        return max(nx_ltos, nx_stod, self.fs_size)
+        return max(nx_ltos, nx_stod)
 
     def y_wavefront_size(self):
         r"""Return wavefront array size along the y axis, that
@@ -180,7 +188,7 @@ class STParams(INIParser):
         """
         ny_ltos = int(8 * self.ap_y**2 / (self.focus + self.defocus) / self.wl)
         ny_stod = int(2 * self.ss_size * self.pix_size * self.ap_y / self.wl / self.det_dist)
-        return max(ny_ltos, ny_stod, self.ss_size)
+        return max(ny_ltos, ny_stod)
 
     def lens_wavefronts(self, n_x=None, n_y=None, return_dxdy=False):
         r"""Return wavefields at the lens plane along x and y axes.
@@ -261,7 +269,7 @@ class STParams(INIParser):
                 3.75e8 * (self.ap_x / self.focus)**2 / dist
         return np.tan(th_lb) * dist, np.tan(th_ub) * dist
 
-    def bar_positions(self, dist):
+    def bar_positions(self, dist, rnd_dev=True):
         """Generate a coordinate array of barcode's bar positions at
         distance `dist` from focal plane.
 
@@ -281,8 +289,10 @@ class STParams(INIParser):
             generation algorithm.
         """
         x0, x1 = self.beam_span(dist)
+        seed = self.get_seed() if rnd_dev else -1
         return bar_positions(x0=x0 + self.offset, b_dx=self.bar_size, rd=self.bar_rnd,
-                             x1=x1 + self.step_size * self.n_frames - self.offset)
+                             x1=x1 + self.step_size * self.n_frames - self.offset,
+                             seed=seed)
 
     def sample_positions(self):
         """Generate an array of sample's translations with random deviation.
@@ -292,10 +302,11 @@ class STParams(INIParser):
         smp_pos : numpy.ndarray
             Array of sample translations [um].
         """
-        rnd_arr = 2 * self.step_rnd * (np.random.random(self.n_frames) - 0.5)
+        rng = np.random.default_rng(self.get_seed())
+        rnd_arr = 2 * self.step_rnd * (rng.random(self.n_frames) - 0.5)
         return self.step_size * (np.arange(self.n_frames) + rnd_arr)
 
-    def barcode_profile(self, bar_pos, x_arr):
+    def barcode_profile(self, x_arr, bars, num_threads=1):
         """Generate a barcode's transmission profile at `x_arr`
         coordinates.
 
@@ -317,8 +328,9 @@ class STParams(INIParser):
         bin.barcode_profile : Full details of barcode's transmission
             profile generation algorithm.
         """
-        return barcode_profile(bar_pos=bar_pos, x_arr=x_arr.ravel(), b_atn=self.bar_atn,
-                               b_sgm=self.bar_sigma, blk_atn=self.bulk_atn).reshape(x_arr.shape)
+        return barcode_profile(x_arr=x_arr, bars=bars, bulk_atn=self.bulk_atn,
+                               bar_atn=self.bar_atn, bar_sigma=self.bar_sigma,
+                               num_threads=num_threads)
 
     def source_curve(self, dist, dx):
         """Return source's rocking curve profile at `dist` distance from
@@ -340,23 +352,6 @@ class STParams(INIParser):
         sc_x = dx * np.arange(-n_sc // 2, n_sc // 2 + 1)
         sc = np.exp(-sc_x**2 / 2 / sc_sgm**2)
         return sc / sc.sum()
-
-    def fs_roi(self):
-        """Return detector's region of interest along the fast axis.
-
-        Returns
-        -------
-        fs_lb : int
-            Beam's lower bound along the detector's fast axis.
-        fs_ub : int
-            Beam's upper bound along the detector's fast axis.
-        """
-        x_lb, x_ub = self.beam_span(self.det_dist)
-        fs_lb = int(x_lb // self.pix_size) + self.fs_size // 2
-        fs_ub = int(x_ub // self.pix_size) + self.fs_size // 2
-        fs_lb = fs_lb if fs_lb > 0 else 0
-        fs_ub = fs_ub if fs_ub < self.fs_size else self.fs_size
-        return fs_lb, fs_ub
 
     def export_dict(self):
         """Export experimental parameters to :class:`dict`.
@@ -394,3 +389,73 @@ def parameters(**kwargs):
     st_params = STParams.import_ini(PARAMETERS_FILE).export_dict()
     st_params.update(**kwargs)
     return STParams.import_dict(**st_params)
+
+class MSParams(INIParser):
+    attr_dict = {'multislice':   ('x_step', 'z_step', 'distance'),
+                 'mll_mat1':   ('formula', 'density'),
+                 'mll_mat2':   ('formula', 'density'),
+                 'mll':          ('ap_x', 'n_min', 'n_max', 'focus', 'sigma', 'wavelength')}
+
+    fmt_dict = {'exp_geom': 'float', 'mll_mat1/formula': 'str', 'mll_mat1/density': 'float',
+                'mll_mat2/formula': 'str', 'mll_mat2/density': 'float', 'mll/n_min': 'int',
+                'mll/n_max': 'int', 'mll/focus': 'float', 'mll/sigma': 'float', 'mll/wavelength': 'float'}
+
+    def __init__(self, **kwargs):
+        super(MSParams, self).__init__(**kwargs)
+        self.__dict__['_lookup'] = self.lookup_dict()
+
+    @classmethod
+    def lookup_dict(cls):
+        """Look-up table between the sections and the parameters.
+
+        Returns
+        -------
+        dict
+            Look-up dictionary.
+        """
+        lookup = {}
+        for section in ('exp_geom', 'mll'):
+            for option in cls.attr_dict[section]:
+                lookup[option] = section
+        return lookup
+
+    def __getattr__(self, attr):
+        if attr in self._lookup:
+            return self.__dict__[self._lookup[attr]][attr]
+        else:
+            raise AttributeError(attr + " doesn't exist")
+
+    def __setattr__(self, attr, value):
+        if attr in self._lookup:
+            self.__dict__[self._lookup[attr]][attr] = value
+        else:
+            raise AttributeError(attr + ' not allowed')
+
+    def get_coords(self):
+        mll = self.get_mll()
+        x_min, x_max = mll.get_span()
+        x_arr = np.arange((x_min - (x_max - x_min) / 2) // self.x_step,
+                          (x_max + (x_max - x_min) / 2) // self.x_step)
+        return self.x_step * x_arr
+
+    def get_kernel(self, size=None):
+        if size is None:
+            size = int(10 * self.z_step / self.x_step)
+        x_arr = self.x_step * np.arange(-size // 2, size // 2)
+        dist = np.sqrt(x_arr**2 + self.z_step**2)
+        return self.x_step * self.z_step * np.exp(-2j * np.pi / self.wavelength * dist) / \
+               (1j * self.wavelength**0.5 * dist**1.5)
+
+    def get_mat1(self):
+        return Material(**self.mll_mat1)
+
+    def get_mat2(self):
+        return Material(**self.mll_mat2)
+
+    def get_mll(self):
+        layers = np.arange(self.n_min, self.n_max, dtype=int)
+        return MLL(mat1=self.get_mat1(), mat2=self.get_mat2(), layers=layers,
+                   focus=self.focus, sigma=self.sigma, wavelength=self.wavelength)
+
+    def get_wavefront(self, x_arr):
+        return np.where(np.abs(x_arr - x_arr.mean()) < self.ap_x / 2, 1. + 0.j, 0. + 0.j)
