@@ -198,7 +198,7 @@ class INIParser:
         fmt = cls.fmt_dict.get(os.path.join(section, option))
         if not fmt:
             fmt = cls.fmt_dict.get(section)
-        return cls.known_types[fmt]
+        return cls.known_types.get(fmt, str)
 
     @classmethod
     def get_value(cls, ini_parser, section, option):

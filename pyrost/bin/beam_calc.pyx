@@ -1,182 +1,249 @@
 cimport numpy as np
 import numpy as np
-from .beam_calc cimport *
-from libc.math cimport sqrt, cos, sin, pi, erf, fabs
-from libc.time cimport time_t, time
-from libc.string cimport memcpy
-from cython.parallel import prange
-cimport openmp
+import cython
+from libc.string cimport memcmp
+from libc.math cimport log
 
-cdef extern from "fft.c":
+# Numpy must be initialized. When using numpy from C or Cython you must
+# *ALWAYS* do that, or you will have segfaults
+np.import_array()
 
-    int good_size_real(int n)
-    int good_size_cmplx(int n)
+def init_fftw():
+    fftw_init_threads()
+    
+    if Py_AtExit(fftw_cleanup_threads) != 0:
+        raise ImportError('Failed to register the fftw library shutdown callback')
 
-    ctypedef struct cfft_plan_i
-    cfft_plan_i* make_cfft_plan(int length) nogil
-    void destroy_cfft_plan(cfft_plan_i* plan) nogil
+init_fftw()
 
-    int cfft_forward(cfft_plan_i* plan, double* c, double fct) nogil
-    int cfft_backward(cfft_plan_i* plan, double* c, double fct) nogil
-
-    ctypedef struct rfft_plan_i
-    rfft_plan_i* make_rfft_plan(int length) nogil
-    void destroy_rfft_plan(rfft_plan_i* plan) nogil
-
-    int rfft_forward(rfft_plan_i* plan, double* c, double fct) nogil
-    int rfft_backward(rfft_plan_i* plan, double* c, double fct) nogil
-
-ctypedef np.complex128_t complex_t
-ctypedef np.uint64_t uint_t
-ctypedef np.uint32_t uint32_t
-ctypedef np.npy_bool bool_t
-
-ctypedef fused numeric:
-    np.float64_t
-    np.float32_t
-    np.uint64_t
-    np.int64_t
-
-DEF X_TOL = 4.320005384913445 # Y_TOL = 1e-9
-
-cdef int fft(complex_t* arr, int n) nogil:
-    cdef double* dptr = <double*>(arr)
-    if not dptr:
-        return -1
-    cdef cfft_plan_i* plan = make_cfft_plan(n)
-    if not plan:
-        return -1
-    cdef int fail = cfft_forward(plan, dptr, 1.0)
-    if fail:
-        return -1
-    if plan:
-        destroy_cfft_plan(plan)
-    return 0
-
-cdef int ifft(complex_t* arr, int n) nogil:
-    cdef double* dptr = <double*>(arr)
-    if not dptr:
-        return -1
-    cdef cfft_plan_i* plan = make_cfft_plan(n)
-    if not plan:
-        return -1
-    cdef double fct = 1.0 / n
-    cdef int fail = cfft_backward(plan, dptr, fct)
-    if fail:
-        return -1
-    if plan:
-        destroy_cfft_plan(plan)
-    return 0
-
-cdef int rfft(complex_t* res, double* arr, int n) nogil:
-    cdef double* rptr = <double*>(res)
-    cdef double* dptr = <double*>(arr)
-    if not dptr:
-        return -1
-    cdef rfft_plan_i* plan = make_rfft_plan(n)
-    if not plan:
-        return -1
-    memcpy(<char *>(rptr + 1), dptr, n * sizeof(double))
-    cdef int fail = rfft_forward(plan, rptr + 1, 1.0)
-    rptr[0] = rptr[1]; rptr[1] = 0.0
-    if not n % 2:
-        rptr[n + 1] = 0.0
-    if fail:
-        return -1
-    if plan:
-        destroy_rfft_plan(plan)
-    return 0
-
-cdef int irfft(double* res, complex_t* arr, int n) nogil:
-    cdef double* dptr = <double*>(arr)
-    cdef double* rptr = <double*>(res)
-    if not dptr:
-        return -1
-    cdef rfft_plan_i* plan = make_rfft_plan(n)
-    if not plan:
-        return -1
-    cdef double fct = 1.0 / n
-    memcpy(<char *>(rptr + 1), dptr + 2, (n - 1) * sizeof(double))
-    rptr[0] = dptr[0]
-    cdef int fail = rfft_backward(plan, rptr, fct)
-    if fail:
-        return -1
-    if plan:
-        destroy_rfft_plan(plan)
-    return 0
-
-cdef void rsc_type1_c(complex_t[::1] u, complex_t[::1] k, complex_t[::1] h,
-                      double dx0, double dx, double z, double wl) nogil:
-    cdef:
-        int n = u.shape[0], i
-        double ph, dist
-        complex_t u0
-    for i in range(n):
-        dist = (dx0 * (i - n // 2))**2 + z**2
-        ph = 2 * pi / wl * sqrt(dist)
-        k[i] = -dx0 * z / sqrt(wl) * (sin(ph) + 1j * cos(ph)) / dist**0.75
-    fft(&u[0], n)
-    fft(&k[0], n)
-    for i in range(n):
-        ph = pi * (<double>(i) / n - (2 * i) // n)**2 * dx / dx0 * n
-        u[i] = u[i] * k[i] * (cos(ph) - 1j * sin(ph))
-        k[i] = cos(ph) - 1j * sin(ph)
-        h[i] = cos(ph) + 1j * sin(ph)
-    ifft(&u[0], n)
-    ifft(&h[0], n)
-    for i in range(n):
-        u[i] = u[i] * h[i]
-    fft(&u[0], n)
-    for i in range(n // 2):
-        u0 = u[i] * k[i]; u[i] = u[i + n // 2] * k[i + n // 2]
-        u[i + n // 2] = u0
-
-cdef void rsc_type2_c(complex_t[::1] u, complex_t[::1] k, complex_t[::1] h,
-                      double dx0, double dx, double z, double wl) nogil:
-    cdef:
-        int n = u.shape[0], i
-        double ph, ph2, dist
-    for i in range(n):
-        dist = (dx * (i - n // 2))**2 + z**2
-        ph = 2 * pi / wl * sqrt(dist)
-        k[i] = -dx0 * z / sqrt(wl) * (sin(ph) + 1j * cos(ph)) / dist**0.75
-    fft(&k[0], n)
-    for i in range(n):
-        ph = pi * (<double>(i) / n - (2 * i) // n)**2 * dx0 / dx * n
-        ph2 = pi * (i - n // 2)**2 * dx0 / dx / n
-        u[i] = u[i] * (cos(ph2) + 1j * sin(ph2))
-        k[i] = k[i] * (cos(ph) + 1j * sin(ph))
-        h[i] = cos(ph2) - 1j * sin(ph2)
-    fft(&u[0], n)
-    fft(&h[0], n)
-    for i in range(n):
-        u[i] = u[i] * h[i]
-    ifft(&u[0], n)
-    for i in range(n):
-        u[i] = u[i] * k[i]
-    ifft(&u[0], n)
-
-cdef void rsc_wp_c(complex_t[::1] u, complex_t[::1] k, complex_t[::1] h, complex_t[::1] u0,
-                   double dx0, double dx, double z, double wl) nogil:
-    cdef:
-        int a = u0.shape[0], n = u.shape[0], i
-    for i in range((n - a) // 2 + 1):
-        u[i] = 0; u[n - 1 - i] = 0
-    for i in range(a):
-        u[i + (n - a) // 2] = u0[i]
-    if dx0 >= dx:
-        rsc_type1_c(u, k, h, dx0, dx, z, wl)
-    else:
-        rsc_type2_c(u, k, h, dx0, dx, z, wl)
-
-def rsc_wp(complex_t[::1] u0, double dx0, double dx, double z, double wl):
-    r"""Wavefront propagator based on Rayleigh-Sommerfeld convolution
-    method [RSC]_. Propagates a wavefront `u0` by `z` distance
-    downstream.
+def next_fast_len(np.npy_intp target, str backend='fftw'):
+    r"""Find the next fast size of input data to fft, for zero-padding, etc.
+    FFT algorithms gain their speed by a recursive divide and conquer strategy.
+    This relies on efficient functions for small prime factors of the input length.
+    Thus, the transforms are fastest when using composites of the prime factors handled
+    by the fft implementation. If there are efficient functions for all radices <= n,
+    then the result will be a number x >= target with only prime factors < n. (Also
+    known as n-smooth numbers)
 
     Parameters
     ----------
-    u0 : numpy.ndarray
+    target : int
+        Length to start searching from. Must be a positive integer.
+    backend : {'fftw', 'numpy'}, optional
+        Find n-smooth number for the FFT implementation from the specified
+        library.
+
+    Returns
+    -------
+    n : int
+        The smallest fast length greater than or equal to `target`.
+    """
+    if backend == 'fftw':
+        return next_fast_len_fftw(target)
+    elif backend == 'numpy':
+        return good_size(target)
+    else:
+        raise ValueError('{:s} is invalid backend'.format(backend))
+
+cdef int extend_mode_to_code(str mode) except -1:
+    if mode == 'constant':
+        return EXTEND_CONSTANT
+    elif mode == 'nearest':
+        return EXTEND_NEAREST
+    elif mode == 'mirror':
+        return EXTEND_MIRROR
+    elif mode == 'reflect':
+        return EXTEND_REFLECT
+    elif mode == 'wrap':
+        return EXTEND_WRAP
+    else:
+        raise RuntimeError('boundary mode not supported')
+
+cdef np.ndarray number_to_array(object num, np.npy_intp rank, int type_num):
+    cdef np.npy_intp *dims = [rank,]
+    cdef np.ndarray arr = <np.ndarray>np.PyArray_SimpleNew(1, dims, type_num)
+    cdef int i
+    for i in range(rank):
+        arr[i] = num
+    return arr
+
+cdef np.ndarray normalize_sequence(object inp, np.npy_intp rank, int type_num):
+    r"""If input is a scalar, create a sequence of length equal to the
+    rank by duplicating the input. If input is a sequence,
+    check if its length is equal to the length of array.
+    """
+    cdef np.ndarray arr
+    cdef int tn
+    if np.PyArray_IsAnyScalar(inp):
+        arr = number_to_array(inp, rank, type_num)
+    elif np.PyArray_Check(inp):
+        arr = <np.ndarray>inp
+        tn = np.PyArray_TYPE(arr)
+        if tn != type_num:
+            arr = <np.ndarray>np.PyArray_Cast(arr, type_num)
+    elif isinstance(inp, (list, tuple)):
+        arr = <np.ndarray>np.PyArray_FROM_OTF(inp, type_num, np.NPY_ARRAY_C_CONTIGUOUS)
+    else:
+        raise ValueError("Wrong sequence argument type")
+    cdef np.npy_intp size = np.PyArray_SIZE(arr)
+    if size != rank:
+        raise ValueError("Sequence argument must have length equal to input rank")
+    return arr
+
+def gaussian_kernel(sigma: double, order: cython.uint=0, truncate: cython.double=4.) -> np.ndarray:
+    cdef np.npy_intp radius = <np.npy_intp>(sigma * truncate)
+    cdef np.npy_intp *dims = [2 * radius + 1,]
+    cdef np.ndarray out = <np.ndarray>np.PyArray_SimpleNew(1, dims, np.NPY_FLOAT64)
+    cdef double *_out = <double *>np.PyArray_DATA(out)
+    with nogil:
+        gauss_kernel1d(_out, sigma, order, dims[0])
+    return out
+
+def gaussian_filter(inp: np.ndarray, sigma: object, order: object=0, mode: str='reflect',
+                    cval: cython.double=0., truncate: cython.double=4., backend: str='fftw',
+                    num_threads: cython.uint=1) -> np.ndarray:
+    r"""Multidimensional Gaussian filter. The multidimensional filter is implemented as
+    a sequence of 1-D FFT convolutions.
+
+    Parameters
+    ----------
+    inp : np.ndarray
+        The input array.
+    sigma : float or list of floats
+        Standard deviation for Gaussian kernel. The standard deviations of the Gaussian
+        filter are given for each axis as a sequence, or as a single number, in which case
+        it is equal for all axes.
+    order : int or list of ints, optional
+        The order of the filter along each axis is given as a sequence of integers, or as
+        a single number. An order of 0 corresponds to convolution with a Gaussian kernel.
+        A positive order corresponds to convolution with that derivative of a Gaussian.
+    mode : {'constant', 'nearest', 'mirror', 'wrap'}, optional
+        The mode parameter determines how the input array is extended when the filter
+        overlaps a border. Default value is 'reflect'. The valid values and their behavior
+        is as follows:
+
+        * 'constant', (k k k k | a b c d | k k k k) : The input is extended by filling all
+          values beyond the edge with the same constant value, defined by the `cval`
+          parameter.
+        * 'nearest', (a a a a | a b c d | d d d d) : The input is extended by replicating
+          the last pixel.
+        * 'mirror', (c d c b | a b c d | c b a b) : The input is extended by reflecting
+          about the center of the last pixel. This mode is also sometimes referred to as
+          whole-sample symmetric.
+        * 'reflect', (d c b a | a b c d | d c b a) : The input is extended by reflecting
+          about the edge of the last pixel. This mode is also sometimes referred to as
+          half-sample symmetric.
+    cval : float, optional
+        Value to fill past edges of input if mode is ‘constant’. Default is 0.0.
+    truncate : float, optional
+        Truncate the filter at this many standard deviations. Default is 4.0.
+    backend : {'fftw', 'numpy'}, optional
+        Choose backend library for the FFT implementation.
+    num_threads : int, optional
+        Number of threads.
+    
+    Returns
+    -------
+    out : np.ndarray
+        Returned array of same shape as `input`.
+    """
+    inp = np.PyArray_GETCONTIGUOUS(inp)
+    inp = np.PyArray_Cast(inp, np.NPY_FLOAT64)
+
+    cdef int ndim = inp.ndim
+    cdef np.ndarray sigmas = normalize_sequence(sigma, ndim, np.NPY_FLOAT64)
+    cdef np.ndarray orders = normalize_sequence(order, ndim, np.NPY_UINT32)
+    cdef np.npy_intp *dims = inp.shape
+    cdef np.ndarray out = <np.ndarray>np.PyArray_SimpleNew(ndim, dims, np.NPY_FLOAT64)
+    cdef double *_out = <double *>np.PyArray_DATA(out)
+    cdef double *_inp = <double *>np.PyArray_DATA(inp)
+    cdef unsigned long *_dims = <unsigned long *>dims
+    cdef double *_sig = <double *>np.PyArray_DATA(sigmas)
+    cdef unsigned *_ord = <unsigned *>np.PyArray_DATA(orders)
+    cdef int _mode = extend_mode_to_code(mode)
+    with nogil:
+        if backend == 'fftw':
+            gauss_filter_fftw(_out, _inp, ndim, _dims, _sig, _ord, _mode, cval, truncate, num_threads)
+        elif backend == 'numpy':
+            fail = gauss_filter_np(_out, _inp, ndim, _dims, _sig, _ord, _mode, cval, truncate)
+            if fail:
+                raise RuntimeError('NumPy FFT exited with error')
+        else:
+            raise ValueError('{:s} is invalid backend'.format(backend))
+    return out
+
+def gaussian_gradient_magnitude(inp: np.ndarray, sigma: object, mode: str='mirror',
+                                cval: cython.double=0., truncate: cython.double=4.,
+                                backend: str='fftw', num_threads: cython.uint=1) -> np.ndarray:
+    r"""Multidimensional gradient magnitude using Gaussian derivatives. The multidimensional
+    filter is implemented as a sequence of 1-D FFT convolutions.
+
+    Parameters
+    ----------
+    input : np.ndarray
+        The input array.
+    sigma : float or list of floats
+        The standard deviations of the Gaussian filter are given for each axis as a sequence,
+        or as a single number, in which case it is equal for all axes.
+    mode : {'constant', 'nearest', 'mirror', 'wrap'}, optional
+        The mode parameter determines how the input array is extended when the filter
+        overlaps a border. Default value is 'reflect'. The valid values and their behavior
+        is as follows:
+
+        * 'constant', (k k k k | a b c d | k k k k) : The input is extended by filling all
+          values beyond the edge with the same constant value, defined by the `cval`
+          parameter.
+        * 'nearest', (a a a a | a b c d | d d d d) : The input is extended by replicating
+          the last pixel.
+        * 'mirror', (c d c b | a b c d | c b a b) : The input is extended by reflecting
+          about the center of the last pixel. This mode is also sometimes referred to as
+          whole-sample symmetric.
+        * 'reflect', (d c b a | a b c d | d c b a) : The input is extended by reflecting
+          about the edge of the last pixel. This mode is also sometimes referred to as
+          half-sample symmetric.
+    cval : float, optional
+        Value to fill past edges of input if mode is ‘constant’. Default is 0.0.
+    truncate : float, optional
+        Truncate the filter at this many standard deviations. Default is 4.0.
+    backend : {'fftw', 'numpy'}, optional
+        Choose backend library for the FFT implementation.
+    num_threads : int, optional
+        Number of threads.
+    """
+    inp = np.PyArray_GETCONTIGUOUS(inp)
+    inp = np.PyArray_Cast(inp, np.NPY_FLOAT64)
+
+    cdef int ndim = inp.ndim
+    cdef np.ndarray sigmas = normalize_sequence(sigma, ndim, np.NPY_FLOAT64)
+    cdef np.npy_intp *dims = inp.shape
+    cdef np.ndarray out = <np.ndarray>np.PyArray_SimpleNew(ndim, dims, np.NPY_FLOAT64)
+    cdef double *_out = <double *>np.PyArray_DATA(out)
+    cdef double *_inp = <double *>np.PyArray_DATA(inp)
+    cdef unsigned long *_dims = <unsigned long *>dims
+    cdef double *_sig = <double *>np.PyArray_DATA(sigmas)
+    cdef int _mode = extend_mode_to_code(mode)
+    with nogil:
+        if backend == 'fftw':
+            gauss_grad_fftw(_out, _inp, ndim, _dims, _sig, _mode, cval, truncate, num_threads)
+        elif backend == 'numpy':
+            fail = gauss_grad_np(_out, _inp, ndim, _dims, _sig, _mode, cval, truncate)
+            if fail:
+                raise RuntimeError('NumPy FFT exited with error')
+        else:
+            raise ValueError('{:s} is invalid backend'.format(backend))
+    return out
+
+def rsc_wp(wft: np.ndarray, dx0: cython.double, dx: cython.double, z: cython.double,
+           wl: cython.double, axis: cython.int=-1, backend: str='fftw',
+           num_threads: cython.uint=1) -> np.ndarray:
+    r"""Wavefront propagator based on Rayleigh-Sommerfeld convolution
+    method [RSC]_. Propagates a wavefront `wft` by `z` distance
+    downstream. You can choose between 'fftw' and 'numpy' backends for FFT
+    calculations. 'fftw' backend supports multiprocessing.
+
+    Parameters
+    ----------
+    wft : numpy.ndarray
         Initial wavefront.
     dx0 : float
         Sampling interval at the plane upstream [um].
@@ -186,11 +253,26 @@ def rsc_wp(complex_t[::1] u0, double dx0, double dx, double z, double wl):
         Propagation distance [um].
     wl : float
         Incoming beam's wavelength [um].
+    axis : int, optional
+        Axis of `wft` array along which the calculation is
+        performed.
+    backend : {'fftw', 'numpy'}, optional
+        Choose backend library for the FFT implementation.
+    num_threads: int, optional
+        Number of threads used in calculation. Only 'fftw' backend
+        supports it.
 
     Returns
     -------
-    u : numpy.ndarray
+    out : numpy.ndarray
         Propagated wavefront.
+
+    Raises
+    ------
+    RuntimeError
+        If 'numpy' backend exits with eror during the calculation.
+    ValueError
+        If `backend` option is invalid.
 
     Notes
     -----
@@ -212,52 +294,45 @@ def rsc_wp(complex_t[::1] u0, double dx0, double dx, double z, double wl):
              a type of scaled convolution," Appl. Opt. 48, 4310-4319
              (2009).
     """
-    cdef:
-        int a = u0.shape[0], i
-        double alpha = fabs(dx0 / dx) if fabs(dx0) <= fabs(dx) else fabs(dx / dx0)
-        int n = good_size_cmplx(2 * (<int>(a * (1 + alpha) // 2) + 1))
-        complex_t[::1] u = np.empty(n, dtype=np.complex128)
-        complex_t[::1] k = np.empty(n, dtype=np.complex128)
-        complex_t[::1] h = np.empty(n, dtype=np.complex128)
-    rsc_wp_c(u, k, h, u0, fabs(dx0), fabs(dx), z, wl)
-    return np.asarray(u[(n - a) // 2:(n + a) // 2])
+    wft = np.PyArray_GETCONTIGUOUS(wft)
+    wft = np.PyArray_Cast(wft, np.NPY_COMPLEX128)
 
-cdef void fhf_wp_c(complex_t[::1] u, complex_t[::1] k, complex_t[::1] u0,
-                   double dx0, double dx, double z, double wl) nogil:
-    cdef:
-        int a = u0.shape[0], n = u.shape[0], i
-        double ph0 = 2 * pi / wl * z, ph1
-        double alpha = dx0 * dx / wl / z
-        complex_t h0 = -(sin(ph0) + 1j * cos(ph0)) / sqrt(wl * z) * dx0, w0, w1
-    for i in range((n - a) // 2 + 1):
-        u[i] = 0; u[n - 1 - i] = 0
-    for i in range(a):
-        u[i + (n - a) // 2] = u0[i]
-    for i in range(n):
-        ph0 = pi * (i - n // 2)**2 * alpha
-        k[i] = cos(ph0) - 1j * sin(ph0)
-        u[i] = u[i] * (cos(ph0) + 1j * sin(ph0))
-    fft(&u[0], n)
-    fft(&k[0], n)
-    for i in range(n):
-        u[i] = u[i] * k[i]
-    ifft(&u[0], n)
-    for i in range(n // 2):
-        ph0 = pi * i**2 * alpha
-        ph1 = pi * (i - n // 2)**2 * alpha
-        w0 = (cos(ph0) - 1j * sin(ph0)) * u[i]
-        w1 = (cos(ph1) - 1j * sin(ph1)) * u[i + n // 2]
-        u[i] = h0 * (cos(ph1 / dx0 * dx) - 1j * sin(ph1 / dx0 * dx)) * w1
-        u[i + n // 2] = h0 * (cos(ph0 / dx0 * dx) - 1j * sin(ph0 / dx0 * dx)) * w0
+    cdef np.npy_intp isize = np.PyArray_SIZE(wft)
+    cdef int ndim = wft.ndim
+    axis = axis if axis >= 0 else ndim + axis
+    cdef np.npy_intp npts = np.PyArray_DIM(wft, axis)
+    cdef int howmany = isize / npts
+    if axis != ndim - 1:
+        wft = <np.ndarray>np.PyArray_SwapAxes(wft, axis, ndim - 1)
+    cdef np.npy_intp *dims = wft.shape
+    cdef np.ndarray out = <np.ndarray>np.PyArray_SimpleNew(ndim, dims, np.NPY_COMPLEX128)
+    cdef complex *_out = <complex *>np.PyArray_DATA(out)
+    cdef complex *_inp = <complex *>np.PyArray_DATA(wft)
+    cdef int fail = 0
+    with nogil:
+        if backend == 'fftw':
+            rsc_fftw(_out, _inp, howmany, npts, dx0, dx, z, wl, num_threads)
+        elif backend == 'numpy':
+            fail = rsc_np(_out, _inp, howmany, npts, dx0, dx, z, wl)
+            if fail:
+                raise RuntimeError('NumPy FFT exited with error')
+        else:
+            raise ValueError('{:s} is invalid backend'.format(backend))
+    if axis != ndim - 1:
+        out = <np.ndarray>np.PyArray_SwapAxes(wft, axis, ndim - 1)
+    return out
 
-def fhf_wp(complex_t[::1] u0, double dx0, double dx, double z, double wl):
-    r"""One-dimensional discrete form of Fraunhofer diffraction
-    performed by the means of Fast Fourier transform.
+def fraunhofer_wp(wft: np.ndarray, dx0: cython.double, dx: cython.double,
+                  z: cython.double, wl: cython.double, axis: cython.int=-1,
+                  backend: str='fftw', num_threads: cython.uint=1) -> np.ndarray:
+    r"""Fraunhofer diffraction propagator. Propagates a wavefront `wft` by
+    `z` distance downstream. You can choose between 'fftw' and 'numpy'
+    backends for FFT calculations. 'fftw' backend supports multiprocessing.
 
     Parameters
     ----------
-    u0 : numpy.ndarray
-        Wavefront at the plane upstream.
+    wft : numpy.ndarray
+        Initial wavefront.
     dx0 : float
         Sampling interval at the plane upstream [um].
     dx : float
@@ -266,11 +341,26 @@ def fhf_wp(complex_t[::1] u0, double dx0, double dx, double z, double wl):
         Propagation distance [um].
     wl : float
         Incoming beam's wavelength [um].
+    axis : int, optional
+        Axis of `wft` array along which the calculation is
+        performed.
+    backend : {'fftw', 'numpy'}, optional
+        Choose backend library for the FFT implementation.
+    num_threads: int, optional
+        Number of threads used in calculation. Only 'fftw' backend
+        supports it.
 
     Returns
     -------
-    numpy.ndarray
-        Wavefront at the plane downstream.
+    out : numpy.ndarray
+        Propagated wavefront.
+
+    Raises
+    ------
+    RuntimeError
+        If 'numpy' backend exits with eror during the calculation.
+    ValueError
+        If `backend` option is invalid.
 
     Notes
     -----
@@ -281,54 +371,36 @@ def fhf_wp(complex_t[::1] u0, double dx0, double dx, double z, double wl):
         e^{-\frac{j k}{2 z} x^{\prime 2}} \int_{-\infty}^{+\infty} u(x)
         e^{j\frac{2 \pi}{\lambda z} x x^{\prime}} dx
     """
-    cdef:
-        int a = u0.shape[0]
-        int n = good_size_cmplx(2 * a - 1)
-        complex_t[::1] u = np.empty(n, dtype=np.complex128)
-        complex_t[::1] k = np.empty(n, dtype=np.complex128)
-    fhf_wp_c(u, k, u0, dx0, dx, z, wl)
-    return np.asarray(u[(n - a) // 2:(n + a) // 2])
+    wft = np.PyArray_GETCONTIGUOUS(wft)
+    wft = np.PyArray_Cast(wft, np.NPY_COMPLEX128)
 
-def fhf_wp_scan(complex_t[:, ::1] u0, double dx0, double dx, double z, double wl):
-    """One-dimensional discrete form of Fraunhofer diffraction
-    performed by the means of Fast Fourier transform. The transform
-    is applied to a set of wavefronts `u0`.
+    cdef np.npy_intp isize = np.PyArray_SIZE(wft)
+    cdef int ndim = wft.ndim
+    axis = axis if axis >= 0 else ndim + axis
+    cdef np.npy_intp npts = np.PyArray_DIM(wft, axis)
+    cdef int howmany = isize / npts
+    if axis != ndim - 1:
+        wft = <np.ndarray>np.PyArray_SwapAxes(wft, axis, ndim - 1)
+    cdef np.npy_intp *dims = wft.shape
+    cdef np.ndarray out = <np.ndarray>np.PyArray_SimpleNew(ndim, dims, np.NPY_COMPLEX128)
+    cdef complex *_out = <complex *>np.PyArray_DATA(out)
+    cdef complex *_inp = <complex *>np.PyArray_DATA(wft)
+    cdef int fail = 0
+    with nogil:
+        if backend == 'fftw':
+            fraunhofer_fftw(_out, _inp, howmany, npts, dx0, dx, z, wl, num_threads)
+        elif backend == 'numpy':
+            fail = fraunhofer_np(_out, _inp, howmany, npts, dx0, dx, z, wl)
+            if fail:
+                raise RuntimeError('NumPy FFT exited with error')
+        else:
+            raise ValueError('{:s} is invalid backend'.format(backend))
+    if axis != ndim - 1:
+        out = <np.ndarray>np.PyArray_SwapAxes(wft, axis, ndim - 1)
+    return out
 
-    Parameters
-    ----------
-    u0 : numpy.ndarray
-        Set of wavefronts at the plane upstream.
-    dx0 : float
-        Sampling interval at the plane upstream [um].
-    dx : float
-        Sampling interval at the plane downstream [um].
-    z : float
-        Propagation distance [um].
-    wl : float
-        Incoming beam's wavelength [um].
-
-    Returns
-    -------
-    numpy.ndarray
-        Set of wavefronts at the plane downstream.
-
-    See Also
-    --------
-    fhf_wp : Description of the Fraunhofer diffraction
-        integral transform.
-    """
-    cdef:
-        int a = u0.shape[0], b = u0.shape[1], i, t
-        int n = good_size_cmplx(2 * b - 1)
-        int max_threads = openmp.omp_get_max_threads()
-        complex_t[:, ::1] u = np.empty((a, n), dtype=np.complex128)
-        complex_t[:, ::1] k = np.empty((max_threads, n), dtype=np.complex128)
-    for i in prange(a, schedule='guided', nogil=True):
-        t = openmp.omp_get_thread_num()
-        fhf_wp_c(u[i], k[t], u0[i], dx0, dx, z, wl)
-    return np.asarray(u[:, (n - b) // 2:(n + b) // 2], order='C')
-
-def bar_positions(double x0, double x1, double b_dx, double rd):
+def bar_positions(x0: cython.double, x1: cython.double, b_dx: cython.double,
+                  rd: cython.double, seed: cython.ulong) -> np.ndarray:
     """Generate a coordinate array of randomized barcode's bar positions.
 
     Parameters
@@ -341,83 +413,67 @@ def bar_positions(double x0, double x1, double b_dx, double rd):
         Average bar's size [um].
     rd : float
         Random deviation of barcode's bar positions (0.0 - 1.0).
+    seed : int
+        Seed used for pseudo random number generation.
 
     Returns
     -------
     bx_arr : numpy.ndarray
         Array of barcode's bar coordinates.
     """
-    cdef:
-        int br_n = 2 * (<int>((x1 - x0) / 2 / b_dx) + 1) if x1 > x0 else 0, i
-        gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937)
-        double[::1] bar_pos = np.empty(br_n, dtype=np.float64)
-        time_t t = time(NULL)
-    gsl_rng_set(r, t)
-    if br_n:
-        for i in range(br_n):
-            bar_pos[i] = x0 + b_dx * (i + 2 * rd * (gsl_rng_uniform_pos(r) - 0.5))
-    gsl_rng_free(r)
-    return np.asarray(bar_pos)
+    cdef np.npy_intp size = 2 * (<np.npy_intp>((x1 - x0) / 2 / b_dx) + 1) if x1 > x0 else 0
+    cdef np.npy_intp *dims = [size,]
+    cdef np.ndarray[double] bars = <np.ndarray>np.PyArray_SimpleNew(1, dims, np.NPY_FLOAT64)
+    cdef double *_bars = <double *>np.PyArray_DATA(bars)
+    if size:
+        with nogil:
+            barcode_bars(_bars, size, x0, b_dx, rd, seed)
+    return bars
 
-cdef int binary_search(double[::1] values, int l, int r, double x) nogil:
-    cdef int m = l + (r - l) // 2
-    if l <= r:
-        if x == values[m]:
-            return m
-        elif x > values[m] and x <= values[m + 1]:
-            return m + 1
-        elif x < values[m]:
-            return binary_search(values, l, m, x)
-        else:
-            return binary_search(values, m + 1, r, x)
+cdef np.ndarray ml_profile_wrapper(np.ndarray x_arr, np.ndarray[double] layers, complex mt0,
+                                   complex mt1, complex mt2, double sigma, unsigned num_threads):
+    x_arr = np.PyArray_GETCONTIGUOUS(x_arr)
+    x_arr = np.PyArray_Cast(x_arr, np.NPY_FLOAT64)
+    layers = np.PyArray_GETCONTIGUOUS(layers)
+    layers = np.PyArray_Cast(layers, np.NPY_FLOAT64)
 
-cdef int searchsorted(double[::1] values, double x) nogil:
-    cdef int r = values.shape[0]
-    if x < values[0]:
-        return 0
-    elif x > values[r - 1]:
-        return r
-    else:
-        return binary_search(values, 0, r, x)
+    cdef np.npy_intp npts = np.PyArray_SIZE(x_arr)
+    cdef np.npy_intp nlyr = np.PyArray_SIZE(layers)
+    cdef int ndim = x_arr.ndim
+    cdef np.npy_intp *dims = x_arr.shape
+    cdef np.ndarray out = <np.ndarray>np.PyArray_SimpleNew(ndim, dims, np.NPY_COMPLEX128)
+    cdef complex *_out = <complex *>np.PyArray_DATA(out)
+    cdef double *_x = <double *>np.PyArray_DATA(x_arr)
+    cdef double *_lyrs = <double *>np.PyArray_DATA(layers)
+    with nogil:
+        ml_profile(_out, _x, _lyrs, npts, nlyr, mt0, mt1, mt2, sigma, num_threads)
+    return out
 
-cdef double barcode_c(double[::1] bar_pos, double xx, double b_atn, double b_sgm, double blk_atn) nogil:
-    cdef:
-        int b = bar_pos.shape[0], i, j0, j
-        double b_dx = (bar_pos[b - 1] - bar_pos[0]) / b
-        int bb = <int>(X_TOL * sqrt(2) * b_sgm / b_dx + 1)
-        double tr, x0, x1
-    j0 = searchsorted(bar_pos, xx) # even '-', odd '+'
-    tr = 0
-    for j in range(j0 - bb, j0 + bb + 1):
-        if j > 0 and j < b - 1:
-            x0 = (xx - bar_pos[j - 1]) / sqrt(2) / b_sgm
-            x1 = (xx - bar_pos[j]) / sqrt(2) / b_sgm
-            tr += b_atn * (bar_pos[j] - bar_pos[j - 1]) / b_dx * 0.5 * (0.5 - j % 2) * (erf(x0) - erf(x1))
-    tr -= (0.25 * b_atn + 0.5 * blk_atn) * erf((xx - bar_pos[0]) / sqrt(2 + 2 * (blk_atn / b_atn)**2) / b_sgm)
-    tr += (0.25 * b_atn + 0.5 * blk_atn) * erf((xx - bar_pos[b - 1]) / sqrt(2 + 2 * (blk_atn / b_atn)**2) / b_sgm)
-    return sqrt(1 + tr)
-        
-def barcode_profile(double[::1] bar_pos, double[::1] x_arr, double b_atn, double b_sgm, double blk_atn):
+def barcode_profile(x_arr: np.ndarray, bars: np.ndarray, bulk_atn: cython.double,
+                    bar_atn: cython.double, bar_sigma: cython.double,
+                    num_threads: cython.uint) -> np.ndarray:
     r"""Return an array of barcode's transmission profile calculated
     at `x_arr` coordinates.
 
     Parameters
     ----------
-    bar_pos : numpy.ndarray
-        Coordinates of barcode's bar positions [um].
     x_arr : numpy.ndarray
         Array of the coordinates, where the transmission coefficients
         are calculated [um].    
-    b_atn : float
-        Barcode's bar attenuation coefficient (0.0 - 1.0).
-    b_sgm : float
-        Bar's blurriness [um].
-    blk_atn : float
+    bars : numpy.ndarray
+        Coordinates of barcode's bar positions [um].
+    bulk_atn : float
         Barcode's bulk attenuation coefficient (0.0 - 1.0).
+    bar_atn : float
+        Barcode's bar attenuation coefficient (0.0 - 1.0).
+    bar_sigma : float
+        Bar's blurriness width [um].
+    num_threads : int, optional
+        Number of threads.
     
     Returns
     -------
-    b_tr : numpy.ndarray
+    bar_profile : numpy.ndarray
         Array of barcode's transmission profiles.
 
     Notes
@@ -440,214 +496,126 @@ def barcode_profile(double[::1] bar_pos, double[::1] x_arr, double b_atn, double
     
     where :math:`x_{bar}` is an array of bar coordinates.
     """
-    cdef:
-        int a = x_arr.shape[0], i
-        double[::1] b_tr = np.empty(a, dtype=np.float64)
-    for i in prange(a, schedule='guided', nogil=True):
-        b_tr[i] = barcode_c(bar_pos, x_arr[i], b_atn, b_sgm, blk_atn)
-    return np.asarray(b_tr)
+    cdef complex mt0 = -1j * log(1 - bulk_atn)
+    cdef complex mt1 = -1j * log(1 - bar_atn)
+    return ml_profile_wrapper(x_arr, bars, mt0, mt1, 0., bar_sigma, num_threads)
 
-cdef void fft_convolve_c(double[::1] b1, complex_t[::1] c1, double[::1] a1, complex_t[::1] c2) nogil:
-    cdef:
-        int a = a1.shape[0], n = b1.shape[0], i
-        double b0
-    for i in range((n - a) // 2 + 1):
-        b1[i] = a1[0]; b1[n - 1 - i] = a1[a - 1]
-    for i in range(a):
-        b1[i + (n - a) // 2] = a1[i]
-    rfft(&c1[0], &b1[0], n)
-    for i in range(n // 2 + 1):
-        c1[i] = c1[i] * c2[i]
-    irfft(&b1[0], &c1[0], n)
-    for i in range(n // 2):
-        b0 = b1[i]; b1[i] = b1[i + n // 2]
-        b1[i + n // 2] = b0
+def mll_profile(x_arr: np.ndarray, layers: np.ndarray, complex mt0,
+                complex mt1, sigma: cython.double, num_threads: cython.uint) -> np.ndarray:
+    return ml_profile_wrapper(x_arr, layers, 0., mt0, mt1, sigma, num_threads)
 
-def fft_convolve(double[::1] a1, double[::1] a2):
-    """Convolve two one-dimensional arrays using FFT. The output
-    size is the same size as `a1`.
+def fft_convolve(array: np.ndarray, kernel: np.ndarray, axis: cython.int=-1,
+                 mode: str='constant', cval: cython.double=0.0, backend: str='fftw',
+                 num_threads: cython.uint=1) -> np.ndarray:
+    """Convolve a multi-dimensional `array` with one-dimensional `kernel` along the
+    `axis` by means of FFT. Output has the same size as `array`.
 
     Parameters
     ----------
-    a1 : numpy.ndarray
-        First input array.
-    a2 : numpy.ndarray
-        Second input array.
+    array : numpy.ndarray
+        Input array.
+    kernel : numpy.ndarray
+        Kernel array.
+    axis : int, optional
+        Array axis along which convolution is performed.
+    backend : {'fftw', 'numpy'}, optional
+        Choose backend library for the FFT implementation.
+    num_threads : int, optional
+        Number of threads.
 
     Returns
     -------
     out : numpy.ndarray
-        A one-dimensional array containing the discrete linear
-        convolution of `a1` with `a2`.
+        A multi-dimensional array containing the discrete linear
+        convolution of `array` with `kernel`.
     """
-    cdef:
-        int a = a1.shape[0], b = a2.shape[0], i
-        int n = good_size_real(a + b - 1)
-        double[::1] b1 = np.empty(n, dtype=np.float64)
-        double[::1] b2 = np.empty(n, dtype=np.float64)
-        complex_t[::1] c1 = np.empty(n // 2 + 1, dtype=np.complex128)
-        complex_t[::1] c2 = np.empty(n // 2 + 1, dtype=np.complex128)
-    for i in range((n - b) // 2 + 1):
-        b2[i] = a2[0]; b2[n - 1 - i] = a2[b - 1]
-    for i in range(b):
-        b2[i + (n - b) // 2] = a2[i]
-    rfft(&c2[0], &b2[0], n)
-    fft_convolve_c(b1, c1, a1, c2)
-    return np.asarray(b1[(n - a) // 2:(n + a) // 2])
+    array = np.PyArray_GETCONTIGUOUS(array)
+    array = np.PyArray_Cast(array, np.NPY_FLOAT64)
+    kernel = np.PyArray_GETCONTIGUOUS(kernel)
+    kernel = np.PyArray_Cast(kernel, np.NPY_FLOAT64)
 
-def fft_convolve_scan(double[:, ::1] a1, double[::1] a2):
-    """Convolve a set of one-dimensional arrays `a1` with `a2` using
-    FFT. The output size is the same size as `a1`.
+    cdef np.npy_intp isize = np.PyArray_SIZE(array)
+    cdef int ndim = array.ndim
+    axis = axis if axis >= 0 else ndim + axis
+    cdef np.npy_intp npts = np.PyArray_DIM(array, axis)
+    cdef int istride = np.PyArray_STRIDE(array, axis) / np.PyArray_ITEMSIZE(array)
+    cdef np.npy_intp ksize = np.PyArray_DIM(kernel, 0)
+    cdef int _mode = extend_mode_to_code(mode)
+    cdef np.npy_intp *dims = array.shape
+    cdef np.ndarray out = <np.ndarray>np.PyArray_SimpleNew(ndim, dims, np.NPY_FLOAT64)
+    cdef double *_out = <double *>np.PyArray_DATA(out)
+    cdef double *_inp = <double *>np.PyArray_DATA(array)
+    cdef double *_krn = <double *>np.PyArray_DATA(kernel)
+    cdef int fail = 0
+    with nogil:
+        if backend == 'fftw':
+            fft_convolve_fftw(_out, _inp, _krn, isize, npts, istride, ksize, _mode, cval, num_threads)
+        elif backend == 'numpy':
+            fail = fft_convolve_np(_out, _inp, _krn, isize, npts, istride, ksize, _mode, cval)
+            if fail:
+                raise RuntimeError('NumPy FFT exited with error')
+        else:
+            raise ValueError('{:s} is invalid backend'.format(backend))
+    return out
+
+def make_frames(pfx: np.ndarray, pfy: np.ndarray, wfx: np.ndarray, wfy: np.ndarray,
+                dx: cython.double, dy: cython.double, seed: cython.long,
+                num_threads: cython.uint) -> np.ndarray:
+    """Generate intensity frames from one-dimensional intensity profiles (`pfx`,
+    `pfy`) and whitefield profiles (`wfx`, `wfy`). Intensity profiles resized into
+    the shape of a frame. Poisson noise is applied if `seed` is non-negative.
 
     Parameters
     ----------
-    a1 : numpy.ndarray
-        Set of input arrays.
-    a2 : numpy.ndarray
-        Second input array.
-
-    Returns
-    -------
-    out : numpy.ndarray
-        A set of one-dimensional arrays containing the discrete
-        linear convolution of `a1` with `a2`.
-    """
-    cdef:
-        int nf = a1.shape[0], a = a1.shape[1], b = a2.shape[0], i, t
-        int n = good_size_real(a + b - 1)
-        int max_threads = openmp.omp_get_max_threads()
-        double[:, ::1] b1 = np.empty((nf, n), dtype=np.float64)
-        double[::1] b2 = np.empty(n, dtype=np.float64)
-        complex_t[:, ::1] c1 = np.empty((max_threads, n // 2 + 1), dtype=np.complex128)
-        complex_t[::1] c2 = np.empty(n // 2 + 1, dtype=np.complex128)
-    for i in range((n - b) // 2 + 1):
-        b2[i] = a2[0]; b2[n - 1 - i] = a2[b - 1]
-    for i in range(b):
-        b2[i + (n - b) // 2] = a2[i]
-    rfft(&c2[0], &b2[0], n)
-    for i in prange(nf, schedule='guided', nogil=True):
-        t = openmp.omp_get_thread_num()
-        fft_convolve_c(b1[i], c1[t], a1[i], c2)
-    return np.asarray(b1[:, (n - a) // 2:(n + a) // 2], order='C')
-
-cdef void make_frame_c(double[:, ::1] frame, double[::1] i_x, double[::1] i_ss, double dx) nogil:
-    cdef:
-        int a = i_x.shape[0], ss = frame.shape[0], fs = frame.shape[1], i, j, jj, j0, j1
-        double i_fs = 0
-    j1 = <int>(0.5 * a / fs)
-    for jj in range(j1):
-        i_fs += i_x[jj] * dx
-    for i in range(ss):
-        frame[i, 0] = <int>(i_fs * i_ss[i])
-    i_fs = 0
-    for jj in range(j1):
-        i_fs += i_x[a - 1 - jj] * dx
-    for i in range(ss):
-        frame[i, fs - 1] = <int>(i_fs * i_ss[i])
-    for j in range(1, fs - 1):
-        i_fs = 0
-        j0 = <int>((j - 0.5) * a // fs)
-        j1 = <int>((j + 0.5) * a // fs)
-        for jj in range(j0, j1):
-            i_fs += i_x[jj] * dx
-        for i in range(ss):
-            frame[i, j] = i_fs * i_ss[i]
-
-def make_frames(double[:, ::1] i_x, double[::1] i_y, double dx, double dy, int ss, int fs):
-    """Generate intensity frames with Poisson noise
-    from one-dimensional intensity profiles `i_x`
-    and `i_y` convoluted with the source's rocking
-    curves `sc_x` and `sc_y`.
-
-    Parameters
-    ----------
-    i_x : numpy.ndarray
+    pfx : numpy.ndarray
         Intensity profile along the x axis.
-    i_y : numpy.ndarray
+    pfy : numpy.ndarray
         Intensity profile along the y axis.
+    wfx : numpy.ndarray
+        Whitefield profile along the x axis.
+    wfy : numpy.ndarray
+        Whitefield profile along the y axis.
     dx : float
         Sampling interval along the x axis [um].
     dy : float
         Sampling interval along the y axis [um].
-    ss : int
-        Detector's size along the slow axis.
-    fs : int
-        Detector's size along the fast axis.
-    apply_noise : bool
-        Apply Poisson noise if it's True.
+    seed : int, optional
+        Seed for pseudo-random number generation.
+    num_threads : int, optional
+        Number of threads.
 
     Returns
     -------
     frames : numpy.ndarray
         Intensity frames.
     """
-    cdef:
-        int nf = i_x.shape[0], a = i_x.shape[1], b = i_y.shape[0], i, ii, i0, i1
-        int max_threads = openmp.omp_get_max_threads(), t
-        double[:, :, ::1] frames = np.zeros((nf, ss, fs), dtype=np.float64)
-        double[::1] i_ss = np.zeros(ss, dtype=np.float64)
-    i1 = <int>(0.5 * b // ss)
-    for ii in range(i1):
-        i_ss[0] += i_y[ii] * dy
-        i_ss[ss - 1] += i_y[b - 1 - ii] * dy
-    for i in range(1, ss - 1):
-        i0 = <int>((i - 0.5) * b // ss)
-        i1 = <int>((i + 0.5) * b // ss)
-        for ii in range(i0, i1):
-            i_ss[i] += i_y[ii] * dy
-    for i in prange(nf, schedule='guided', nogil=True):
-        make_frame_c(frames[i], i_x[i], i_ss, dx)
-    return np.asarray(frames)
+    pfx = np.PyArray_GETCONTIGUOUS(pfx)
+    pfx = np.PyArray_Cast(pfx, np.NPY_FLOAT64)
+    pfy = np.PyArray_GETCONTIGUOUS(pfy)
+    pfy = np.PyArray_Cast(pfy, np.NPY_FLOAT64)
+    wfx = np.PyArray_GETCONTIGUOUS(wfx)
+    wfx = np.PyArray_Cast(wfx, np.NPY_FLOAT64)
+    wfy = np.PyArray_GETCONTIGUOUS(wfy)
+    wfy = np.PyArray_Cast(wfy, np.NPY_FLOAT64)
 
-cdef uint32_t noisy_frame_c(uint32_t[:, ::1] noisy, double[:, ::1] frame, uint32_t seed) nogil:
-    cdef:
-        int ss = frame.shape[0], fs = frame.shape[1], i, j
-        gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937)
-    gsl_rng_set(r, seed)
-    for i in range(ss):
-        for j in range(fs):
-            noisy[i, j] = gsl_ran_poisson(r, frame[i, j])
-    seed = gsl_rng_get(r)
-    gsl_rng_free(r)
-    return seed
+    cdef np.npy_intp *xdim = pfx.shape
+    cdef np.npy_intp ypts = np.PyArray_SIZE(pfy)
+    cdef np.npy_intp fs_size = np.PyArray_SIZE(wfx)
+    cdef np.npy_intp ss_size = np.PyArray_SIZE(wfy)
+    cdef np.npy_intp *dim = [xdim[0], ss_size, fs_size]
+    cdef np.ndarray out = <np.ndarray>np.PyArray_SimpleNew(3, dim, np.NPY_FLOAT64)
+    cdef double *_out = <double *>np.PyArray_DATA(out)
+    cdef double *_pfx = <double *>np.PyArray_DATA(pfx)
+    cdef double *_pfy = <double *>np.PyArray_DATA(pfy)
+    cdef double *_wfx = <double *>np.PyArray_DATA(wfx)
+    cdef double *_wfy = <double *>np.PyArray_DATA(wfy)
+    with nogil:
+        frames(_out, _pfx, _pfy, _wfx, _wfy, dx, dy, xdim[1], ypts, dim[0], dim[1], dim[2], seed, num_threads)
+    return out
 
-def apply_poisson(double[:, :, ::1] frames):
-    cdef:
-        int nf = frames.shape[0], ss = frames.shape[1], fs = frames.shape[2], i
-        int max_threads = openmp.omp_get_max_threads(), t
-        gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937)
-        time_t tm = time(NULL)
-        uint32_t[::1] seeds = np.empty(max_threads, dtype=np.uint32)
-        uint32_t[:, :, ::1] noisy = np.empty((nf, ss, fs), dtype=np.uint32)
-    gsl_rng_set(r, tm)
-    for i in range(max_threads):
-        seeds[i] = gsl_rng_get(r)
-    for i in prange(nf, schedule='guided', nogil=True):
-        t = openmp.omp_get_thread_num()
-        seeds[t] = noisy_frame_c(noisy[i], frames[i], seeds[t])
-    gsl_rng_free(r)
-    return np.asarray(noisy)
-
-cdef numeric wirthselect(numeric[::1] array, int k) nogil:
-    cdef:
-        int l = 0, m = array.shape[0] - 1, i, j
-        numeric x, tmp 
-    while l < m: 
-        x = array[k] 
-        i = l; j = m 
-        while 1: 
-            while array[i] < x: i += 1 
-            while x < array[j]: j -= 1 
-            if i <= j: 
-                tmp = array[i]; array[i] = array[j]; array[j] = tmp
-                i += 1; j -= 1 
-            if i > j: break 
-        if j < k: l = i 
-        if k < i: m = j 
-    return array[k]
-
-def make_whitefield(numeric[:, :, ::1] data, bool_t[:, :, ::1] mask):
-    """Generate a whitefield using the median filtering.
+def make_whitefield(data: np.ndarray, mask: np.ndarray, axis: cython.int=0,
+                    num_threads: cython.uint=1) -> np.ndarray:
+    """Generate a whitefield using the median filtering along the `axis`.
 
     Parameters
     ----------
@@ -655,30 +623,46 @@ def make_whitefield(numeric[:, :, ::1] data, bool_t[:, :, ::1] mask):
         Intensity frames.
     mask : numpy.ndarray
         Bad pixel mask.
+    axis : int, optional
+        Array axis along which median values are calculated.
+    num_threads : int, optional
+        Number of threads.
 
     Returns
     -------
-    wf : numpy.ndarray
+    wfield : numpy.ndarray
         Whitefield.
     """
-    if numeric is np.float64_t:
-        dtype = np.float64
-    elif numeric is np.float32_t:
-        dtype = np.float32
-    else:
-        dtype = np.uint64
-    cdef:
-        int a = data.shape[0], b = data.shape[1], c = data.shape[2], t, i, j, k, ii
-        int max_threads = openmp.omp_get_max_threads()
-        numeric[:, ::1] wf = np.empty((b, c), dtype=dtype)
-        numeric[:, ::1] array = np.empty((max_threads, a), dtype=dtype)
-    for j in prange(b, schedule='guided', nogil=True):
-        t = openmp.omp_get_thread_num()
-        for k in range(c):
-            ii = 0
-            for i in range(a):
-                if mask[i, j, k]:
-                    array[t, ii] = data[i, j, k]
-                    ii = ii + 1
-            wf[j, k] = wirthselect(array[t], ii // 2)
-    return np.asarray(wf)
+    data = np.PyArray_GETCONTIGUOUS(data)
+    mask = np.PyArray_GETCONTIGUOUS(mask)
+
+    if not np.PyArray_ISBOOL(mask):
+        raise TypeError('mask array must be of boolean type')
+    cdef int ndim = data.ndim
+    if memcmp(data.shape, mask.shape, ndim * sizeof(np.npy_intp)):
+        raise ValueError('mask and data arrays must have identical shapes')
+    axis = axis if axis >= 0 else ndim + axis
+    if axis != 0:
+        data = <np.ndarray>np.PyArray_SwapAxes(data, axis, 0)
+        mask = <np.ndarray>np.PyArray_SwapAxes(mask, axis, 0)
+    cdef np.npy_intp *dims = data.shape
+    cdef int type_num = np.PyArray_TYPE(data)
+    cdef np.ndarray out = <np.ndarray>np.PyArray_SimpleNew(ndim - 1, dims + 1, type_num)
+    cdef void *_out = <void *>np.PyArray_DATA(out)
+    cdef void *_data = <void *>np.PyArray_DATA(data)
+    cdef unsigned char *_mask = <unsigned char *>np.PyArray_DATA(mask)
+    cdef np.npy_intp frame_size = np.PyArray_SIZE(data) // dims[0]
+    cdef np.npy_intp size = 0
+    with nogil:
+        if type_num == np.NPY_FLOAT64:
+                whitefield(_out, _data, _mask, dims[0], frame_size, 8, compare_double, num_threads)
+        elif type_num == np.NPY_FLOAT32:
+                whitefield(_out, _data, _mask, dims[0], frame_size, 4, compare_float, num_threads)
+        elif type_num == np.NPY_INT32:
+                whitefield(_out, _data, _mask, dims[0], frame_size, 4, compare_long, num_threads)
+        else:
+            raise TypeError('data argument has incompatible type: {:s}'.format(data.dtype))
+    if axis != 0:
+        data = <np.ndarray>np.PyArray_SwapAxes(data, 0, axis)
+        mask = <np.ndarray>np.PyArray_SwapAxes(mask, 0, axis)
+    return out

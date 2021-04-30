@@ -52,6 +52,10 @@ List of experimental parameters:
     * `offset` : Barcode's offset at the beginning and at the end
       of the scan from the detector's bounds [um].
 
+* **System parameters**:
+
+    * `seed` : Seed used in all the pseudo-random number generations.
+
 .. note::
 
     You can save protocol to an INI file with :func:`pyrost.Protocol.export_ini`
@@ -63,9 +67,10 @@ The parameters are given by:
 .. code-block:: ini
 
     [exp_geom]
-    defocus = 4e2
+    defocus = 1e2
     det_dist = 2e6
     step_size = 0.1
+    step_rnd = 0.2
     n_frames = 300
 
     [detector]
@@ -86,17 +91,17 @@ The parameters are given by:
     ab_cnt = 0.5
 
     [barcode]
-    bar_size = 0.1
-    bar_sigma = 0.01
-    bar_atn = 0.3
-    bulk_atn = 0.0
-    bar_rnd = 0.6
+    bar_size = 0.5
+    bar_sigma = 0.12
+    bar_atn = 0.15
+    bulk_atn = 0.15
+    bar_rnd = 0.9
     offset = 0
 
     [system]
-    verbose = False
+    seed = 0
 
-.. automodule:: pyrost.simulation.st_sim_param
+.. automodule:: pyrost.simulation.parameters
 
 .. toctree::
     :maxdepth: 1
