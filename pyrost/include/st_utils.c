@@ -203,18 +203,16 @@ void barcode_bars(double *bars, size_t size, double x0, double b_dx, double rd, 
 void ml_profile(double complex *out, const double *x, const double *layers, int npts, int nlyr,
     double complex mt0, double complex mt1, double complex mt2, double sgm, unsigned threads)
 {
-    int b = 2 * (nlyr / 2), j0;
-    double x0, x1;
-    double complex ref_idx;
+    int b = 2 * (nlyr / 2);
     #pragma omp parallel for num_threads(threads)
     for (int i = 0; i < npts; i++)
     {
-        j0 = searchsorted(&x[i], layers, nlyr, sizeof(double), compare_double);
-        ref_idx = 0;
+        double complex ref_idx = 0;
+        int j0 = searchsorted(&x[i], layers, nlyr, sizeof(double), compare_double);
         if (j0 > 0 && j0 < b)
         {
-            x0 = (x[i] - layers[j0 - 1]) / sqrt(2) / sgm;
-            x1 = (x[i] - layers[j0]) / sqrt(2) / sgm;
+            double x0 = (x[i] - layers[j0 - 1]) / sqrt(2) / sgm;
+            double x1 = (x[i] - layers[j0]) / sqrt(2) / sgm;
             ref_idx += (mt1 - mt2) / 2 * ((double) (j0 % 2) - 0.5) * (erf(x0) - erf(x1));
             ref_idx -= (mt1 - mt2) / 4 * erf((x[i] - layers[0]) / sqrt(2) / sgm);
             ref_idx += (mt1 - mt2) / 4 * erf((x[i] - layers[b - 1]) / sqrt(2) / sgm);
@@ -227,14 +225,14 @@ void ml_profile(double complex *out, const double *x, const double *layers, int 
 
 static void resize_array(double *out, const double *inp, int osize, int isize, unsigned threads)
 {
-    double ratio = (double) isize / osize, lb, ub;
-    int j0, j1;
+    double ratio = (double) isize / osize;
     #pragma omp parallel for num_threads(threads) schedule(guided)
     for (int i = 0; i < osize; i++)
     {
+        double lb, ub;
         out[i] = 0;
-        j0 = (i * isize) / osize;
-        j1 = ((i + 1) * isize) / osize;
+        int j0 = (i * isize) / osize;
+        int j1 = ((i + 1) * isize) / osize;
         for (int j = j0; (j <= j1) && (j < isize); j++)
         {
             lb = ((double) j) > (i * ratio) ? j : i * ratio;
@@ -255,14 +253,17 @@ void frames(double *out, const double *pfx, const double *pfy, const double *wfx
         resize_array(pfxss, pfx, fs_size, xpts, threads);
         if (seed >= 0)
         {
-            double val;
-            gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937);
-            gsl_rng_set(r, (unsigned long) seed);
-            #pragma omp parallel for num_threads(threads) schedule(guided)
-            for (int i = 0; i < (int) (fs_size * ss_size); i++)
+            #pragma omp parallel num_threads(threads)
             {
-                val = wfx[i % fs_size] * wfy[i / fs_size] * pfxss[i % fs_size] * pfyss[i / fs_size] * dx * dy;
-                out[i] = gsl_ran_poisson(r, val);
+                gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937);
+                gsl_rng_set(r, (unsigned long) seed);
+                #pragma omp for
+                for (int i = 0; i < (int) (fs_size * ss_size); i++)
+                {
+                    double val = wfx[i % fs_size] * wfy[i / fs_size] * pfxss[i % fs_size] * pfyss[i / fs_size] * dx * dy;
+                    out[i] = gsl_ran_poisson(r, val);
+                }
+                gsl_rng_free(r);
             }
         }
         else

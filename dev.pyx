@@ -4,16 +4,7 @@ import numpy as np
 import cython
 from libc.math cimport log
 from libc.string cimport memcmp
-from libc.math cimport sqrt, exp, pi, floor, ceil
-cimport openmp
-from libc.math cimport sqrt, exp, pi, erf, floor, ceil, sin, cos
-from libc.time cimport time, time_t
-from libc.string cimport memcpy
-
-cdef extern from "pyrost/bin/fft.c":
-
-    int good_size_real(int n)
-    int good_size_cmplx(int n)
+import speckle_tracking as st
 
 # Numpy must be initialized. When using numpy from C or Cython you must
 # *ALWAYS* do that, or you will have segfaults
@@ -355,161 +346,7 @@ def make_whitefield(data: np.ndarray, mask: np.ndarray, axis: cython.int=0, num_
         mask = <np.ndarray>np.PyArray_SwapAxes(mask, 0, axis)
     return out
 
-ctypedef fused float_t:
-    np.float64_t
-    np.float32_t
-
-ctypedef np.uint64_t uint_t
-ctypedef np.complex128_t complex_t
-
-DEF FLOAT_MAX = 1.7976931348623157e+308
-DEF X_TOL = 4.320005384913445 # Y_TOL = 1e-9
-DEF NO_VAR = -1.0  
-
-cdef int fft(complex_t* arr, int n) nogil:
-    cdef double* dptr = <double*>(arr)
-    if not dptr:
-        return -1
-    cdef cfft_plan_i* plan = make_cfft_plan(n)
-    if not plan:
-        return -1
-    cdef int fail = cfft_forward(plan, dptr, 1.0)
-    if fail:
-        return -1
-    if plan:
-        destroy_cfft_plan(plan)
-    return 0
-
-cdef int ifft(complex_t* arr, int n) nogil:
-    cdef double* dptr = <double*>(arr)
-    if not dptr:
-        return -1
-    cdef cfft_plan_i* plan = make_cfft_plan(n)
-    if not plan:
-        return -1
-    cdef double fct = 1.0 / n
-    cdef int fail = cfft_backward(plan, dptr, fct)
-    if fail:
-        return -1
-    if plan:
-        destroy_cfft_plan(plan)
-    return 0
-
-cdef int rfft(complex_t* res, double* arr, int n) nogil:
-    cdef double* rptr = <double*>(res)
-    cdef double* dptr = <double*>(arr)
-    if not dptr:
-        return -1
-    cdef rfft_plan_i* plan = make_rfft_plan(n)
-    if not plan:
-        return -1
-    memcpy(<char *>(rptr + 1), dptr, n * sizeof(double))
-    cdef int fail = rfft_forward(plan, rptr + 1, 1.0)
-    rptr[0] = rptr[1]; rptr[1] = 0.0
-    if not n % 2:
-        rptr[n + 1] = 0.0
-    if fail:
-        return -1
-    if plan:
-        destroy_rfft_plan(plan)
-    return 0
-
-cdef int irfft(double* res, complex_t* arr, int n) nogil:
-    cdef double* dptr = <double*>(arr)
-    cdef double* rptr = <double*>(res)
-    if not dptr:
-        return -1
-    cdef rfft_plan_i* plan = make_rfft_plan(n)
-    if not plan:
-        return -1
-    cdef double fct = 1.0 / n
-    memcpy(<char *>(rptr + 1), dptr + 2, (n - 1) * sizeof(double))
-    rptr[0] = dptr[0]
-    cdef int fail = rfft_backward(plan, rptr, fct)
-    if fail:
-        return -1
-    if plan:
-        destroy_rfft_plan(plan)
-    return 0
-
-cdef void rsc_type1_c(complex_t[::1] u, complex_t[::1] k, complex_t[::1] h,
-                      double dx0, double dx, double z, double wl) nogil:
-    cdef:
-        int n = u.shape[0], i
-        double ph, dist
-        complex_t u0
-    for i in range(n):
-        dist = (dx0 * (i - n // 2))**2 + z**2
-        ph = 2 * pi / wl * sqrt(dist)
-        k[i] = -dx0 * z / sqrt(wl) * (sin(ph) + 1j * cos(ph)) / dist**0.75
-    fft(&u[0], n)
-    fft(&k[0], n)
-    for i in range(n):
-        ph = pi * (<double>(i) / n - (2 * i) // n)**2 * dx / dx0 * n
-        u[i] = u[i] * k[i] * (cos(ph) - 1j * sin(ph))
-        k[i] = cos(ph) - 1j * sin(ph)
-        h[i] = cos(ph) + 1j * sin(ph)
-    ifft(&u[0], n)
-    ifft(&h[0], n)
-    for i in range(n):
-        u[i] = u[i] * h[i]
-    fft(&u[0], n)
-    for i in range(n // 2):
-        u0 = u[i] * k[i]; u[i] = u[i + n // 2] * k[i + n // 2]
-        u[i + n // 2] = u0
-
-cdef void rsc_type2_c(complex_t[::1] u, complex_t[::1] k, complex_t[::1] h,
-                      double dx0, double dx, double z, double wl) nogil:
-    cdef:
-        int n = u.shape[0], i
-        double ph, ph2, dist
-    for i in range(n):
-        dist = (dx * (i - n // 2))**2 + z**2
-        ph = 2 * pi / wl * sqrt(dist)
-        k[i] = -dx0 * z / sqrt(wl) * (sin(ph) + 1j * cos(ph)) / dist**0.75
-    fft(&k[0], n)
-    for i in range(n):
-        ph = pi * (<double>(i) / n - (2 * i) // n)**2 * dx0 / dx * n
-        ph2 = pi * (i - n // 2)**2 * dx0 / dx / n
-        u[i] = u[i] * (cos(ph2) + 1j * sin(ph2))
-        k[i] = k[i] * (cos(ph) + 1j * sin(ph))
-        h[i] = cos(ph2) - 1j * sin(ph2)
-    fft(&u[0], n)
-    fft(&h[0], n)
-    for i in range(n):
-        u[i] = u[i] * h[i]
-    ifft(&u[0], n)
-    for i in range(n):
-        u[i] = u[i] * k[i]
-    ifft(&u[0], n)
-
-cdef void rsc_wp_c(complex_t[::1] u, complex_t[::1] k, complex_t[::1] h, complex_t[::1] u0,
-                   double dx0, double dx, double z, double wl) nogil:
-    cdef:
-        int a = u0.shape[0], n = u.shape[0], i
-    for i in range((n - a) // 2 + 1):
-        u[i] = 0; u[n - 1 - i] = 0
-    for i in range(a):
-        u[i + (n - a) // 2] = u0[i]
-    if dx0 >= dx:
-        rsc_type1_c(u, k, h, dx0, dx, z, wl)
-    else:
-        rsc_type2_c(u, k, h, dx0, dx, z, wl)
-
-def rsc_wp_scan(complex_t[::1] u0, double dx0, double dx, double[::1] z_arr, double wl):
-    cdef:
-        int a = z_arr.shape[0], b = u0.shape[0], i, t
-        int n = good_size_cmplx(2 * b - 1)
-        int max_threads = openmp.omp_get_max_threads()
-        complex_t[:, ::1] u = np.empty((a, n), dtype=np.complex128)
-        complex_t[:, ::1] k = np.empty((max_threads, n), dtype=np.complex128)
-        complex_t[:, ::1] h = np.empty((max_threads, n), dtype=np.complex128)
-    for i in prange(a, schedule='guided', nogil=True):
-        t = openmp.omp_get_thread_num()
-        rsc_wp_c(u[i], k[t], h[t], u0, dx0, dx, z_arr[i], wl)
-    return np.asarray(u[:, (n - b) // 2:(n + b) // 2], order='C')
-
-def st_update(I_n, dij, basis, x_ps, y_ps, z, df, sw_max=100, n_iter=5,
+def st_update(I_n, dij, basis, x_ps, y_ps, z, df, search_window, n_iter=5,
               filter=None, update_translations=False, verbose=False):
     """
     Andrew's speckle tracking update algorithm
@@ -528,7 +365,7 @@ def st_update(I_n, dij, basis, x_ps, y_ps, z, df, sw_max=100, n_iter=5,
     u, dij_pix, res = st.generate_pixel_map(W.shape, dij, basis,
                                             x_ps, y_ps, z,
                                             df, verbose=verbose)
-    I0, n0, m0 = st.make_object_map(I_n, M, W, dij_pix, u, subpixel=False, verbose=verbose)
+    I0, n0, m0 = st.make_object_map(I_n, M, W, dij_pix, u, subpixel=True, verbose=verbose)
 
     es = []
     for i in range(n_iter):
@@ -541,7 +378,7 @@ def st_update(I_n, dij, basis, x_ps, y_ps, z, df, sw_max=100, n_iter=5,
 
         # update pixel map
         u = st.update_pixel_map(I_n, M, W, I0, u, n0, m0, dij_pix,
-                                search_window=[1, sw_max], subpixel=True,
+                                search_window=search_window, subpixel=True,
                                 fill_bad_pix=False, integrate=False,
                                 quadratic_refinement=False, verbose=verbose,
                                 filter=filter)[0]
@@ -560,47 +397,41 @@ def pixel_translations(basis, dij, df, z):
     dij_pix -= dij_pix.mean(axis=0)
     return np.ascontiguousarray(dij_pix[:, 0]), np.ascontiguousarray(dij_pix[:, 1])
 
-def pixel_translations(basis, dij, df, z):
-    dij_pix = (basis * dij[:, None]).sum(axis=-1)
-    dij_pix /= (basis**2).sum(axis=-1) * df / z
-    dij_pix -= dij_pix.mean(axis=0)
-    return np.ascontiguousarray(dij_pix[:, 0]), np.ascontiguousarray(dij_pix[:, 1])
-
-def str_update(I_n, W, dij, basis, x_ps, y_ps, z, df, sw_max=100, n_iter=5, l_scale=2.5):
-    """
-    Robust version of Andrew's speckle tracking update algorithm
+# def str_update(I_n, W, dij, basis, x_ps, y_ps, z, df, sw_max=100, n_iter=5, l_scale=2.5):
+#     """
+#     Robust version of Andrew's speckle tracking update algorithm
     
-    I_n - measured data
-    W - whitefield
-    basis - detector plane basis vectors
-    x_ps, y_ps - x and y pixel sizes
-    z - distance between the sample and the detector
-    df - defocus distance
-    sw_max - pixel mapping search window size
-    n_iter - number of iterations
-    """
-    I_n = I_n.astype(np.float64)
-    W = W.astype(np.float64)
-    u0 = np.indices(W.shape, dtype=np.float64)
-    di, dj = pixel_translations(basis, dij, df, z)
-    I0, n0, m0 = make_reference(I_n=I_n, W=W, u=u0, di=di, dj=dj, ls=l_scale, sw_fs=0, sw_ss=0)
+#     I_n - measured data
+#     W - whitefield
+#     basis - detector plane basis vectors
+#     x_ps, y_ps - x and y pixel sizes
+#     z - distance between the sample and the detector
+#     df - defocus distance
+#     sw_max - pixel mapping search window size
+#     n_iter - number of iterations
+#     """
+#     I_n = I_n.astype(np.float64)
+#     W = W.astype(np.float64)
+#     u0 = np.indices(W.shape, dtype=np.float64)
+#     di, dj = pixel_translations(basis, dij, df, z)
+#     I0, n0, m0 = make_reference(I_n=I_n, W=W, u=u0, di=di, dj=dj, ls=l_scale, sw_fs=0, sw_ss=0)
 
-    es = []
-    for i in range(n_iter):
+#     es = []
+#     for i in range(n_iter):
 
-        # calculate errors
-        es.append(mse_total(I_n=I_n, W=W, I0=I0, u=u0, di=di - n0, dj=dj - m0, ls=l_scale))
+#         # calculate errors
+#         es.append(mse_total(I_n=I_n, W=W, I0=I0, u=u0, di=di - n0, dj=dj - m0, ls=l_scale))
 
-        # update pixel map
-        u = update_pixel_map_gs(I_n=I_n, W=W, I0=I0, u0=u0, di=di - n0, dj=dj - m0,
-                                sw_ss=0, sw_fs=sw_max, ls=l_scale)
-        sw_max = int(np.max(np.abs(u - u0)))
-        u0 = u0 + gaussian_filter(u - u0, (0, 0, l_scale))
+#         # update pixel map
+#         u = update_pixel_map_gs(I_n=I_n, W=W, I0=I0, u0=u0, di=di - n0, dj=dj - m0,
+#                                 sw_ss=0, sw_fs=sw_max, ls=l_scale)
+#         sw_max = int(np.max(np.abs(u - u0)))
+#         u0 = u0 + gaussian_filter(u - u0, (0, 0, l_scale))
 
-        # make reference image
-        I0, n0, m0 = make_reference(I_n=I_n, W=W, u=u0, di=di, dj=dj, ls=l_scale, sw_ss=0, sw_fs=0)
-        I0 = gaussian_filter(I0, (0, l_scale))
-    return {'u':u0, 'I0':I0, 'errors':es, 'n0': n0, 'm0': m0}
+#         # make reference image
+#         I0, n0, m0 = make_reference(I_n=I_n, W=W, u=u0, di=di, dj=dj, ls=l_scale, sw_ss=0, sw_fs=0)
+#         I0 = gaussian_filter(I0, (0, l_scale))
+#     return {'u':u0, 'I0':I0, 'errors':es, 'n0': n0, 'm0': m0}
 
 # def phase_fit(pixel_ab, x_ps, z, df, wl, max_order=2, pixels=None):
 #     def errors(fit, x, y):

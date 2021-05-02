@@ -137,12 +137,11 @@ static void rsc_type1_fftw(fftw_plan fftp, fftw_plan ifftp, double complex *out,
     double complex *inp, double complex *k, int flen, int npts,
     double dx0, double dx, double z, double wl, unsigned threads)
 {
-    double ph, dist;
     #pragma omp parallel for num_threads(threads)
     for (int i = 0; i < flen; i++)
     {
-        dist = pow((dx0 * (i - flen / 2)), 2) + pow(z, 2);
-        ph = 2 * M_PI / wl * sqrt(dist);
+        double dist = pow((dx0 * (i - flen / 2)), 2) + pow(z, 2);
+        double ph = 2 * M_PI / wl * sqrt(dist);
         k[i] = -dx0 * z / sqrt(wl) * (sin(ph) + cos(ph) * I) / pow(dist, 0.75);
     }
     fftw_execute_dft(fftp, (fftw_complex *)inp, (fftw_complex *)inp);
@@ -150,7 +149,7 @@ static void rsc_type1_fftw(fftw_plan fftp, fftw_plan ifftp, double complex *out,
     #pragma omp parallel for num_threads(threads)    
     for (int i = 0; i < flen; i++)
     {
-        ph = M_PI * pow((((double) i / flen) - ((2 * i) / flen)), 2) * dx / dx0 * flen;
+        double ph = M_PI * pow((((double) i / flen) - ((2 * i) / flen)), 2) * dx / dx0 * flen;
         inp[i] *= k[i] * (cos(ph) - sin(ph) * I) / flen;
         k[i] = (cos(ph) + sin(ph) * I) / flen;
     }
@@ -164,13 +163,13 @@ static void rsc_type1_fftw(fftw_plan fftp, fftw_plan ifftp, double complex *out,
         #pragma omp for
         for (int i = 0; i < npts / 2; i++) 
         {
-            ph = M_PI * pow((double) (i - npts / 2) / flen, 2) * dx / dx0 * flen;
+            double ph = M_PI * pow((double) (i - npts / 2) / flen, 2) * dx / dx0 * flen;
             out[i] = inp[i + flen - npts / 2] * (cos(ph) - sin(ph) * I);
         }
         #pragma omp for
         for (int i = 0; i < npts / 2 + npts % 2; i++)
         {
-            ph = M_PI * pow((double) i / flen, 2) * dx / dx0 * flen;
+            double ph = M_PI * pow((double) i / flen, 2) * dx / dx0 * flen;
             out[i + npts / 2] = inp[i] * (cos(ph) - sin(ph) * I);
         }
     }
@@ -180,11 +179,10 @@ static void rsc_type2_fftw(fftw_plan fftp, fftw_plan ifftp, double complex *out,
     double complex *inp, double complex *k, int flen, int npts,
     double dx0, double dx, double z, double wl, unsigned threads)
 {
-    double ph, dist;
     #pragma omp parallel for num_threads(threads)
     for (int i = 0; i < flen; i++)
     {
-        ph = M_PI * pow(i - flen / 2, 2) * dx0 / dx / flen;
+        double ph = M_PI * pow(i - flen / 2, 2) * dx0 / dx / flen;
         k[i] = cos(ph) - sin(ph) * I;
         inp[i] *= cos(ph) + sin(ph) * I;
     }
@@ -194,8 +192,8 @@ static void rsc_type2_fftw(fftw_plan fftp, fftw_plan ifftp, double complex *out,
     for (int i = 0; i < flen; i++)
     {
         inp[i] *= k[i] / flen;
-        dist = pow((dx * (i - flen / 2)), 2) + pow(z, 2);
-        ph = 2 * M_PI / wl * sqrt(dist);
+        double dist = pow((dx * (i - flen / 2)), 2) + pow(z, 2);
+        double ph = 2 * M_PI / wl * sqrt(dist);
         k[i] = -dx0 * z / sqrt(wl) * (sin(ph) + cos(ph) * I) / pow(dist, 0.75);
     }
     fftw_execute_dft(fftp, (fftw_complex *)k, (fftw_complex *)k);
@@ -203,7 +201,7 @@ static void rsc_type2_fftw(fftw_plan fftp, fftw_plan ifftp, double complex *out,
     #pragma omp parallel for num_threads(threads)
     for (int i = 0; i < flen; i++)
     {
-        ph = M_PI * pow((((double) i / flen) - ((2 * i) / flen)), 2) * dx0 / dx * flen;
+        double ph = M_PI * pow((((double) i / flen) - ((2 * i) / flen)), 2) * dx0 / dx * flen;
         inp[i] *= k[i] * (cos(ph) + sin(ph) * I) / flen;
     }
     fftw_execute_dft(ifftp, (fftw_complex *)inp, (fftw_complex *)inp);
@@ -243,32 +241,30 @@ static void fhf_fftw(fftw_plan fftp, fftw_plan ifftp, double complex *out,
     double complex *inp, double complex *k, int flen, int npts,
     double dx0, double dx, double alpha, unsigned threads)
 {
-    double ph;
     #pragma omp parallel for num_threads(threads)
     for (int i = 0; i < flen; i++)
     {
-        ph = M_PI * pow(i - flen / 2, 2) * alpha;
+        double ph = M_PI * pow(i - flen / 2, 2) * alpha;
         inp[i] *= cos(ph) + sin(ph) * I;
     }
     fftw_execute_dft(fftp, (fftw_complex *)inp, (fftw_complex *)inp);
     #pragma omp parallel for num_threads(threads)
     for (int i = 0; i < flen; i++) inp[i] *= k[i] / flen;
     fftw_execute_dft(ifftp, (fftw_complex *)inp, (fftw_complex *)inp);
-    double complex w;
     #pragma omp parallel num_threads(threads)
     {
         #pragma omp for
         for (int i = 0; i < npts / 2; i++)
         {
-            ph = M_PI * pow(i - npts / 2, 2) * alpha;
-            w = (cos(ph) - sin(ph) * I) * inp[i + flen - npts / 2];
+            double ph = M_PI * pow(i - npts / 2, 2) * alpha;
+            double complex w = (cos(ph) - sin(ph) * I) * inp[i + flen - npts / 2];
             out[i] = (cos(ph / dx0 * dx) - sin(ph / dx0 * dx) * I) * w;
         }
         #pragma omp for
         for (int i = 0; i < npts / 2 + npts % 2; i++)
         {
-            ph = M_PI * pow(i, 2) * alpha;
-            w = (cos(ph) - sin(ph) * I) * inp[i];
+            double ph = M_PI * pow(i, 2) * alpha;
+            double complex w = (cos(ph) - sin(ph) * I) * inp[i];
             out[i + npts / 2] = (cos(ph / dx0 * dx) - sin(ph / dx0 * dx) * I) * w;
         }
     }
@@ -293,7 +289,7 @@ void fraunhofer_fftw(double complex *out, const double complex *inp, size_t howm
     #pragma omp parallel for num_threads(threads)
     for (int i = 0; i < flen; i++)
     {
-        ph = M_PI * pow(i - flen / 2, 2) * alpha;
+        double ph = M_PI * pow(i - flen / 2, 2) * alpha;
         k[i] = k0 * (cos(ph) - sin(ph) * I);
     }
     fftw_execute_dft(fftp, (fftw_complex *)k, (fftw_complex *)k);
@@ -318,9 +314,8 @@ static void fftcnv_fftw(fftw_plan rfftp, fftw_plan irfftp, double *out, double *
     #pragma omp parallel for num_threads(threads)
     for (int i = 0; i < (flen / 2 + 1); i++)
     {
-        double re, im;
-        re = (inp[2 * i] * krn[2 * i] - inp[2 * i + 1] * krn[2 * i + 1]);
-        im = (inp[2 * i] * krn[2 * i + 1] + inp[2 * i + 1] * krn[2 * i]);
+        double re = (inp[2 * i] * krn[2 * i] - inp[2 * i + 1] * krn[2 * i + 1]);
+        double im = (inp[2 * i] * krn[2 * i + 1] + inp[2 * i + 1] * krn[2 * i]);
         inp[2 * i] = re; inp[2 * i + 1] = im;
     }
     fftw_execute_dft_c2r(irfftp, (fftw_complex *)inp, (double *)inp);
