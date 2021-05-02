@@ -1,7 +1,8 @@
 cimport numpy as np
 import numpy as np
 from libc.math cimport sqrt, exp, pi, floor, ceil
-from cython.parallel import prange
+from cython.parallel import prange, parallel
+from libc.stdlib cimport abort, malloc, free
 cimport openmp
 
 ctypedef fused float_t:
@@ -138,27 +139,26 @@ def make_reference(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, :, ::1]
         str dtype = 'float64' if float_t is np.float64_t else 'float32'
         int a = I_n.shape[0], b = I_n.shape[1], c = I_n.shape[2]
         int i, j, k, t
+        float_t Is, ws
         float_t n0 = -min_float(&u[0, 0, 0], b * c) + max_float(&di[0], a) + sw_ss
         float_t m0 = -min_float(&u[1, 0, 0], b * c) + max_float(&dj[0], a) + sw_fs
         int aa = <int>(max_float(&u[0, 0, 0], b * c) - min_float(&di[0], a) + n0) + 1 + sw_ss
         int bb = <int>(max_float(&u[1, 0, 0], b * c) - min_float(&dj[0], a) + m0) + 1 + sw_fs
         float_t[:, :, ::1] I = np.zeros((num_threads, aa, bb), dtype=dtype)
         float_t[:, :, ::1] w = np.zeros((num_threads, aa, bb), dtype=dtype)
-        float_t[::1] Is = np.empty(num_threads, dtype=dtype)
-        float_t[::1] ws = np.empty(num_threads, dtype=dtype)
         float_t[:, ::1] I0 = np.zeros((aa, bb), dtype=dtype)
-    for i in prange(a, schedule='guided', nogil=True):
+    for i in prange(a, schedule='guided', num_threads=num_threads, nogil=True):
         t = openmp.omp_get_thread_num()
         frame_reference(I[t], w[t], I_n[i], W, u, di[i] - n0, dj[i] - m0, ls)
     for k in prange(bb, schedule='guided', num_threads=num_threads, nogil=True):
         t = openmp.omp_get_thread_num()
         for j in range(aa):
-            Is[t] = 0; ws[t] = 0
+            Is = 0; ws = 0
             for i in range(num_threads):
-                Is[t] = Is[t] + I[i, j, k]
-                ws[t] = ws[t] + w[i, j, k]
-            if ws[t]:
-                I0[j, k] = Is[t] / ws[t]
+                Is = Is + I[i, j, k]
+                ws = ws + w[i, j, k]
+            if ws:
+                I0[j, k] = Is / ws
             else:
                 I0[j, k] = 0
     if return_nm0:
@@ -766,16 +766,21 @@ def mse_frame(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0,
         np.npy_intp a = I_n.shape[0], b = I_n.shape[1], c = I_n.shape[2]
         np.npy_intp aa = I0.shape[0], bb = I0.shape[1]
         int j, k, t
-        float_t[:, ::1] mptr = np.empty((num_threads, 3), dtype=dtype)
+        float_t *mptr
         float_t[:, ::1] I = np.empty((num_threads, a + 1), dtype=dtype)
         float_t[:, ::1] mse_f = np.empty((b, c), dtype=dtype)
-    for k in prange(c, schedule='guided', num_threads=num_threads, nogil=True):
-        t = openmp.omp_get_thread_num()
-        mptr[t, 2] = NO_VAR
-        for j in range(b):
-            krig_data_c(I[t], I_n, W, u, j, k, ls)
-            mse_bi(&mptr[t, 0], I[t], I0, di, dj, u[0, j, k], u[1, j, k])
-            mse_f[j, k] = mptr[t, 0] / mptr[t, 1]
+    with nogil, parallel(num_threads=num_threads):
+        mptr = <float_t *>malloc(3 * sizeof(float_t))
+        if mptr is NULL:
+            abort()
+        mptr[2] = NO_VAR
+        for k in prange(c, schedule='guided'):
+            t = openmp.omp_get_thread_num()
+            for j in range(b):
+                krig_data_c(I[t], I_n, W, u, j, k, ls)
+                mse_bi(mptr, I[t], I0, di, dj, u[0, j, k], u[1, j, k])
+                mse_f[j, k] = mptr[0] / mptr[1]
+        free(mptr)
     return np.asarray(mse_f)
 
 def mse_total(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0,
@@ -818,18 +823,22 @@ def mse_total(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0,
     cdef:
         str dtype = 'float64' if float_t is np.float64_t else 'float32'
         np.npy_intp a = I_n.shape[0], b = I_n.shape[1], c = I_n.shape[2]
-        np.npy_intp aa = I0.shape[0], bb = I0.shape[1]
         int j, k, t
         float_t err = 0
-        float_t[:, ::1] mptr = np.empty((num_threads, 3), dtype=dtype)
+        float_t *mptr
         float_t[:, ::1] I = np.empty((num_threads, a + 1), dtype=dtype)
-    for k in prange(c, schedule='static', nogil=True):
-        t = openmp.omp_get_thread_num()
-        mptr[t, 2] = NO_VAR
-        for j in range(b):
-            krig_data_c(I[t], I_n, W, u, j, k, ls)
-            mse_bi(&mptr[t, 0], I[t], I0, di, dj, u[0, j, k], u[1, j, k])
-            err += mptr[t, 0] / mptr[t, 1]
+    with nogil, parallel(num_threads=num_threads):
+        mptr = <float_t *>malloc(3 * sizeof(float_t))
+        if mptr is NULL:
+            abort()
+        mptr[2] = NO_VAR
+        for k in prange(c, schedule='guided'):
+            t = openmp.omp_get_thread_num()
+            for j in range(b):
+                krig_data_c(I[t], I_n, W, u, j, k, ls)
+                mse_bi(mptr, I[t], I0, di, dj, u[0, j, k], u[1, j, k])
+                err += mptr[0] / mptr[1]
+        free(mptr)
     return err / b / c
 
 def ct_integrate(float_t[:, ::1] sx_arr, float_t[:, ::1] sy_arr):
