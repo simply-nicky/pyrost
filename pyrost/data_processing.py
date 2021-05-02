@@ -133,7 +133,7 @@ class STData(DataContainer):
             self.mask = np.ones(self.data.shape)
         if self.whitefield is None:
             self.whitefield = make_whitefield(data=self.data[self.good_frames],
-                                              mask=self.mask[self.good_frames])
+                                              mask=self.mask[self.good_frames], axis=0)
 
         # Set a pixel map, deviation angles, and phase
         if not self.pixel_map is None:
@@ -959,8 +959,7 @@ class SpeckleTracking(DataContainer):
             # Update pixel_map
             new_obj = obj.update_pixel_map(ls_pm=ls_pm, sw_fs=sw_fs, sw_ss=sw_ss, method=method)
             obj.pixel_map += gaussian_filter(new_obj.pixel_map - obj.pixel_map,
-                                             (0, blur, blur), mode='nearest',
-                                             num_threads=self.num_threads)
+                                             (0, blur, blur), mode='nearest')
 
             # Update dss_pix, dfs_pix
             if update_translations:
@@ -1053,8 +1052,7 @@ class SpeckleTracking(DataContainer):
             # Update pixel_map
             new_obj = obj.update_pixel_map(ls_pm=ls_pm, sw_fs=sw_fs, sw_ss=sw_ss, method=method)
             obj.pixel_map += gaussian_filter(new_obj.pixel_map - obj.pixel_map,
-                                             (0, blur, blur), mode='nearest',
-                                             num_threads=self.num_threads)
+                                             (0, blur, blur), mode='nearest')
 
             # Update dss_pix, dfs_pix
             if update_translations:

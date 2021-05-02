@@ -36,7 +36,7 @@ void ml_profile(double complex *out, const double *x, const double *layers, int 
 void frames(double *out, const double *pfx, const double *pfy, const double *wfx, const double *wfy,
     double dx, double dy, size_t xpts, size_t ypts, size_t nframes, size_t ss_size, size_t fs_size, long seed, unsigned threads);
 
-void whitefield(void *out, const void *data, const unsigned char *mask, size_t nframes, size_t frame_size,
-    size_t size, int (*compar)(const void*, const void*), unsigned threads);
+void whitefield(void *out, const void *data, const unsigned char *mask, size_t isize,
+    size_t npts, size_t istride, size_t size, int (*compar)(const void*, const void*), unsigned threads);
 
 #endif

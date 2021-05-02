@@ -4,7 +4,9 @@ import numpy as np
 import cython
 from libc.math cimport log
 from libc.math cimport sqrt, exp, pi, floor, ceil
+from libc.string cimport memcmp
 from cython.parallel import prange, parallel
+from libc.stdlib cimport abort, malloc, free
 cimport openmp
 # import speckle_tracking as st
 
@@ -30,82 +32,42 @@ def init_fftw():
 
 init_fftw()
 
-cdef float_t min_float(float_t* array, int a) nogil:
-    cdef:
-        int i
-        float_t mv = array[0]
-    for i in range(a):
-        if array[i] < mv:
-            mv = array[i]
-    return mv
+def make_whitefield(data: np.ndarray, mask: np.ndarray, axis: cython.int=0,
+                    num_threads: cython.uint=1) -> np.ndarray:
+    data = np.PyArray_GETCONTIGUOUS(data)
+    mask = np.PyArray_GETCONTIGUOUS(mask)
 
-cdef float_t max_float(float_t* array, int a) nogil:
-    cdef:
-        int i
-        float_t mv = array[0]
-    for i in range(a):
-        if array[i] > mv:
-            mv = array[i]
-    return mv
-
-cdef float_t rbf(float_t dsq, float_t ls) nogil:
-    return exp(-dsq / 2 / ls**2) / sqrt(2 * pi)
-
-cdef void frame_reference(float_t[:, ::1] I0, float_t[:, ::1] w0, float_t[:, ::1] I, float_t[:, ::1] W,
-                          float_t[:, :, ::1] u, float_t di, float_t dj, float_t ls) nogil:
-    cdef:
-        int b = I.shape[0], c = I.shape[1], j, k, jj, kk, j0, k0
-        int aa = I0.shape[0], bb = I0.shape[1], jj0, jj1, kk0, kk1
-        int dn = <int>(ceil(4 * ls))
-        float_t ss, fs, r
-    for j in range(b):
-        for k in range(c):
-            ss = u[0, j, k] - di
-            fs = u[1, j, k] - dj
-            j0 = <int>(ss) + 1
-            k0 = <int>(fs) + 1
-            jj0 = j0 - dn if j0 - dn > 0 else 0
-            jj1 = j0 + dn if j0 + dn < aa else aa
-            kk0 = k0 - dn if k0 - dn > 0 else 0
-            kk1 = k0 + dn if k0 + dn < bb else bb
-            for jj in range(jj0, jj1):
-                for kk in range(kk0, kk1):
-                    r = rbf((jj - ss)**2 + (kk - fs)**2, ls)
-                    I0[jj, kk] += I[j, k] * W[j, k] * r
-                    w0[jj, kk] += W[j, k]**2 * r
-
-def make_reference(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, :, ::1] u, float_t[::1] di,
-                   float_t[::1] dj, int sw_ss, int sw_fs, float_t ls, bint return_nm0=True, unsigned num_threads=1):
-    cdef:
-        str dtype = 'float64' if float_t is np.float64_t else 'float32'
-        int a = I_n.shape[0], b = I_n.shape[1], c = I_n.shape[2]
-        int i, j, k, t
-        float_t Is, ws
-        float_t n0 = -min_float(&u[0, 0, 0], b * c) + max_float(&di[0], a) + sw_ss
-        float_t m0 = -min_float(&u[1, 0, 0], b * c) + max_float(&dj[0], a) + sw_fs
-        int aa = <int>(max_float(&u[0, 0, 0], b * c) - min_float(&di[0], a) + n0) + 1 + sw_ss
-        int bb = <int>(max_float(&u[1, 0, 0], b * c) - min_float(&dj[0], a) + m0) + 1 + sw_fs
-        float_t[:, :, ::1] I = np.zeros((num_threads, aa, bb), dtype=dtype)
-        float_t[:, :, ::1] w = np.zeros((num_threads, aa, bb), dtype=dtype)
-        float_t[:, ::1] I0 = np.zeros((aa, bb), dtype=dtype)
-    for i in prange(a, schedule='guided', num_threads=num_threads, nogil=True):
-        t = openmp.omp_get_thread_num()
-        frame_reference(I[t], w[t], I_n[i], W, u, di[i] - n0, dj[i] - m0, ls)
-    for k in prange(bb, schedule='guided', num_threads=num_threads, nogil=True):
-        t = openmp.omp_get_thread_num()
-        for j in range(aa):
-            Is = 0; ws = 0
-            for i in range(num_threads):
-                Is = Is + I[i, j, k]
-                ws = ws + w[i, j, k]
-            if ws:
-                I0[j, k] = Is / ws
-            else:
-                I0[j, k] = 0
-    if return_nm0:
-        return np.asarray(I0), <int>(n0), <int>(m0)
-    else:
-        return np.asarray(I0)
+    if not np.PyArray_ISBOOL(mask):
+        raise TypeError('mask array must be of boolean type')
+    cdef int ndim = data.ndim
+    if memcmp(data.shape, mask.shape, ndim * sizeof(np.npy_intp)):
+        raise ValueError('mask and data arrays must have identical shapes')
+    axis = axis if axis >= 0 else ndim + axis
+    cdef np.npy_intp isize = np.PyArray_SIZE(data)
+    cdef np.npy_intp *dims = <np.npy_intp *>malloc((ndim - 1) * sizeof(np.npy_intp))
+    cdef int i
+    for i in range(axis):
+        dims[i] = data.shape[i]
+    cdef np.npy_intp npts = data.shape[axis]
+    for i in range(axis + 1, ndim):
+        dims[i - 1] = data.shape[i]
+    cdef np.npy_intp istride = np.PyArray_STRIDE(data, axis) / np.PyArray_ITEMSIZE(data)
+    cdef int type_num = np.PyArray_TYPE(data)
+    cdef np.ndarray out = <np.ndarray>np.PyArray_SimpleNew(ndim - 1, dims, type_num)
+    cdef void *_out = <void *>np.PyArray_DATA(out)
+    cdef void *_data = <void *>np.PyArray_DATA(data)
+    cdef unsigned char *_mask = <unsigned char *>np.PyArray_DATA(mask)
+    with nogil:
+        if type_num == np.NPY_FLOAT64:
+                whitefield(_out, _data, _mask, isize, npts, istride, 8, compare_double, num_threads)
+        elif type_num == np.NPY_FLOAT32:
+                whitefield(_out, _data, _mask, isize, npts, istride, 4, compare_float, num_threads)
+        elif type_num == np.NPY_INT32:
+                whitefield(_out, _data, _mask, isize, npts, istride, 4, compare_long, num_threads)
+        else:
+            raise TypeError('data argument has incompatible type: {:s}'.format(data.dtype))
+    free(dims)
+    return out
 
 # def st_update(I_n, dij, basis, x_ps, y_ps, z, df, search_window, n_iter=5,
 #               filter=None, update_translations=False, verbose=False):

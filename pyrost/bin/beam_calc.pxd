@@ -52,8 +52,8 @@ cdef extern from "st_utils.h":
                 double dy, unsigned long xpts, unsigned long ypts, unsigned long nframes,
                 unsigned long ss_size, unsigned long fs_size, long seed, unsigned threads) nogil
 
-    void whitefield(void *out, void *data, unsigned char *mask, unsigned long nframes,
-                    unsigned long frame_size, unsigned long size, int (*compare)(void *, void *),
+    void whitefield(void *out, void *data, unsigned char *mask, unsigned long isize, unsigned long npts,
+                    unsigned long istride, unsigned long size, int (*compar)(const void*, const void*),
                     unsigned threads) nogil
 
     int compare_double(void *a, void *b) nogil

@@ -3,6 +3,7 @@ import numpy as np
 import cython
 from libc.string cimport memcmp
 from libc.math cimport log
+from libc.stdlib cimport abort, malloc, free
 
 # Numpy must be initialized. When using numpy from C or Cython you must
 # *ALWAYS* do that, or you will have segfaults
@@ -538,7 +539,7 @@ def fft_convolve(array: np.ndarray, kernel: np.ndarray, axis: cython.int=-1,
     cdef int ndim = array.ndim
     axis = axis if axis >= 0 else ndim + axis
     cdef np.npy_intp npts = np.PyArray_DIM(array, axis)
-    cdef int istride = np.PyArray_STRIDE(array, axis) / np.PyArray_ITEMSIZE(array)
+    cdef np.npy_intp istride = np.PyArray_STRIDE(array, axis) / np.PyArray_ITEMSIZE(array)
     cdef np.npy_intp ksize = np.PyArray_DIM(kernel, 0)
     cdef int _mode = extend_mode_to_code(mode)
     cdef np.npy_intp *dims = array.shape
@@ -642,27 +643,30 @@ def make_whitefield(data: np.ndarray, mask: np.ndarray, axis: cython.int=0,
     if memcmp(data.shape, mask.shape, ndim * sizeof(np.npy_intp)):
         raise ValueError('mask and data arrays must have identical shapes')
     axis = axis if axis >= 0 else ndim + axis
-    if axis != 0:
-        data = <np.ndarray>np.PyArray_SwapAxes(data, axis, 0)
-        mask = <np.ndarray>np.PyArray_SwapAxes(mask, axis, 0)
-    cdef np.npy_intp *dims = data.shape
+    cdef np.npy_intp isize = np.PyArray_SIZE(data)
+    cdef np.npy_intp *dims = <np.npy_intp *>malloc((ndim - 1) * sizeof(np.npy_intp))
+    if dims is NULL:
+        abort()
+    cdef int i
+    for i in range(axis):
+        dims[i] = data.shape[i]
+    cdef np.npy_intp npts = data.shape[axis]
+    for i in range(axis + 1, ndim):
+        dims[i - 1] = data.shape[i]
+    cdef np.npy_intp istride = np.PyArray_STRIDE(data, axis) / np.PyArray_ITEMSIZE(data)
     cdef int type_num = np.PyArray_TYPE(data)
-    cdef np.ndarray out = <np.ndarray>np.PyArray_SimpleNew(ndim - 1, dims + 1, type_num)
+    cdef np.ndarray out = <np.ndarray>np.PyArray_SimpleNew(ndim - 1, dims, type_num)
     cdef void *_out = <void *>np.PyArray_DATA(out)
     cdef void *_data = <void *>np.PyArray_DATA(data)
     cdef unsigned char *_mask = <unsigned char *>np.PyArray_DATA(mask)
-    cdef np.npy_intp frame_size = np.PyArray_SIZE(data) // dims[0]
-    cdef np.npy_intp size = 0
     with nogil:
         if type_num == np.NPY_FLOAT64:
-                whitefield(_out, _data, _mask, dims[0], frame_size, 8, compare_double, num_threads)
+                whitefield(_out, _data, _mask, isize, npts, istride, 8, compare_double, num_threads)
         elif type_num == np.NPY_FLOAT32:
-                whitefield(_out, _data, _mask, dims[0], frame_size, 4, compare_float, num_threads)
+                whitefield(_out, _data, _mask, isize, npts, istride, 4, compare_float, num_threads)
         elif type_num == np.NPY_INT32:
-                whitefield(_out, _data, _mask, dims[0], frame_size, 4, compare_long, num_threads)
+                whitefield(_out, _data, _mask, isize, npts, istride, 4, compare_long, num_threads)
         else:
             raise TypeError('data argument has incompatible type: {:s}'.format(data.dtype))
-    if axis != 0:
-        data = <np.ndarray>np.PyArray_SwapAxes(data, 0, axis)
-        mask = <np.ndarray>np.PyArray_SwapAxes(mask, 0, axis)
+    free(dims)
     return out

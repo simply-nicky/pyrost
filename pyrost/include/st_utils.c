@@ -283,10 +283,9 @@ static void *wirthselect(void *data, size_t k, size_t l, size_t m, size_t size,
     int (*compar)(const void*, const void*))
 {
     int i, j;
-    void *key;
+    void *key = data + k * size;
     while (l < m)
     {
-        key = data + k * size;
         i = l; j = m;
         while (1)
         {
@@ -305,25 +304,33 @@ static void *wirthselect(void *data, size_t k, size_t l, size_t m, size_t size,
     return key;
 }
 
-void whitefield(void *out, const void *data, const unsigned char *mask, size_t nframes, size_t frame_size, size_t size,
-    int (*compar)(const void*, const void*), unsigned threads)
+void whitefield(void *out, const void *data, const unsigned char *mask, size_t isize,
+    size_t npts, size_t istride, size_t size, int (*compar)(const void*, const void*), unsigned threads)
 {
+    int repeats = isize / (npts * istride);
     #pragma omp parallel num_threads(threads)
     {
-        unsigned char buffer[nframes * size];
+        unsigned char *buffer = (unsigned char *)malloc(npts * size);
         #pragma omp for
-        for (int i = 0; i < (int) (frame_size); i++)
+        for (int i = 0; i < repeats; i++)
         {
-            int k = 0;
-            for (int j = 0; j < (int) nframes; j++)
+            for (int j = 0; j < (int) istride; j++)
             {
-                if (mask[j * frame_size + i])
+                int len = 0;
+                for (int n = 0; n < (int) npts; n++)
                 {
-                    memcpy(buffer + k * size, data + (j * frame_size + i) * size, size);
-                    k++;
+                    if (mask[n * istride])
+                    {
+                        memcpy(buffer + len * size, data + n * istride * size, size);
+                        len++;
+                    }
                 }
+                if (len) memcpy(out, wirthselect(buffer, len / 2, 0, len - 1, size, compar), size);
+                else memset(out, 0, size);
+                data += size; mask += 1; out += size;
             }
-            memcpy(out + i * size, wirthselect(buffer, k / 2, 0, k - 1, size, compar), size);
+            data += (npts - 1) * istride * size; mask += (npts - 1) * istride;
         }
+        free(buffer);
     }
 }
