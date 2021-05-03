@@ -92,6 +92,24 @@ cdef np.ndarray normalize_sequence(object inp, np.npy_intp rank, int type_num):
     return arr
 
 def gaussian_kernel(sigma: double, order: cython.uint=0, truncate: cython.double=4.) -> np.ndarray:
+    """Discrete Gaussian kernel.
+    
+    Parameters
+    ----------
+    sigma : float
+        Standard deviation for Gaussian kernel.
+    order : int, optional
+        The order of the filter. An order of 0 corresponds to convolution with a
+        Gaussian kernel. A positive order corresponds to convolution with that
+        derivative of a Gaussian. Default is 0.
+    truncate : float, optional
+        Truncate the filter at this many standard deviations. Default is 4.0.
+    
+    Returns
+    -------
+    krn : np.ndarray
+        Gaussian kernel.
+    """
     cdef np.npy_intp radius = <np.npy_intp>(sigma * truncate)
     cdef np.npy_intp *dims = [2 * radius + 1,]
     cdef np.ndarray out = <np.ndarray>np.PyArray_SimpleNew(1, dims, np.NPY_FLOAT64)
