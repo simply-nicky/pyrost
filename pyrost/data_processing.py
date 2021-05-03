@@ -470,7 +470,7 @@ class STData(DataContainer):
         grad_mag, sweep_scan = [], []
         for defocus_fs, defocus_ss in zip(defoci_fs.ravel(), defoci_ss.ravel()):
             st_data = self.update_defocus(defocus_fs, defocus_ss)
-            st_obj = st_data.get_st(num_threads=num_threads).update_reference(ls_ri=ls_ri, sw_fs=0, sw_ss=0)
+            st_obj = st_data.get_st(num_threads=num_threads).update_reference(ls_ri=ls_ri)
             ri_gm = gaussian_gradient_magnitude(st_obj.reference_image, sigma=ls_ri)
             sweep_scan.append(st_obj.reference_image)
             grad_mag.append(np.mean(ri_gm**2))

@@ -114,27 +114,32 @@ void gauss_grad_fftw(double *out, const double *inp, int ndim, size_t *dims, dou
         else {g0[n] = NULL; g1[n] = NULL; ksizes[n] = 0;}
     }
 
-    #pragma omp parallel for num_threads(threads)
-    for (int i = 0; i < (int) isize; i++) out[i] = inp[i];
-    for (int n = 0; n < ndim; n++)
+    if (ksizes[0] != 0) fft_convolve_fftw(out, inp, g1[0], isize, dims[0],
+        strides[0], ksizes[0], mode, cval, threads);
+    else
     {
-        if (ksizes[n] != 0)
-        {
-            if (n == 0) {fft_convolve_fftw(out, out, g1[n], isize, dims[n],
-                strides[n], ksizes[n], mode, cval, threads);}
-            else {fft_convolve_fftw(out, out, g0[n], isize, dims[n],
-                strides[n], ksizes[n], mode, cval, threads);}
-        }
+        #pragma omp parallel for num_threads(threads)
+        for (int i = 0; i < (int) isize; i++) out[i] = inp[i];
+    }
+    for (int n = 1; n < ndim; n++)
+    {
+        if (ksizes[n] != 0) fft_convolve_fftw(out, out, g0[n], isize, dims[n],
+            strides[n], ksizes[n], mode, cval, threads);
     }
     #pragma omp parallel for num_threads(threads)
-    for (int i = 0; i < (int) isize; i++) out[i] = pow(out[i], 2);
+    for (int i = 0; i < (int) isize; i++) out[i] = out[i] * out[i];
 
     double *tmp = (double *)malloc(isize * sizeof(double));
     for (int m = 1; m < ndim; m++)
     {
-        #pragma omp parallel for num_threads(threads)
-        for (int i = 0; i < (int) isize; i++) tmp[i] = inp[i];
-        for (int n = 0; n < ndim; n++)
+        if (ksizes[0] != 0) fft_convolve_fftw(tmp, inp, g0[0], isize, dims[0],
+            strides[0], ksizes[0], mode, cval, threads);
+        else
+        {
+            #pragma omp parallel for num_threads(threads)
+            for (int i = 0; i < (int) isize; i++) tmp[i] = inp[i];
+        }
+        for (int n = 1; n < ndim; n++)
         {
             if (ksizes[n])
             {
@@ -145,7 +150,7 @@ void gauss_grad_fftw(double *out, const double *inp, int ndim, size_t *dims, dou
             }
         }
         #pragma omp parallel for num_threads(threads)
-        for (int i = 0; i < (int) isize; i++) out[i] += pow(tmp[i], 2);
+        for (int i = 0; i < (int) isize; i++) out[i] += tmp[i] * tmp[i];
     }
     free(tmp); free(ksizes); free(strides);
     for (int n = 0; n < ndim; n++) {free(g0[n]); free(g1[n]);}
@@ -180,24 +185,23 @@ int gauss_grad_np(double *out, const double *inp, int ndim, size_t *dims, double
         else {g0[n] = NULL; g1[n] = NULL; ksizes[n] = 0;}
     }
 
-    for (int i = 0; i < (int) isize; i++) out[i] = inp[i];
-    for (int n = 0; n < ndim; n++)
+    if (ksizes[0] != 0) fail |= fft_convolve_np(out, inp, g1[0], isize, dims[0],
+        strides[0], ksizes[0], mode, cval);
+    else for (int i = 0; i < (int) isize; i++) out[i] = inp[i];
+    for (int n = 1; n < ndim; n++)
     {
-        if (ksizes[n] != 0)
-        {
-            if (n == 0) {fail |= fft_convolve_np(out, out, g1[n], isize, dims[n],
-                strides[n], ksizes[n], mode, cval);}
-            else {fail |= fft_convolve_np(out, out, g0[n], isize, dims[n],
-                strides[n], ksizes[n], mode, cval);}
-        }
+        if (ksizes[n] != 0) fail |= fft_convolve_np(out, out, g0[n], isize, dims[n],
+            strides[n], ksizes[n], mode, cval);
     }
-    for (int i = 0; i < (int) isize; i++) out[i] = pow(out[i], 2);
+    for (int i = 0; i < (int) isize; i++) out[i] = out[i] * out[i];
 
     double *tmp = (double *)malloc(isize * sizeof(double));
     for (int m = 1; m < ndim; m++)
     {
-        for (int i = 0; i < (int) isize; i++) tmp[i] = inp[i];
-        for (int n = 0; n < ndim; n++)
+        if (ksizes[0] != 0) fail |= fft_convolve_np(tmp, inp, g0[0], isize, dims[0],
+            strides[0], ksizes[0], mode, cval);
+        else for (int i = 0; i < (int) isize; i++) tmp[i] = inp[i];
+        for (int n = 1; n < ndim; n++)
         {
             if (ksizes[n])
             {
@@ -207,7 +211,7 @@ int gauss_grad_np(double *out, const double *inp, int ndim, size_t *dims, double
                     strides[n], ksizes[n], mode, cval);}
             }
         }
-        for (int i = 0; i < (int) isize; i++) out[i] += pow(tmp[i], 2);
+        for (int i = 0; i < (int) isize; i++) out[i] += tmp[i] * tmp[i];
     }
     free(tmp); free(ksizes); free(strides);
     for (int n = 0; n < ndim; n++) {free(g0[n]); free(g1[n]);}

@@ -4,6 +4,7 @@ import cython
 from libc.string cimport memcmp
 from libc.math cimport log
 from libc.stdlib cimport abort, malloc, free
+from scipy.ndimage import gaussian_gradient_magnitude as ggm, gaussian_filter as gf
 
 # Numpy must be initialized. When using numpy from C or Cython you must
 # *ALWAYS* do that, or you will have segfaults
@@ -45,6 +46,41 @@ def next_fast_len(np.npy_intp target, str backend='fftw'):
         return good_size(target)
     else:
         raise ValueError('{:s} is invalid backend'.format(backend))
+
+cdef bint fft_faster(np.npy_intp *in1, np.npy_intp *in2, np.npy_intp ndim):
+    cdef np.npy_intp in1_size = 1
+    cdef np.npy_intp in2_size = 1
+    cdef int i
+    for i in range(ndim):
+        in1_size *= in1[i]
+        in2_size *= in2[i]
+
+    cdef np.npy_intp direct_ops = 1
+    if ndim == 1:
+        direct_ops *= in1[0] * in2[0] if in1[0] < in2[0] else in1[0] * in2[0] - (in2[0] // 2) * ((in2[0] + 1) // 2)
+    else:
+        direct_ops *= in1_size * in2_size
+
+    cdef np.npy_intp fft_ops = 1
+    for i in range(ndim):
+        fft_ops *= in1[i] + in2[i] - 1
+    fft_ops = <np.npy_intp>(3 * fft_ops * log(<double>fft_ops))  # 3 separate FFTs of size full_out_shape
+
+    cdef double offset, O_fft, O_direct, O_offset
+    if ndim == 1:
+        if in2_size <= in1_size:
+            O_fft = 4.2646654e-8
+            O_direct = 2.8478277e-10
+            O_offset = -1e-3
+        else:
+            O_fft = 4.21635404e-8
+            O_direct = 1.1773253e-8
+            O_offset = -1e-5
+    else:
+        O_fft = 3.04735e-8
+        O_direct = 1.55367e-8
+        O_offset = -1e-4
+    return (O_fft * fft_ops) < (O_direct * direct_ops + O_offset)
 
 cdef int extend_mode_to_code(str mode) except -1:
     if mode == 'constant':
@@ -118,6 +154,31 @@ def gaussian_kernel(sigma: double, order: cython.uint=0, truncate: cython.double
         gauss_kernel1d(_out, sigma, order, dims[0])
     return out
 
+cdef np.ndarray gf_fft(np.ndarray inp, np.ndarray sigma, np.ndarray order, str mode,
+                       double cval, double truncate, str backend, unsigned int num_threads):
+    inp = np.PyArray_GETCONTIGUOUS(inp)
+    inp = np.PyArray_Cast(inp, np.NPY_FLOAT64)
+    
+    cdef int ndim = inp.ndim
+    cdef np.npy_intp *dims = inp.shape
+    cdef np.ndarray out = <np.ndarray>np.PyArray_SimpleNew(ndim, dims, np.NPY_FLOAT64)
+    cdef double *_out = <double *>np.PyArray_DATA(out)
+    cdef double *_inp = <double *>np.PyArray_DATA(inp)
+    cdef unsigned long *_dims = <unsigned long *>dims
+    cdef double *_sig = <double *>np.PyArray_DATA(sigma)
+    cdef unsigned *_ord = <unsigned *>np.PyArray_DATA(order)
+    cdef int _mode = extend_mode_to_code(mode)
+    with nogil:
+        if backend == 'fftw':
+            gauss_filter_fftw(_out, _inp, ndim, _dims, _sig, _ord, _mode, cval, truncate, num_threads)
+        elif backend == 'numpy':
+            fail = gauss_filter_np(_out, _inp, ndim, _dims, _sig, _ord, _mode, cval, truncate)
+            if fail:
+                raise RuntimeError('NumPy FFT exited with error')
+        else:
+            raise ValueError('{:s} is invalid backend'.format(backend))
+    return out
+
 def gaussian_filter(inp: np.ndarray, sigma: object, order: object=0, mode: str='reflect',
                     cval: cython.double=0., truncate: cython.double=4., backend: str='fftw',
                     num_threads: cython.uint=1) -> np.ndarray:
@@ -166,25 +227,39 @@ def gaussian_filter(inp: np.ndarray, sigma: object, order: object=0, mode: str='
     out : np.ndarray
         Returned array of same shape as `input`.
     """
-    inp = np.PyArray_GETCONTIGUOUS(inp)
-    inp = np.PyArray_Cast(inp, np.NPY_FLOAT64)
-
     cdef int ndim = inp.ndim
     cdef np.ndarray sigmas = normalize_sequence(sigma, ndim, np.NPY_FLOAT64)
     cdef np.ndarray orders = normalize_sequence(order, ndim, np.NPY_UINT32)
+    cdef int i
+    cdef np.npy_intp *dims = inp.shape
+    cdef np.npy_intp *kdims = <np.npy_intp *>malloc(ndim * sizeof(np.npy_intp))
+    for i in range(ndim):
+        kdims[i] = <np.npy_intp>(2 * sigmas[i] * truncate) + 1
+    cdef bint if_fft = fft_faster(inp.shape, kdims, ndim)
+    free(kdims)
+    if if_fft:
+        return gf_fft(inp, sigmas, orders, mode, cval, truncate, backend, num_threads)
+    else:
+        return gf(input=inp, simga=sigma, order=order, mode=mode, cval=cval, truncate=truncate)
+
+cdef np.ndarray ggm_fft(np.ndarray inp, np.ndarray sigma, str mode, double cval,
+                        double truncate, str backend, unsigned int num_threads):
+    inp = np.PyArray_GETCONTIGUOUS(inp)
+    inp = np.PyArray_Cast(inp, np.NPY_FLOAT64)
+    
+    cdef int ndim = inp.ndim
     cdef np.npy_intp *dims = inp.shape
     cdef np.ndarray out = <np.ndarray>np.PyArray_SimpleNew(ndim, dims, np.NPY_FLOAT64)
     cdef double *_out = <double *>np.PyArray_DATA(out)
     cdef double *_inp = <double *>np.PyArray_DATA(inp)
     cdef unsigned long *_dims = <unsigned long *>dims
-    cdef double *_sig = <double *>np.PyArray_DATA(sigmas)
-    cdef unsigned *_ord = <unsigned *>np.PyArray_DATA(orders)
+    cdef double *_sig = <double *>np.PyArray_DATA(sigma)
     cdef int _mode = extend_mode_to_code(mode)
     with nogil:
         if backend == 'fftw':
-            gauss_filter_fftw(_out, _inp, ndim, _dims, _sig, _ord, _mode, cval, truncate, num_threads)
+            gauss_grad_fftw(_out, _inp, ndim, _dims, _sig, _mode, cval, truncate, num_threads)
         elif backend == 'numpy':
-            fail = gauss_filter_np(_out, _inp, ndim, _dims, _sig, _ord, _mode, cval, truncate)
+            fail = gauss_grad_np(_out, _inp, ndim, _dims, _sig, _mode, cval, truncate)
             if fail:
                 raise RuntimeError('NumPy FFT exited with error')
         else:
@@ -229,28 +304,19 @@ def gaussian_gradient_magnitude(inp: np.ndarray, sigma: object, mode: str='mirro
     num_threads : int, optional
         Number of threads.
     """
-    inp = np.PyArray_GETCONTIGUOUS(inp)
-    inp = np.PyArray_Cast(inp, np.NPY_FLOAT64)
-
     cdef int ndim = inp.ndim
     cdef np.ndarray sigmas = normalize_sequence(sigma, ndim, np.NPY_FLOAT64)
+    cdef int i
     cdef np.npy_intp *dims = inp.shape
-    cdef np.ndarray out = <np.ndarray>np.PyArray_SimpleNew(ndim, dims, np.NPY_FLOAT64)
-    cdef double *_out = <double *>np.PyArray_DATA(out)
-    cdef double *_inp = <double *>np.PyArray_DATA(inp)
-    cdef unsigned long *_dims = <unsigned long *>dims
-    cdef double *_sig = <double *>np.PyArray_DATA(sigmas)
-    cdef int _mode = extend_mode_to_code(mode)
-    with nogil:
-        if backend == 'fftw':
-            gauss_grad_fftw(_out, _inp, ndim, _dims, _sig, _mode, cval, truncate, num_threads)
-        elif backend == 'numpy':
-            fail = gauss_grad_np(_out, _inp, ndim, _dims, _sig, _mode, cval, truncate)
-            if fail:
-                raise RuntimeError('NumPy FFT exited with error')
-        else:
-            raise ValueError('{:s} is invalid backend'.format(backend))
-    return out
+    cdef np.npy_intp *kdims = <np.npy_intp *>malloc(ndim * sizeof(np.npy_intp))
+    for i in range(ndim):
+        kdims[i] = <np.npy_intp>(2 * sigmas[i] * truncate) + 1
+    cdef bint if_fft = fft_faster(inp.shape, kdims, ndim)
+    free(kdims)
+    if if_fft:
+        return ggm_fft(inp, sigmas, mode, cval, truncate, backend, num_threads)
+    else:
+        return ggm(input=inp, sigma=sigma, mode=mode, cval=cval, truncate=truncate)
 
 def rsc_wp(wft: np.ndarray, dx0: cython.double, dx: cython.double, z: cython.double,
            wl: cython.double, axis: cython.int=-1, backend: str='fftw',
