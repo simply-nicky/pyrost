@@ -369,9 +369,9 @@ void fft_convolve_fftw(double *out, const double *inp, const double *krn, size_t
             {fftw_execute(irfftp);}
             #pragma omp barrier
             #pragma omp for
-            for (int n = 0; n < npts / 2; n++) out[n * istride + npts * istride * (i / istride) + (i % istride)] = inpft[n + flen - npts / 2] / flen;
+            for (int n = 0; n < (int) npts / 2; n++) out[n * istride + npts * istride * (i / istride) + (i % istride)] = inpft[n + flen - npts / 2] / flen;
             #pragma omp for
-            for (int n = 0; n < npts / 2 + npts % 2; n++) out[(n + npts / 2) * istride + npts * istride * (i / istride) + (i % istride)] = inpft[n] / flen;
+            for (int n = 0; n < (int) (npts / 2 + npts % 2); n++) out[(n + npts / 2) * istride + npts * istride * (i / istride) + (i % istride)] = inpft[n] / flen;
         }
     }
 
