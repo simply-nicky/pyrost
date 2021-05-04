@@ -55,6 +55,8 @@ class STData(DataContainer):
     ----------
     protocol : Protocol
         CXI :class:`Protocol` object.
+    num_threads : int, optional
+        Specify number of threads that are used in all the calculations.
 
     **kwargs : dict
         Dictionary of the attributes' data specified in `attr_set`
@@ -110,7 +112,10 @@ class STData(DataContainer):
                 'phase', 'pixel_aberrations', 'pixel_map', 'pixel_translations',
                 'reference_image', 'roi', 'whitefield'}
 
-    def __init__(self, protocol, **kwargs):
+    def __init__(self, protocol, num_threads=None, **kwargs):
+        if num_threads is None:
+            num_threads = cpu_count()
+        self.__dict__['num_threads'] = num_threads
         # Initialize protocol for the proper data type conversion in __setattr__
         self.__dict__['protocol'] = protocol
 
@@ -431,8 +436,7 @@ class STData(DataContainer):
         else:
             return None
 
-    def defocus_sweep(self, defoci_fs, defoci_ss=None, ls_ri=30, return_sweep=True,
-                      num_threads=None):
+    def defocus_sweep(self, defoci_fs, defoci_ss=None, ls_ri=30, return_sweep=True):
         """Calculate a set of `reference_image` for each defocus in `defoci` and
         return a gradient magnitude for each `reference_image` as a figure of
         merit of it's sharpness (the higher the value the sharper `reference_image`
@@ -449,8 +453,6 @@ class STData(DataContainer):
             `reference_image` length scale in pixels.
         return_sweep : bool, optional
             Return a sweep image if it's True.
-        num_threads : int, optional
-            Number of threads.
 
         Returns
         -------
@@ -463,15 +465,14 @@ class STData(DataContainer):
         --------
         SpeckleTracking.update_reference : `reference_image` update algorithm.
         """
-        if num_threads is None:
-            num_threads = cpu_count()
         if defoci_ss is None:
             defoci_ss = defoci_fs.copy()
         grad_mag, sweep_scan = [], []
         for defocus_fs, defocus_ss in zip(defoci_fs.ravel(), defoci_ss.ravel()):
             st_data = self.update_defocus(defocus_fs, defocus_ss)
-            st_obj = st_data.get_st(num_threads=num_threads).update_reference(ls_ri=ls_ri)
-            ri_gm = gaussian_gradient_magnitude(st_obj.reference_image, sigma=ls_ri)
+            st_obj = st_data.get_st().update_reference(ls_ri=ls_ri)
+            ri_gm = gaussian_gradient_magnitude(st_obj.reference_image, sigma=ls_ri,
+                                                num_threads=self.num_threads)
             sweep_scan.append(st_obj.reference_image)
             grad_mag.append(np.mean(ri_gm**2))
         grad_mag = np.array(grad_mag).reshape(defoci_fs.shape)
@@ -515,7 +516,7 @@ class STData(DataContainer):
         else:
             return value
 
-    def get_st(self, num_threads=None, aberrations=False):
+    def get_st(self, aberrations=False):
         """Return :class:`SpeckleTracking` object derived
         from the container. Return None if `defocus_fs`
         or `defocus_ss` doesn't exist in the container.
@@ -526,18 +527,12 @@ class STData(DataContainer):
             An instance of :class:`SpeckleTracking` derived
             from the container. None if `defocus_fs` or
             `defocus_ss` is None.
-        num_threads : int, optional
-            Specify number of threads that are used in all the
-            calculations performed by a :class:`SpeckleTracking`
-            object.
         aberrations : bool, optional
             Add `pixel_aberrations` to `pixel_map` of
             :class:`SpeckleTracking` object if it's True.
         """
-        if num_threads is None:
-            num_threads = cpu_count()
         if self._isdefocus:
-            return SpeckleTracking.import_data(self, num_threads, aberrations)
+            return SpeckleTracking.import_data(self, aberrations)
         else:
             return None
 
@@ -671,7 +666,7 @@ class SpeckleTracking(DataContainer):
                     for key, val in self.attr_dict.items()}.__str__()
 
     @classmethod
-    def import_data(cls, st_data, num_threads, aberrations=False):
+    def import_data(cls, st_data, aberrations=False):
         """Return a new :class:`SpeckleTracking` object
         with all the necessary data attributes imported from
         the :class:`STData` container object `st_data`.
@@ -699,7 +694,8 @@ class SpeckleTracking(DataContainer):
             pixel_map += st_data.get('pixel_aberrations')
         dij_pix = np.ascontiguousarray(np.swapaxes(st_data.get('pixel_translations'), 0, 1))
         return cls(data=data, data_ref=st_data, dfs_pix=dij_pix[1], dss_pix=dij_pix[0],
-                   num_threads=num_threads, pixel_map=pixel_map, whitefield=st_data.get('whitefield'))
+                   num_threads=st_data.num_threads, pixel_map=pixel_map,
+                   whitefield=st_data.get('whitefield'))
 
     @dict_to_object
     def update_reference(self, ls_ri, sw_fs=0, sw_ss=0):

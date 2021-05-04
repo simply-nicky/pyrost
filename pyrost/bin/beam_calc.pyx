@@ -240,7 +240,7 @@ def gaussian_filter(inp: np.ndarray, sigma: object, order: object=0, mode: str='
     if if_fft:
         return gf_fft(inp, sigmas, orders, mode, cval, truncate, backend, num_threads)
     else:
-        return gf(input=inp, simga=sigma, order=order, mode=mode, cval=cval, truncate=truncate)
+        return gf(input=inp, sigma=sigma, order=order, mode=mode, cval=cval, truncate=truncate)
 
 cdef np.ndarray ggm_fft(np.ndarray inp, np.ndarray sigma, str mode, double cval,
                         double truncate, str backend, unsigned int num_threads):
