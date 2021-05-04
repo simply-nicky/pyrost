@@ -14,7 +14,7 @@ in order to perform the simulation.
 import os
 import numpy as np
 from ..protocol import INIParser, ROOT_PATH
-from ..bin import bar_positions, barcode_profile
+from ..bin import bar_positions, barcode_profile, gaussian_kernel
 from .materials import Material, MLL
 
 PARAMETERS_FILE = os.path.join(ROOT_PATH, 'config/parameters.ini')
@@ -348,10 +348,7 @@ class STParams(INIParser):
         numpy.ndarray
             Source's rocking curve profile.
         """
-        sc_sgm, n_sc = self.th_s * dist, np.ceil(8 * self.th_s * dist / dx)
-        sc_x = dx * np.arange(-n_sc // 2, n_sc // 2 + 1)
-        sc = np.exp(-sc_x**2 / 2 / sc_sgm**2)
-        return sc / sc.sum()
+        return gaussian_kernel(dist * self.th_s / dx)
 
     def export_dict(self):
         """Export experimental parameters to :class:`dict`.

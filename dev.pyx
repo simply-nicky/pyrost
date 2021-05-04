@@ -33,6 +33,35 @@ def init_fftw():
 
 init_fftw()
 
+def next_fast_len(np.npy_intp target, str backend='fftw'):
+    r"""Find the next fast size of input data to fft, for zero-padding, etc.
+    FFT algorithms gain their speed by a recursive divide and conquer strategy.
+    This relies on efficient functions for small prime factors of the input length.
+    Thus, the transforms are fastest when using composites of the prime factors handled
+    by the fft implementation. If there are efficient functions for all radices <= n,
+    then the result will be a number x >= target with only prime factors < n. (Also
+    known as n-smooth numbers)
+
+    Parameters
+    ----------
+    target : int
+        Length to start searching from. Must be a positive integer.
+    backend : {'fftw', 'numpy'}, optional
+        Find n-smooth number for the FFT implementation from the specified
+        library.
+
+    Returns
+    -------
+    n : int
+        The smallest fast length greater than or equal to `target`.
+    """
+    if backend == 'fftw':
+        return next_fast_len_fftw(target)
+    elif backend == 'numpy':
+        return good_size(target)
+    else:
+        raise ValueError('{:s} is invalid backend'.format(backend))
+
 cdef bint fft_faster(np.npy_intp *in1, np.npy_intp *in2, np.npy_intp ndim):
     cdef np.npy_intp in1_size = 1
     cdef np.npy_intp in2_size = 1
@@ -122,24 +151,6 @@ def gaussian_kernel(sigma: double, order: cython.uint=0, truncate: cython.double
         gauss_kernel1d(_out, sigma, order, dims[0])
     return out
 
-def gaussian_filter(inp: np.ndarray, sigma: object, order: object=0, mode: str='reflect',
-                    cval: cython.double=0., truncate: cython.double=4., backend: str='fftw',
-                    num_threads: cython.uint=1) -> np.ndarray:
-    cdef int ndim = inp.ndim
-    cdef np.ndarray sigmas = normalize_sequence(sigma, ndim, np.NPY_FLOAT64)
-    cdef np.ndarray orders = normalize_sequence(order, ndim, np.NPY_UINT32)
-    cdef int i
-    cdef np.npy_intp *dims = inp.shape
-    cdef np.npy_intp *kdims = <np.npy_intp *>malloc(ndim * sizeof(np.npy_intp))
-    for i in range(ndim):
-        kdims[i] = <np.npy_intp>(2 * sigmas[i] * truncate) + 1
-    cdef bint if_fft = fft_faster(inp.shape, kdims, ndim)
-    free(kdims)
-    if if_fft:
-        return gf_fft(inp, sigmas, orders, mode, cval, truncate, backend, num_threads)
-    else:
-        return gf(input=inp, simga=sigma, order=order, mode=mode, cval=cval, truncate=truncate)
-
 cdef np.ndarray gf_fft(np.ndarray inp, np.ndarray sigma, np.ndarray order, str mode,
                        double cval, double truncate, str backend, unsigned int num_threads):
     inp = np.PyArray_GETCONTIGUOUS(inp)
@@ -165,11 +176,12 @@ cdef np.ndarray gf_fft(np.ndarray inp, np.ndarray sigma, np.ndarray order, str m
             raise ValueError('{:s} is invalid backend'.format(backend))
     return out
 
-def gaussian_gradient_magnitude(inp: np.ndarray, sigma: object, mode: str='mirror',
-                                cval: cython.double=0., truncate: cython.double=4.,
-                                backend: str='fftw', num_threads: cython.uint=1) -> np.ndarray:
+def gaussian_filter(inp: np.ndarray, sigma: object, order: object=0, mode: str='reflect',
+                    cval: cython.double=0., truncate: cython.double=4., backend: str='fftw',
+                    num_threads: cython.uint=1) -> np.ndarray:
     cdef int ndim = inp.ndim
     cdef np.ndarray sigmas = normalize_sequence(sigma, ndim, np.NPY_FLOAT64)
+    cdef np.ndarray orders = normalize_sequence(order, ndim, np.NPY_UINT32)
     cdef int i
     cdef np.npy_intp *dims = inp.shape
     cdef np.npy_intp *kdims = <np.npy_intp *>malloc(ndim * sizeof(np.npy_intp))
@@ -178,9 +190,9 @@ def gaussian_gradient_magnitude(inp: np.ndarray, sigma: object, mode: str='mirro
     cdef bint if_fft = fft_faster(inp.shape, kdims, ndim)
     free(kdims)
     if if_fft:
-        return ggm_fft(inp, sigmas, mode, cval, truncate, backend, num_threads)
+        return gf_fft(inp, sigmas, orders, mode, cval, truncate, backend, num_threads)
     else:
-        return ggm(input=inp, sigma=sigma, mode=mode, cval=cval, truncate=truncate)
+        return gf(input=inp, simga=sigma, order=order, mode=mode, cval=cval, truncate=truncate)
 
 cdef np.ndarray ggm_fft(np.ndarray inp, np.ndarray sigma, str mode, double cval,
                         double truncate, str backend, unsigned int num_threads):
@@ -204,6 +216,217 @@ cdef np.ndarray ggm_fft(np.ndarray inp, np.ndarray sigma, str mode, double cval,
                 raise RuntimeError('NumPy FFT exited with error')
         else:
             raise ValueError('{:s} is invalid backend'.format(backend))
+    return out
+
+def gaussian_gradient_magnitude(inp: np.ndarray, sigma: object, mode: str='mirror',
+                                cval: cython.double=0., truncate: cython.double=4.,
+                                backend: str='fftw', num_threads: cython.uint=1) -> np.ndarray:
+    cdef int ndim = inp.ndim
+    cdef np.ndarray sigmas = normalize_sequence(sigma, ndim, np.NPY_FLOAT64)
+    cdef int i
+    cdef np.npy_intp *dims = inp.shape
+    cdef np.npy_intp *kdims = <np.npy_intp *>malloc(ndim * sizeof(np.npy_intp))
+    for i in range(ndim):
+        kdims[i] = <np.npy_intp>(2 * sigmas[i] * truncate) + 1
+    cdef bint if_fft = fft_faster(inp.shape, kdims, ndim)
+    free(kdims)
+    if if_fft:
+        return ggm_fft(inp, sigmas, mode, cval, truncate, backend, num_threads)
+    else:
+        return ggm(input=inp, sigma=sigma, mode=mode, cval=cval, truncate=truncate)
+
+def rsc_wp(wft: np.ndarray, dx0: cython.double, dx: cython.double, z: cython.double,
+           wl: cython.double, axis: cython.int=-1, backend: str='fftw',
+           num_threads: cython.uint=1) -> np.ndarray:
+    wft = np.PyArray_GETCONTIGUOUS(wft)
+    wft = np.PyArray_Cast(wft, np.NPY_COMPLEX128)
+
+    cdef np.npy_intp isize = np.PyArray_SIZE(wft)
+    cdef int ndim = wft.ndim
+    axis = axis if axis >= 0 else ndim + axis
+    cdef np.npy_intp istride = np.PyArray_STRIDE(wft, axis) / np.PyArray_ITEMSIZE(wft)
+    cdef np.npy_intp npts = np.PyArray_DIM(wft, axis)
+    cdef np.npy_intp *dims = wft.shape
+    cdef np.ndarray out = <np.ndarray>np.PyArray_SimpleNew(ndim, dims, np.NPY_COMPLEX128)
+    cdef complex *_out = <complex *>np.PyArray_DATA(out)
+    cdef complex *_inp = <complex *>np.PyArray_DATA(wft)
+    cdef int fail = 0
+    with nogil:
+        if backend == 'fftw':
+            rsc_fftw(_out, _inp, isize, npts, istride, dx0, dx, z, wl, num_threads)
+        elif backend == 'numpy':
+            fail = rsc_np(_out, _inp, isize, npts, istride, dx0, dx, z, wl, num_threads)
+            if fail:
+                raise RuntimeError('NumPy FFT exited with error')
+        else:
+            raise ValueError('{:s} is invalid backend'.format(backend))
+    return out
+
+def fraunhofer_wp(wft: np.ndarray, dx0: cython.double, dx: cython.double,
+                  z: cython.double, wl: cython.double, axis: cython.int=-1,
+                  backend: str='fftw', num_threads: cython.uint=1) -> np.ndarray:
+    wft = np.PyArray_GETCONTIGUOUS(wft)
+    wft = np.PyArray_Cast(wft, np.NPY_COMPLEX128)
+
+    cdef np.npy_intp isize = np.PyArray_SIZE(wft)
+    cdef int ndim = wft.ndim
+    axis = axis if axis >= 0 else ndim + axis
+    cdef np.npy_intp istride = np.PyArray_STRIDE(wft, axis) / np.PyArray_ITEMSIZE(wft)
+    cdef np.npy_intp npts = np.PyArray_DIM(wft, axis)
+    cdef np.npy_intp *dims = wft.shape
+    cdef np.ndarray out = <np.ndarray>np.PyArray_SimpleNew(ndim, dims, np.NPY_COMPLEX128)
+    cdef complex *_out = <complex *>np.PyArray_DATA(out)
+    cdef complex *_inp = <complex *>np.PyArray_DATA(wft)
+    cdef int fail = 0
+    print(isize, npts, istride)
+    with nogil:
+        if backend == 'fftw':
+            fraunhofer_fftw(_out, _inp, isize, npts, istride, dx0, dx, z, wl, num_threads)
+        elif backend == 'numpy':
+            fail = fraunhofer_np(_out, _inp, isize, npts, istride, dx0, dx, z, wl, num_threads)
+            if fail:
+                raise RuntimeError('NumPy FFT exited with error')
+        else:
+            raise ValueError('{:s} is invalid backend'.format(backend))
+    return out
+
+def bar_positions(x0: cython.double, x1: cython.double, b_dx: cython.double,
+                  rd: cython.double, seed: cython.ulong) -> np.ndarray:
+    cdef np.npy_intp size = 2 * (<np.npy_intp>((x1 - x0) / 2 / b_dx) + 1) if x1 > x0 else 0
+    cdef np.npy_intp *dims = [size,]
+    cdef np.ndarray[double] bars = <np.ndarray>np.PyArray_SimpleNew(1, dims, np.NPY_FLOAT64)
+    cdef double *_bars = <double *>np.PyArray_DATA(bars)
+    if size:
+        with nogil:
+            barcode_bars(_bars, size, x0, b_dx, rd, seed)
+    return bars
+
+cdef np.ndarray ml_profile_wrapper(np.ndarray x_arr, np.ndarray[double] layers, complex mt0,
+                                   complex mt1, complex mt2, double sigma, unsigned num_threads):
+    x_arr = np.PyArray_GETCONTIGUOUS(x_arr)
+    x_arr = np.PyArray_Cast(x_arr, np.NPY_FLOAT64)
+    layers = np.PyArray_GETCONTIGUOUS(layers)
+    layers = np.PyArray_Cast(layers, np.NPY_FLOAT64)
+
+    cdef np.npy_intp npts = np.PyArray_SIZE(x_arr)
+    cdef np.npy_intp nlyr = np.PyArray_SIZE(layers)
+    cdef int ndim = x_arr.ndim
+    cdef np.npy_intp *dims = x_arr.shape
+    cdef np.ndarray out = <np.ndarray>np.PyArray_SimpleNew(ndim, dims, np.NPY_COMPLEX128)
+    cdef complex *_out = <complex *>np.PyArray_DATA(out)
+    cdef double *_x = <double *>np.PyArray_DATA(x_arr)
+    cdef double *_lyrs = <double *>np.PyArray_DATA(layers)
+    with nogil:
+        ml_profile(_out, _x, _lyrs, npts, nlyr, mt0, mt1, mt2, sigma, num_threads)
+    return out
+
+def barcode_profile(x_arr: np.ndarray, bars: np.ndarray, bulk_atn: cython.double,
+                    bar_atn: cython.double, bar_sigma: cython.double,
+                    num_threads: cython.uint) -> np.ndarray:
+    cdef complex mt0 = -1j * log(1 - bulk_atn)
+    cdef complex mt1 = -1j * log(1 - bar_atn)
+    return ml_profile_wrapper(x_arr, bars, mt0, mt1, 0., bar_sigma, num_threads)
+
+def mll_profile(x_arr: np.ndarray, layers: np.ndarray, complex mt0,
+                complex mt1, sigma: cython.double, num_threads: cython.uint) -> np.ndarray:
+    return ml_profile_wrapper(x_arr, layers, 0., mt0, mt1, sigma, num_threads)
+
+def fft_convolve(array: np.ndarray, kernel: np.ndarray, axis: cython.int=-1,
+                 mode: str='constant', cval: cython.double=0.0, backend: str='fftw',
+                 num_threads: cython.uint=1) -> np.ndarray:
+    array = np.PyArray_GETCONTIGUOUS(array)
+    array = np.PyArray_Cast(array, np.NPY_FLOAT64)
+    kernel = np.PyArray_GETCONTIGUOUS(kernel)
+    kernel = np.PyArray_Cast(kernel, np.NPY_FLOAT64)
+
+    cdef np.npy_intp isize = np.PyArray_SIZE(array)
+    cdef int ndim = array.ndim
+    axis = axis if axis >= 0 else ndim + axis
+    cdef np.npy_intp npts = np.PyArray_DIM(array, axis)
+    cdef np.npy_intp istride = np.PyArray_STRIDE(array, axis) / np.PyArray_ITEMSIZE(array)
+    cdef np.npy_intp ksize = np.PyArray_DIM(kernel, 0)
+    cdef int _mode = extend_mode_to_code(mode)
+    cdef np.npy_intp *dims = array.shape
+    cdef np.ndarray out = <np.ndarray>np.PyArray_SimpleNew(ndim, dims, np.NPY_FLOAT64)
+    cdef double *_out = <double *>np.PyArray_DATA(out)
+    cdef double *_inp = <double *>np.PyArray_DATA(array)
+    cdef double *_krn = <double *>np.PyArray_DATA(kernel)
+    cdef int fail = 0
+    with nogil:
+        if backend == 'fftw':
+            fft_convolve_fftw(_out, _inp, _krn, isize, npts, istride, ksize, _mode, cval, num_threads)
+        elif backend == 'numpy':
+            fail = fft_convolve_np(_out, _inp, _krn, isize, npts, istride, ksize, _mode, cval, num_threads)
+            if fail:
+                raise RuntimeError('NumPy FFT exited with error')
+        else:
+            raise ValueError('{:s} is invalid backend'.format(backend))
+    return out
+
+def make_frames(pfx: np.ndarray, pfy: np.ndarray, wfx: np.ndarray, wfy: np.ndarray,
+                dx: cython.double, dy: cython.double, seed: cython.long,
+                num_threads: cython.uint) -> np.ndarray:
+    pfx = np.PyArray_GETCONTIGUOUS(pfx)
+    pfx = np.PyArray_Cast(pfx, np.NPY_FLOAT64)
+    pfy = np.PyArray_GETCONTIGUOUS(pfy)
+    pfy = np.PyArray_Cast(pfy, np.NPY_FLOAT64)
+    wfx = np.PyArray_GETCONTIGUOUS(wfx)
+    wfx = np.PyArray_Cast(wfx, np.NPY_FLOAT64)
+    wfy = np.PyArray_GETCONTIGUOUS(wfy)
+    wfy = np.PyArray_Cast(wfy, np.NPY_FLOAT64)
+
+    cdef np.npy_intp *xdim = pfx.shape
+    cdef np.npy_intp ypts = np.PyArray_SIZE(pfy)
+    cdef np.npy_intp fs_size = np.PyArray_SIZE(wfx)
+    cdef np.npy_intp ss_size = np.PyArray_SIZE(wfy)
+    cdef np.npy_intp *dim = [xdim[0], ss_size, fs_size]
+    cdef np.ndarray out = <np.ndarray>np.PyArray_SimpleNew(3, dim, np.NPY_FLOAT64)
+    cdef double *_out = <double *>np.PyArray_DATA(out)
+    cdef double *_pfx = <double *>np.PyArray_DATA(pfx)
+    cdef double *_pfy = <double *>np.PyArray_DATA(pfy)
+    cdef double *_wfx = <double *>np.PyArray_DATA(wfx)
+    cdef double *_wfy = <double *>np.PyArray_DATA(wfy)
+    with nogil:
+        frames(_out, _pfx, _pfy, _wfx, _wfy, dx, dy, xdim[1], ypts, dim[0], dim[1], dim[2], seed, num_threads)
+    return out
+
+def make_whitefield(data: np.ndarray, mask: np.ndarray, axis: cython.int=0,
+                    num_threads: cython.uint=1) -> np.ndarray:
+    data = np.PyArray_GETCONTIGUOUS(data)
+    mask = np.PyArray_GETCONTIGUOUS(mask)
+
+    if not np.PyArray_ISBOOL(mask):
+        raise TypeError('mask array must be of boolean type')
+    cdef int ndim = data.ndim
+    if memcmp(data.shape, mask.shape, ndim * sizeof(np.npy_intp)):
+        raise ValueError('mask and data arrays must have identical shapes')
+    axis = axis if axis >= 0 else ndim + axis
+    cdef np.npy_intp isize = np.PyArray_SIZE(data)
+    cdef np.npy_intp *dims = <np.npy_intp *>malloc((ndim - 1) * sizeof(np.npy_intp))
+    if dims is NULL:
+        abort()
+    cdef int i
+    for i in range(axis):
+        dims[i] = data.shape[i]
+    cdef np.npy_intp npts = data.shape[axis]
+    for i in range(axis + 1, ndim):
+        dims[i - 1] = data.shape[i]
+    cdef np.npy_intp istride = np.PyArray_STRIDE(data, axis) / np.PyArray_ITEMSIZE(data)
+    cdef int type_num = np.PyArray_TYPE(data)
+    cdef np.ndarray out = <np.ndarray>np.PyArray_SimpleNew(ndim - 1, dims, type_num)
+    cdef void *_out = <void *>np.PyArray_DATA(out)
+    cdef void *_data = <void *>np.PyArray_DATA(data)
+    cdef unsigned char *_mask = <unsigned char *>np.PyArray_DATA(mask)
+    with nogil:
+        if type_num == np.NPY_FLOAT64:
+                whitefield(_out, _data, _mask, isize, npts, istride, 8, compare_double, num_threads)
+        elif type_num == np.NPY_FLOAT32:
+                whitefield(_out, _data, _mask, isize, npts, istride, 4, compare_float, num_threads)
+        elif type_num == np.NPY_INT32:
+                whitefield(_out, _data, _mask, isize, npts, istride, 4, compare_long, num_threads)
+        else:
+            raise TypeError('data argument has incompatible type: {:s}'.format(data.dtype))
+    free(dims)
     return out
 
 # def st_update(I_n, dij, basis, x_ps, y_ps, z, df, search_window, n_iter=5,

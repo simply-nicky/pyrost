@@ -198,7 +198,7 @@ void ml_profile(double complex *out, const double *x, const double *layers, int 
 static void resize_array(double *out, const double *inp, int osize, int isize, unsigned threads)
 {
     double ratio = (double) isize / osize;
-    #pragma omp parallel for num_threads(threads) schedule(guided)
+    #pragma omp parallel for num_threads(threads)
     for (int i = 0; i < osize; i++)
     {
         double lb, ub;
@@ -240,7 +240,7 @@ void frames(double *out, const double *pfx, const double *pfy, const double *wfx
         }
         else
         {
-            #pragma omp parallel for num_threads(threads) schedule(guided)
+            #pragma omp parallel for num_threads(threads)
             for (int i = 0; i < (int) (fs_size * ss_size); i++)
             {
                 out[i] = wfx[i % fs_size] * wfy[i / fs_size] * pfxss[i % fs_size] * pfyss[i / fs_size] * dx * dy;
@@ -279,29 +279,24 @@ static void *wirthselect(void *data, size_t k, size_t l, size_t m, size_t size,
 void whitefield(void *out, const void *data, const unsigned char *mask, size_t isize,
     size_t npts, size_t istride, size_t size, int (*compar)(const void*, const void*), unsigned threads)
 {
-    int repeats = isize / (npts * istride);
+    int repeats = isize / npts;
     #pragma omp parallel num_threads(threads)
     {
         unsigned char *buffer = (unsigned char *)malloc(npts * size);
         #pragma omp for
         for (int i = 0; i < repeats; i++)
         {
-            for (int j = 0; j < (int) istride; j++)
+            int len = 0;
+            for (int n = 0; n < (int) npts; n++)
             {
-                int len = 0;
-                for (int n = 0; n < (int) npts; n++)
+                if (mask[n * istride + npts * istride * (i / istride) + (i % istride)])
                 {
-                    if (mask[n * istride])
-                    {
-                        memcpy(buffer + len * size, data + n * istride * size, size);
-                        len++;
-                    }
+                    memcpy(buffer + len * size, data + (n * istride + npts * istride * (i / istride) + (i % istride)) * size, size);
+                    len++;
                 }
-                if (len) memcpy(out, wirthselect(buffer, len / 2, 0, len - 1, size, compar), size);
-                else memset(out, 0, size);
-                data += size; mask += 1; out += size;
             }
-            data += (npts - 1) * istride * size; mask += (npts - 1) * istride;
+            if (len) memcpy(out + npts * istride * (i / istride) + (i % istride) * size, wirthselect(buffer, len / 2, 0, len - 1, size, compar), size);
+            else memset(out + npts * istride * (i / istride) + (i % istride) * size, 0, size);
         }
         free(buffer);
     }
