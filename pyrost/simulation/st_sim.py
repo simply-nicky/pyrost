@@ -101,7 +101,7 @@ class STSim(DataContainer):
     init_set = {'bars', 'det_wfx', 'det_wfy', 'det_ix', 'det_iy', 'lens_wfx',
                 'lens_wfy','n_x', 'n_y', 'roi', 'smp_pos', 'smp_profile', 'smp_wfx', 'smp_wfy'}
 
-    def __init__(self, params, backend='fftw', num_threads=None, **kwargs):
+    def __init__(self, params, backend, num_threads=None, **kwargs):
         if num_threads is None:
             num_threads = cpu_count()
         if not backend in self.backends:

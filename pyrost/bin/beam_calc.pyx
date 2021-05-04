@@ -18,7 +18,7 @@ def init_fftw():
 
 init_fftw()
 
-def next_fast_len(np.npy_intp target, str backend='fftw'):
+def next_fast_len(np.npy_intp target, str backend='numpy'):
     r"""Find the next fast size of input data to fft, for zero-padding, etc.
     FFT algorithms gain their speed by a recursive divide and conquer strategy.
     This relies on efficient functions for small prime factors of the input length.
@@ -180,7 +180,7 @@ cdef np.ndarray gf_fft(np.ndarray inp, np.ndarray sigma, np.ndarray order, str m
     return out
 
 def gaussian_filter(inp: np.ndarray, sigma: object, order: object=0, mode: str='reflect',
-                    cval: cython.double=0., truncate: cython.double=4., backend: str='fftw',
+                    cval: cython.double=0., truncate: cython.double=4., backend: str='numpy',
                     num_threads: cython.uint=1) -> np.ndarray:
     r"""Multidimensional Gaussian filter. The multidimensional filter is implemented as
     a sequence of 1-D FFT convolutions.
@@ -266,9 +266,9 @@ cdef np.ndarray ggm_fft(np.ndarray inp, np.ndarray sigma, str mode, double cval,
             raise ValueError('{:s} is invalid backend'.format(backend))
     return out
 
-def gaussian_gradient_magnitude(inp: np.ndarray, sigma: object, mode: str='mirror',
+def gaussian_gradient_magnitude(inp: np.ndarray, sigma: object, mode: str='reflect',
                                 cval: cython.double=0., truncate: cython.double=4.,
-                                backend: str='fftw', num_threads: cython.uint=1) -> np.ndarray:
+                                backend: str='numpy', num_threads: cython.uint=1) -> np.ndarray:
     r"""Multidimensional gradient magnitude using Gaussian derivatives. The multidimensional
     filter is implemented as a sequence of 1-D FFT convolutions.
 
@@ -319,7 +319,7 @@ def gaussian_gradient_magnitude(inp: np.ndarray, sigma: object, mode: str='mirro
         return ggm(input=inp, sigma=sigma, mode=mode, cval=cval, truncate=truncate)
 
 def rsc_wp(wft: np.ndarray, dx0: cython.double, dx: cython.double, z: cython.double,
-           wl: cython.double, axis: cython.int=-1, backend: str='fftw',
+           wl: cython.double, axis: cython.int=-1, backend: str='numpy',
            num_threads: cython.uint=1) -> np.ndarray:
     r"""Wavefront propagator based on Rayleigh-Sommerfeld convolution
     method [RSC]_. Propagates a wavefront `wft` by `z` distance
@@ -405,7 +405,7 @@ def rsc_wp(wft: np.ndarray, dx0: cython.double, dx: cython.double, z: cython.dou
 
 def fraunhofer_wp(wft: np.ndarray, dx0: cython.double, dx: cython.double,
                   z: cython.double, wl: cython.double, axis: cython.int=-1,
-                  backend: str='fftw', num_threads: cython.uint=1) -> np.ndarray:
+                  backend: str='numpy', num_threads: cython.uint=1) -> np.ndarray:
     r"""Fraunhofer diffraction propagator. Propagates a wavefront `wft` by
     `z` distance downstream. You can choose between 'fftw' and 'numpy'
     backends for FFT calculations. 'fftw' backend supports multiprocessing.
@@ -582,7 +582,7 @@ def mll_profile(x_arr: np.ndarray, layers: np.ndarray, complex mt0,
     return ml_profile_wrapper(x_arr, layers, 0., mt0, mt1, sigma, num_threads)
 
 def fft_convolve(array: np.ndarray, kernel: np.ndarray, axis: cython.int=-1,
-                 mode: str='constant', cval: cython.double=0.0, backend: str='fftw',
+                 mode: str='constant', cval: cython.double=0.0, backend: str='numpy',
                  num_threads: cython.uint=1) -> np.ndarray:
     """Convolve a multi-dimensional `array` with one-dimensional `kernel` along the
     `axis` by means of FFT. Output has the same size as `array`.
