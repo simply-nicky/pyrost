@@ -1,144 +1,116 @@
 #include "st_utils.h"
 
 void extend_line_complex(double complex *out, const double complex *inp, EXTEND_MODE mode, double complex cval,
-    size_t osize, size_t isize, size_t istride, unsigned long threads)
+    size_t osize, size_t isize, size_t istride)
 {
     int dsize = osize - isize;
     int size1 = dsize - dsize / 2;
     int size2 = dsize - size1;
-    #pragma omp parallel num_threads(threads)
+    for (int i = 0; i < (int) isize; i++) out[i + size1] = inp[i * istride];
+    switch (mode)
     {
-        #pragma omp for
-        for (int i = 0; i < (int) isize; i++) out[i + size1] = inp[i * istride];
-        switch (mode)
-        {
-            /* kkkkkkkk|abcd|kkkkkkkk */
-            case EXTEND_CONSTANT:
-                #pragma omp for
-                for (int i = 0; i < size1; i++) out[i] = cval;
-                #pragma omp for
-                for (int i = 0; i < size2; i++) out[isize + size1 + i] = cval;
-                break;
-            /* aaaaaaaa|abcd|dddddddd */
-            case EXTEND_NEAREST:
-                #pragma omp for
-                for (int i = 0; i < size1; i++) out[i] = inp[0];
-                #pragma omp for
-                for (int i = 0; i < size2; i++) out[isize + size1 + i] = inp[(isize - 1) * istride];
-                break;
-             /* cbabcdcb|abcd|cbabcdcb */
-            case EXTEND_MIRROR:
-                #pragma omp for
-                for (int i = (int)(isize - size1 - 1); i < (int)(isize - 1); i++)
-                {
-                    int fct = (i / (isize - 1)) % 2;
-                    int idx = (isize - 1) * (1 - fct) + (2 * fct - 1) * (i % (isize - 1));
-                    out[i - isize + size1 + 1] = inp[idx * istride];
-                }
-                #pragma omp for
-                for (int i = 1; i <= size2; i++)
-                {
-                    int fct = (i / (isize - 1)) % 2;
-                    int idx = (isize - 1) * (1 - fct) + (2 * fct - 1) * (i % (isize - 1));
-                    out[isize + size1 - 1 + i] = inp[idx * istride];
-                }
-                break;
-            /* abcddcba|abcd|dcbaabcd */
-            case EXTEND_REFLECT:
-                #pragma omp for
-                for (int i = (int)(isize - size1); i < (int)(isize); i++)
-                {
-                    int fct = (i / isize) % 2;
-                    int idx = (isize - 1) * (1 - fct) + (2 * fct - 1) * (i % isize);
-                    out[i - isize + size1] = inp[idx * istride];
-                }
-                #pragma omp for
-                for (int i = 0; i < size2; i++)
-                {
-                    int fct = (i / isize) % 2;
-                    int idx = (isize - 1) * (1 - fct) + (2 * fct - 1) * (i % isize);
-                    out[isize + size1 + i] = inp[idx * istride];
-                }
-                break;
-            /* abcdabcd|abcd|abcdabcd */
-            case EXTEND_WRAP:
-                #pragma omp for
-                for (int i = (int)(isize - size1); i < (int)isize; i++) out[i - isize + size1] = inp[(i % isize) * istride];
-                #pragma omp for
-                for (int i = 0; i < size2; i++) out[isize + size1 + i] = inp[(i % isize) * istride];
-                break;
-        }
+        /* kkkkkkkk|abcd|kkkkkkkk */
+        case EXTEND_CONSTANT:
+            for (int i = 0; i < size1; i++) out[i] = cval;
+            for (int i = 0; i < size2; i++) out[isize + size1 + i] = cval;
+            break;
+        /* aaaaaaaa|abcd|dddddddd */
+        case EXTEND_NEAREST:
+            for (int i = 0; i < size1; i++) out[i] = inp[0];
+            for (int i = 0; i < size2; i++) out[isize + size1 + i] = inp[(isize - 1) * istride];
+            break;
+            /* cbabcdcb|abcd|cbabcdcb */
+        case EXTEND_MIRROR:
+            for (int i = (int)(isize - size1 - 1); i < (int)(isize - 1); i++)
+            {
+                int fct = (i / (isize - 1)) % 2;
+                int idx = (isize - 1) * (1 - fct) + (2 * fct - 1) * (i % (isize - 1));
+                out[i - isize + size1 + 1] = inp[idx * istride];
+            }
+            for (int i = 1; i <= size2; i++)
+            {
+                int fct = (i / (isize - 1)) % 2;
+                int idx = (isize - 1) * (1 - fct) + (2 * fct - 1) * (i % (isize - 1));
+                out[isize + size1 - 1 + i] = inp[idx * istride];
+            }
+            break;
+        /* abcddcba|abcd|dcbaabcd */
+        case EXTEND_REFLECT:
+            for (int i = (int)(isize - size1); i < (int)(isize); i++)
+            {
+                int fct = (i / isize) % 2;
+                int idx = (isize - 1) * (1 - fct) + (2 * fct - 1) * (i % isize);
+                out[i - isize + size1] = inp[idx * istride];
+            }
+            for (int i = 0; i < size2; i++)
+            {
+                int fct = (i / isize) % 2;
+                int idx = (isize - 1) * (1 - fct) + (2 * fct - 1) * (i % isize);
+                out[isize + size1 + i] = inp[idx * istride];
+            }
+            break;
+        /* abcdabcd|abcd|abcdabcd */
+        case EXTEND_WRAP:
+            for (int i = (int)(isize - size1); i < (int)isize; i++) out[i - isize + size1] = inp[(i % isize) * istride];
+            for (int i = 0; i < size2; i++) out[isize + size1 + i] = inp[(i % isize) * istride];
+            break;
     }
 }
 
 void extend_line_double(double *out, const double *inp, EXTEND_MODE mode, double cval, size_t osize,
-    size_t isize, size_t istride, unsigned long threads)
+    size_t isize, size_t istride)
 {
     int dsize = osize - isize;
     int size1 = dsize - dsize / 2;
     int size2 = dsize - size1;
-    #pragma omp parallel num_threads(threads)
+    for (int i = 0; i < (int) isize; i++) out[i + size1] = inp[i * istride];
+    switch (mode)
     {
-        #pragma omp for
-        for (int i = 0; i < (int) isize; i++) out[i + size1] = inp[i * istride];
-        switch (mode)
-        {
-            /* kkkkkkkk|abcd|kkkkkkkk */
-            case EXTEND_CONSTANT:
-                #pragma omp for
-                for (int i = 0; i < size1; i++) out[i] = cval;
-                #pragma omp for
-                for (int i = 0; i < size2; i++) out[isize + size1 + i] = cval;
-                break;
-            /* aaaaaaaa|abcd|dddddddd */
-            case EXTEND_NEAREST:
-                #pragma omp for
-                for (int i = 0; i < size1; i++) out[i] = inp[0];
-                #pragma omp for
-                for (int i = 0; i < size2; i++) out[isize + size1 + i] = inp[(isize - 1) * istride];
-                break;
-             /* cbabcdcb|abcd|cbabcdcb */
-            case EXTEND_MIRROR:
-                #pragma omp for
-                for (int i = (int)(isize - size1 - 1); i < (int)(isize - 1); i++)
-                {
-                    int fct = (i / (isize - 1)) % 2;
-                    int idx = (isize - 1) * (1 - fct) + (2 * fct - 1) * (i % (isize - 1));
-                    out[i - isize + size1 + 1] = inp[idx * istride];
-                }
-                #pragma omp for
-                for (int i = 1; i <= size2; i++)
-                {
-                    int fct = (i / (isize - 1)) % 2;
-                    int idx = (isize - 1) * (1 - fct) + (2 * fct - 1) * (i % (isize - 1));
-                    out[isize + size1 - 1 + i] = inp[idx * istride];
-                }
-                break;
-            /* abcddcba|abcd|dcbaabcd */
-            case EXTEND_REFLECT:
-                #pragma omp for
-                for (int i = (int)(isize - size1); i < (int)(isize); i++)
-                {
-                    int fct = (i / isize) % 2;
-                    int idx = (isize - 1) * (1 - fct) + (2 * fct - 1) * (i % isize);
-                    out[i - isize + size1] = inp[idx * istride];
-                }
-                #pragma omp for
-                for (int i = 0; i < size2; i++)
-                {
-                    int fct = (i / isize) % 2;
-                    int idx = (isize - 1) * (1 - fct) + (2 * fct - 1) * (i % isize);
-                    out[isize + size1 + i] = inp[idx * istride];
-                }
-                break;
-            /* abcdabcd|abcd|abcdabcd */
-            case EXTEND_WRAP:
-                #pragma omp for
-                for (int i = (int)(isize - size1); i < (int)isize; i++) out[i - isize + size1] = inp[(i % isize) * istride];
-                #pragma omp for
-                for (int i = 0; i < size2; i++) out[isize + size1 + i] = inp[(i % isize) * istride];
-                break;
-        }
+        /* kkkkkkkk|abcd|kkkkkkkk */
+        case EXTEND_CONSTANT:
+            for (int i = 0; i < size1; i++) out[i] = cval;
+            for (int i = 0; i < size2; i++) out[isize + size1 + i] = cval;
+            break;
+        /* aaaaaaaa|abcd|dddddddd */
+        case EXTEND_NEAREST:
+            for (int i = 0; i < size1; i++) out[i] = inp[0];
+            for (int i = 0; i < size2; i++) out[isize + size1 + i] = inp[(isize - 1) * istride];
+            break;
+            /* cbabcdcb|abcd|cbabcdcb */
+        case EXTEND_MIRROR:
+            for (int i = (int)(isize - size1 - 1); i < (int)(isize - 1); i++)
+            {
+                int fct = (i / (isize - 1)) % 2;
+                int idx = (isize - 1) * (1 - fct) + (2 * fct - 1) * (i % (isize - 1));
+                out[i - isize + size1 + 1] = inp[idx * istride];
+            }
+            for (int i = 1; i <= size2; i++)
+            {
+                int fct = (i / (isize - 1)) % 2;
+                int idx = (isize - 1) * (1 - fct) + (2 * fct - 1) * (i % (isize - 1));
+                out[isize + size1 - 1 + i] = inp[idx * istride];
+            }
+            break;
+        /* abcddcba|abcd|dcbaabcd */
+        case EXTEND_REFLECT:
+            for (int i = (int)(isize - size1); i < (int)(isize); i++)
+            {
+                int fct = (i / isize) % 2;
+                int idx = (isize - 1) * (1 - fct) + (2 * fct - 1) * (i % isize);
+                out[i - isize + size1] = inp[idx * istride];
+            }
+            for (int i = 0; i < size2; i++)
+            {
+                int fct = (i / isize) % 2;
+                int idx = (isize - 1) * (1 - fct) + (2 * fct - 1) * (i % isize);
+                out[isize + size1 + i] = inp[idx * istride];
+            }
+            break;
+        /* abcdabcd|abcd|abcdabcd */
+        case EXTEND_WRAP:
+            for (int i = (int)(isize - size1); i < (int)isize; i++) out[i - isize + size1] = inp[(i % isize) * istride];
+            for (int i = 0; i < size2; i++) out[isize + size1 + i] = inp[(i % isize) * istride];
+            break;
     }
 }
 
@@ -226,7 +198,7 @@ void ml_profile(double complex *out, const double *x, const double *layers, int 
 static void resize_array(double *out, const double *inp, int osize, int isize, unsigned threads)
 {
     double ratio = (double) isize / osize;
-    #pragma omp parallel for num_threads(threads) schedule(guided)
+    #pragma omp parallel for num_threads(threads)
     for (int i = 0; i < osize; i++)
     {
         double lb, ub;
@@ -268,7 +240,7 @@ void frames(double *out, const double *pfx, const double *pfy, const double *wfx
         }
         else
         {
-            #pragma omp parallel for num_threads(threads) schedule(guided)
+            #pragma omp parallel for num_threads(threads)
             for (int i = 0; i < (int) (fs_size * ss_size); i++)
             {
                 out[i] = wfx[i % fs_size] * wfy[i / fs_size] * pfxss[i % fs_size] * pfyss[i / fs_size] * dx * dy;
@@ -283,10 +255,9 @@ static void *wirthselect(void *data, size_t k, size_t l, size_t m, size_t size,
     int (*compar)(const void*, const void*))
 {
     int i, j;
-    void *key;
+    void *key = data + k * size;
     while (l < m)
     {
-        key = data + k * size;
         i = l; j = m;
         while (1)
         {
@@ -305,25 +276,28 @@ static void *wirthselect(void *data, size_t k, size_t l, size_t m, size_t size,
     return key;
 }
 
-void whitefield(void *out, const void *data, const unsigned char *mask, size_t nframes, size_t frame_size, size_t size,
-    int (*compar)(const void*, const void*), unsigned threads)
+void whitefield(void *out, const void *data, const unsigned char *mask, size_t isize,
+    size_t npts, size_t istride, size_t size, int (*compar)(const void*, const void*), unsigned threads)
 {
+    int repeats = isize / npts;
     #pragma omp parallel num_threads(threads)
     {
-        unsigned char buffer[nframes * size];
+        unsigned char *buffer = (unsigned char *)malloc(npts * size);
         #pragma omp for
-        for (int i = 0; i < (int) (frame_size); i++)
+        for (int i = 0; i < repeats; i++)
         {
-            int k = 0;
-            for (int j = 0; j < (int) nframes; j++)
+            int len = 0;
+            for (int n = 0; n < (int) npts; n++)
             {
-                if (mask[j * frame_size + i])
+                if (mask[n * istride + npts * istride * (i / istride) + (i % istride)])
                 {
-                    memcpy(buffer + k * size, data + (j * frame_size + i) * size, size);
-                    k++;
+                    memcpy(buffer + len * size, data + (n * istride + npts * istride * (i / istride) + (i % istride)) * size, size);
+                    len++;
                 }
             }
-            memcpy(out + i * size, wirthselect(buffer, k / 2, 0, k - 1, size, compar), size);
+            if (len) memcpy(out + npts * istride * (i / istride) + (i % istride) * size, wirthselect(buffer, len / 2, 0, len - 1, size, compar), size);
+            else memset(out + npts * istride * (i / istride) + (i % istride) * size, 0, size);
         }
+        free(buffer);
     }
 }

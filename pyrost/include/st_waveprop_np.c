@@ -2206,10 +2206,10 @@ static int irfft(rfft_plan plan, double *arr, size_t npts)
 }
 
 typedef int (*rsc_func)(cfft_plan, double complex *, double complex *, double complex *,
-  int, int, double, double, double, double);
+  int, int, size_t, double, double, double, double);
 
 static int rsc_type1_np(cfft_plan plan, double complex *out, double complex *inp,
-  double complex *k, int flen, int npts, double dx0, double dx, double z, double wl)
+  double complex *k, int flen, int npts, size_t istride, double dx0, double dx, double z, double wl)
 {
   int fail = 0;
   double ph, dist;
@@ -2234,18 +2234,18 @@ static int rsc_type1_np(cfft_plan plan, double complex *out, double complex *inp
   for (int i = 0; i < npts / 2; i++)
   {
     ph = M_PI * pow((double) (i - npts / 2) / flen, 2) * dx / dx0 * flen;
-    out[i] = inp[i + flen - npts / 2] * (cos(ph) - sin(ph) * I);
+    out[i * istride] = inp[i + flen - npts / 2] * (cos(ph) - sin(ph) * I);
   }
   for (int i = 0; i < npts / 2 + npts % 2; i++)
   {
     ph = M_PI * pow((double) i / flen, 2) * dx / dx0 * flen;
-    out[i + npts / 2] = inp[i] * (cos(ph) - sin(ph) * I);
+    out[(i + npts / 2) * istride] = inp[i] * (cos(ph) - sin(ph) * I);
   }
   return fail;
 }
 
 static int rsc_type2_np(cfft_plan plan, double complex *out, double complex *inp,
-  double complex *k, int flen, int npts, double dx0, double dx, double z, double wl)
+  double complex *k, int flen, int npts, size_t istride, double dx0, double dx, double z, double wl)
 {
   int fail = 0;
   double ph, dist;
@@ -2272,36 +2272,47 @@ static int rsc_type2_np(cfft_plan plan, double complex *out, double complex *inp
     inp[i] *= k[i] * (cos(ph) + sin(ph) * I);
   }
   fail = ifft(plan, inp, flen);
-  for (int i = 0; i < npts; i++) out[i] = inp[i + (flen - npts) / 2];
+  for (int i = 0; i < npts; i++) out[i * istride] = inp[i + (flen - npts) / 2];
   return fail;
 }
 
-int rsc_np(double complex *out, const double complex *inp, size_t howmany, size_t npts,
-  double dx0, double dx, double z, double wl)
+int rsc_np(double complex *out, const double complex *inp, size_t isize, size_t npts, size_t istride,
+  double dx0, double dx, double z, double wl, unsigned threads)
 {
+  int fail = 0;
   dx = fabs(dx); dx0 = fabs(dx0);
   double alpha = (dx0 <= dx) ? (dx0 / dx) : (dx / dx0);
   size_t flen = good_size((size_t) (npts * (1 + alpha)) + 1);
-  double complex *k = (double complex *)malloc(flen * sizeof(double complex));
-  double complex *u = (double complex *)malloc(flen * sizeof(double complex));
-  int fail = 0;
-  cfft_plan plan = make_cfft_plan(flen);
-  rsc_func rsc_calc = (dx0 >= dx) ? rsc_type1_np : rsc_type2_np;
-
-  for (int i = 0; i < (int) howmany; i++)
+  int repeats = isize / npts;
+  threads = (threads > (unsigned) repeats) ? (unsigned) repeats : threads;
+  double complex *us[threads], *ks[threads];
+  cfft_plan plans[threads];
+  for (int t = 0; t < (int) threads; t++)
   {
-    extend_line_complex(u, inp, EXTEND_CONSTANT, 0., flen, npts, 1, 1);
-    fail |= rsc_calc(plan, out, u, k, flen, npts, dx0, dx, z, wl);
-    inp += npts; out += npts;
+    ks[t] = (double complex *)malloc(flen * sizeof(double complex));
+    us[t] = (double complex *)malloc(flen * sizeof(double complex));
+    plans[t] = make_cfft_plan(flen);
   }
 
-  if (plan) destroy_cfft_plan(plan);
-  free(k); free(u);
+  rsc_func rsc_calc = (dx0 >= dx) ? rsc_type1_np : rsc_type2_np;
+  #pragma omp parallel for num_threads(threads) reduction(|:fail)
+  for (int i = 0; i < repeats; i++)
+  {
+    int t = omp_get_thread_num();
+    extend_line_complex(us[t], inp + npts * istride * (i / istride) + (i % istride), EXTEND_CONSTANT, 0., flen, npts, istride);
+    fail |= rsc_calc(plans[t], out + npts * istride * (i / istride) + (i % istride), us[t], ks[t], flen, npts, istride, dx0, dx, z, wl);
+  }
+
+  for (int t = 0; t < (int) threads; t++)
+  {
+    if (plans[t]) destroy_cfft_plan(plans[t]);
+    free(us[t]); free(ks[t]);
+  }
   return fail;
 }
 
 static int fhf_np(cfft_plan plan, double complex *out, double complex *inp,
-  double complex *k, int flen, int npts, double dx0, double dx, double alpha)
+  double complex *k, int flen, int npts, size_t istride, double dx0, double dx, double alpha)
 {
   int fail = 0;
   double ph;
@@ -2318,27 +2329,33 @@ static int fhf_np(cfft_plan plan, double complex *out, double complex *inp,
   {
       ph = M_PI * pow(i - npts / 2, 2) * alpha;
       w = (cos(ph) - sin(ph) * I) * inp[i + flen - npts / 2];
-      out[i] = (cos(ph / dx0 * dx) - sin(ph / dx0 * dx) * I) * w;
+      out[i * istride] = (cos(ph / dx0 * dx) - sin(ph / dx0 * dx) * I) * w;
   }
   for (int i = 0; i < npts / 2 + npts % 2; i++)
   {
       ph = M_PI * pow(i, 2) * alpha;
       w = (cos(ph) - sin(ph) * I) * inp[i];
-      out[i + npts / 2] = (cos(ph / dx0 * dx) - sin(ph / dx0 * dx) * I) * w;
+      out[(i + npts / 2) * istride] = (cos(ph / dx0 * dx) - sin(ph / dx0 * dx) * I) * w;
   }
   return fail;
 }
 
-int fraunhofer_np(double complex *out, const double complex *inp, size_t size, size_t npts,
-  double dx0, double dx, double z, double wl)
+int fraunhofer_np(double complex *out, const double complex *inp, size_t isize, size_t npts, size_t istride,
+  double dx0, double dx, double z, double wl, unsigned threads)
 {
   dx = fabs(dx); dx0 = fabs(dx0);
   int flen = good_size(2 * npts - 1);
-  double complex *k = (double complex *)malloc(flen * sizeof(double complex));
-  double complex *u = (double complex *)malloc(flen * sizeof(double complex));
   int fail = 0;
-  int nrepeats = size / npts;
-  cfft_plan plan = make_cfft_plan(flen);
+  int repeats = isize / npts;
+  threads = (threads > (unsigned) repeats) ? (unsigned) repeats : threads;
+  cfft_plan plans[threads];
+  double complex *ks[threads], *us[threads];
+  for (int t = 0; t < (int) threads; t++)
+  {
+    plans[t] = make_cfft_plan(flen);
+    ks[t] = (double complex *)malloc(flen * sizeof(double complex));
+    us[t] = (double complex *)malloc(flen * sizeof(double complex));
+  }
 
   double ph = 2 * M_PI / wl * z;
   double alpha = dx0 * dx / wl / z;
@@ -2346,23 +2363,28 @@ int fraunhofer_np(double complex *out, const double complex *inp, size_t size, s
   for (int i = 0; i < flen; i++)
   {
     ph = M_PI * pow(i - flen / 2, 2) * alpha;
-    k[i] = k0 * (cos(ph) - sin(ph) * I);
+    ks[0][i] = k0 * (cos(ph) - sin(ph) * I);
   }
-  fail = fft(plan, k);
+  fail |= fft(plans[0], ks[0]);
+  for (int t = 1; t < (int) threads; t++) for(int i = 0; i < flen; i++) ks[t][i] = ks[0][i];
 
-  for (int i = 0; i < nrepeats; i++)
+  #pragma omp parallel for num_threads(threads) reduction(|:fail)
+  for (int i = 0; i < repeats; i++)
   {
-    extend_line_complex(u, inp, EXTEND_CONSTANT, 0., flen, npts, 1, 1);
-    fail |= fhf_np(plan, out, u, k, flen, npts, dx0, dx, alpha);
-    inp += npts; out += npts;
+    int t = omp_get_thread_num();
+    extend_line_complex(us[t], inp + npts * istride * (i / istride) + (i % istride), EXTEND_CONSTANT, 0., flen, npts, istride);
+    fail |= fhf_np(plans[t], out + npts * istride * (i / istride) + (i % istride), us[t], ks[t], flen, npts, istride, dx0, dx, alpha);
   }
 
-  if (plan) destroy_cfft_plan(plan);
-  free(k); free(u);
+  for (int t = 0; t < (int) threads; t++)
+  {
+    if (plans[t]) destroy_cfft_plan(plans[t]);
+    free(us[t]); free(ks[t]);
+  }
   return fail;
 }
 
-static int fftcnv_np(rfft_plan plan, double *out, double *inp, double *krn, int flen, int npts, int istride)
+static int fftcnv_np(rfft_plan plan, double *out, double *inp, double *krn, int flen, int npts, size_t istride)
 {
   int fail = 0;
   fail = rfft(plan, inp, flen);
@@ -2380,30 +2402,36 @@ static int fftcnv_np(rfft_plan plan, double *out, double *inp, double *krn, int 
 }
 
 int fft_convolve_np(double *out, const double *inp, const double *krn, size_t isize,
-  size_t npts, size_t istride, size_t ksize, EXTEND_MODE mode, double cval)
+  size_t npts, size_t istride, size_t ksize, EXTEND_MODE mode, double cval, unsigned threads)
 {
   int fail = 0;
   int flen = good_size(npts + ksize - 1);
-  double *inpft = (double *)malloc(2 * (flen / 2 + 1) * sizeof(double));
-  double *krnft = (double *)malloc(2 * (flen / 2 + 1) * sizeof(double));
-  rfft_plan plan = make_rfft_plan(flen);
-  int repeats = isize / (npts * istride);
+  int repeats = isize / npts;
+  threads = (threads > (unsigned) repeats) ? (unsigned) repeats : threads;
+  double *inpfts[threads], *krnfts[threads];
+  rfft_plan plans[threads];
+  for (int t = 0; t < (int) threads; t++)
+  {
+    inpfts[t] = (double *)malloc(2 * (flen / 2 + 1) * sizeof(double));
+    krnfts[t] = (double *)malloc(2 * (flen / 2 + 1) * sizeof(double));
+    plans[t] = make_rfft_plan(flen);
+  }
+  extend_line_double(krnfts[0], krn, EXTEND_CONSTANT, 0., flen, ksize, 1);
+  fail |= rfft(plans[0], krnfts[0], flen);
+  for (int t = 1; t < (int) threads; t++) for(int i = 0; i < (2 * (flen / 2 + 1)); i++) krnfts[t][i] = krnfts[0][i];
 
-  extend_line_double(krnft, krn, EXTEND_CONSTANT, 0., flen, ksize, 1, 1);
-  fail = rfft(plan, krnft, flen);
-
+  #pragma omp parallel for num_threads(threads) reduction(|:fail)
   for (int i = 0; i < repeats; i++)
   {
-    for (int j = 0; j < (int) istride; j++)
-    {
-      extend_line_double(inpft, inp, mode, cval, flen, npts, istride, 1);
-      fail |= fftcnv_np(plan, out, inpft, krnft, flen, npts, istride);
-      inp += 1; out += 1;
-    }
-    inp += (npts - 1) * istride; out += (npts - 1) * istride;
+    int t = omp_get_thread_num();
+    extend_line_double(inpfts[t], inp + npts * istride * (i / istride) + (i % istride), mode, cval, flen, npts, istride);
+    fail |= fftcnv_np(plans[t], out + npts * istride * (i / istride) + (i % istride), inpfts[t], krnfts[t], flen, npts, istride);
   }
 
-  if (plan) destroy_rfft_plan(plan);
-  free(inpft); free(krnft);
+  for (int t = 0; t < (int) threads; t++)
+  {
+    if (plans[t]) destroy_rfft_plan(plans[t]);
+    free(inpfts[t]); free(krnfts[t]);
+  }
   return fail;
 }

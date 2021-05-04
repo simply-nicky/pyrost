@@ -9,21 +9,21 @@ cdef extern from "st_gaussian.h":
                            unsigned *order, int mode, double cval, double truncate, unsigned threads) nogil
 
     int gauss_filter_np(double *out, double *inp, int ndim, unsigned long *dims, double *sigma,
-                        unsigned *order, int mode, double cval, double truncate) nogil
+                        unsigned *order, int mode, double cval, double truncate, unsigned threads) nogil
 
     void gauss_grad_fftw(double *out, double *inp, int ndim, unsigned long *dims, double *sigma,
                          int mode, double cval, double truncate, unsigned threads) nogil
 
     int gauss_grad_np(double *out, double *inp, int ndim, unsigned long *dims, double *sigma,
-                      int mode, double cval, double truncate) nogil
+                      int mode, double cval, double truncate, unsigned threads) nogil
 
 cdef extern from "st_waveprop_fftw.h":
     unsigned long next_fast_len_fftw(unsigned long target) nogil
 
-    void rsc_fftw(complex *out, complex *inp, unsigned long howmany, unsigned long npts,
+    void rsc_fftw(complex *out, complex *inp, unsigned long isize, unsigned long npts, unsigned long istride,
                   double dx0, double dx, double z, double wl, unsigned threads) nogil
 
-    void fraunhofer_fftw(complex *out, complex *inp, unsigned long howmany, unsigned long npts,
+    void fraunhofer_fftw(complex *out, complex *inp, unsigned long isize, unsigned long npts, unsigned long istride,
                          double dx0, double dx, double z, double wl, unsigned threads) nogil
 
     void fft_convolve_fftw(double *out, double *inp, double *krn, unsigned long isize,
@@ -33,20 +33,17 @@ cdef extern from "st_waveprop_fftw.h":
 cdef extern from "st_waveprop_np.h":
     unsigned long good_size(unsigned long n) nogil
 
-    int rsc_np(complex *out, complex *inp, unsigned long howmany, unsigned long npts,
-               double dx0, double dx, double z, double wl) nogil
+    int rsc_np(complex *out, complex *inp, unsigned long isize, unsigned long npts, unsigned long istride,
+               double dx0, double dx, double z, double wl, unsigned threads) nogil
 
-    int fraunhofer_np(complex *out, complex *inp, unsigned long howmany, unsigned long npts,
-                      double dx0, double dx, double z, double wl) nogil
+    int fraunhofer_np(complex *out, complex *inp, unsigned long isize, unsigned long npts, unsigned long istride,
+                      double dx0, double dx, double z, double wl, unsigned threads) nogil
 
     int fft_convolve_np(double *out, double *inp, double *krn, unsigned long isize,
                         unsigned long npts, unsigned long istride, unsigned long ksize,
-                        int mode, double cval) nogil
+                        int mode, double cval, unsigned threads) nogil
 
 cdef extern from "st_utils.h":
-    void extend_line_double(double *out, double *inp, int mode, double cval, unsigned long osize,
-                            unsigned long isize, unsigned long istride, unsigned long threads) nogil
-
     void barcode_bars(double *bars, unsigned long size, double x0, double b_dx, double rd, long seed) nogil
 
     void ml_profile(complex *out, double *x, double *layers, unsigned npts, unsigned nlyr,
@@ -56,8 +53,8 @@ cdef extern from "st_utils.h":
                 double dy, unsigned long xpts, unsigned long ypts, unsigned long nframes,
                 unsigned long ss_size, unsigned long fs_size, long seed, unsigned threads) nogil
 
-    void whitefield(void *out, void *data, unsigned char *mask, unsigned long nframes,
-                    unsigned long frame_size, unsigned long size, int (*compare)(void *, void *),
+    void whitefield(void *out, void *data, unsigned char *mask, unsigned long isize, unsigned long npts,
+                    unsigned long istride, unsigned long size, int (*compar)(const void*, const void*),
                     unsigned threads) nogil
 
     int compare_double(void *a, void *b) nogil

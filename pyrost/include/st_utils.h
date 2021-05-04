@@ -13,9 +13,9 @@ typedef enum
 } EXTEND_MODE;
 
 void extend_line_complex(double complex *out, const double complex *inp, EXTEND_MODE mode,
-    double complex cval, size_t osize, size_t isize, size_t istride, unsigned long threads);
+    double complex cval, size_t osize, size_t isize, size_t istride);
 void extend_line_double(double *out, const double *inp, EXTEND_MODE mode, double cval, size_t osize,
-    size_t isize, size_t istride, unsigned long threads);
+    size_t isize, size_t istride);
 
 // Speckle Tracking utility functions
 NOINLINE int compare_double(const void *a, const void *b);
@@ -36,7 +36,7 @@ void ml_profile(double complex *out, const double *x, const double *layers, int 
 void frames(double *out, const double *pfx, const double *pfy, const double *wfx, const double *wfy,
     double dx, double dy, size_t xpts, size_t ypts, size_t nframes, size_t ss_size, size_t fs_size, long seed, unsigned threads);
 
-void whitefield(void *out, const void *data, const unsigned char *mask, size_t nframes, size_t frame_size,
-    size_t size, int (*compar)(const void*, const void*), unsigned threads);
+void whitefield(void *out, const void *data, const unsigned char *mask, size_t isize,
+    size_t npts, size_t istride, size_t size, int (*compar)(const void*, const void*), unsigned threads);
 
 #endif

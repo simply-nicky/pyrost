@@ -133,7 +133,7 @@ class STData(DataContainer):
             self.mask = np.ones(self.data.shape)
         if self.whitefield is None:
             self.whitefield = make_whitefield(data=self.data[self.good_frames],
-                                              mask=self.mask[self.good_frames])
+                                              mask=self.mask[self.good_frames], axis=0)
 
         # Set a pixel map, deviation angles, and phase
         if not self.pixel_map is None:
@@ -470,9 +470,8 @@ class STData(DataContainer):
         grad_mag, sweep_scan = [], []
         for defocus_fs, defocus_ss in zip(defoci_fs.ravel(), defoci_ss.ravel()):
             st_data = self.update_defocus(defocus_fs, defocus_ss)
-            st_obj = st_data.get_st(num_threads=num_threads).update_reference(ls_ri=ls_ri, sw_fs=0, sw_ss=0)
-            ri_gm = gaussian_gradient_magnitude(st_obj.reference_image, sigma=ls_ri,
-                                                num_threads=num_threads)
+            st_obj = st_data.get_st(num_threads=num_threads).update_reference(ls_ri=ls_ri)
+            ri_gm = gaussian_gradient_magnitude(st_obj.reference_image, sigma=ls_ri)
             sweep_scan.append(st_obj.reference_image)
             grad_mag.append(np.mean(ri_gm**2))
         grad_mag = np.array(grad_mag).reshape(defoci_fs.shape)
@@ -884,7 +883,7 @@ class SpeckleTracking(DataContainer):
             dfs_pix = np.ascontiguousarray(dij[:, 1]) + self.m0
             return {'data_ref': self._reference, 'dss_pix': dss_pix, 'dfs_pix': dfs_pix}
 
-    def iter_update_gd(self, ls_ri, ls_pm, sw_fs, sw_ss=0, blur=None, n_iter=30, f_tol=1e-6, momentum=0.,
+    def iter_update_gd(self, ls_ri, ls_pm, sw_fs, sw_ss=0, blur=None, n_iter=30, f_tol=0., momentum=0.,
                        learning_rate=1e1, gstep=.1, method='search', update_translations=False,
                        verbose=False, return_extra=False):
         """Perform iterative Robust Speckle Tracking update. `ls_ri` and
@@ -959,8 +958,7 @@ class SpeckleTracking(DataContainer):
             # Update pixel_map
             new_obj = obj.update_pixel_map(ls_pm=ls_pm, sw_fs=sw_fs, sw_ss=sw_ss, method=method)
             obj.pixel_map += gaussian_filter(new_obj.pixel_map - obj.pixel_map,
-                                             (0, blur, blur), mode='nearest',
-                                             num_threads=self.num_threads)
+                                             (0, blur, blur), mode='nearest')
 
             # Update dss_pix, dfs_pix
             if update_translations:
@@ -990,7 +988,7 @@ class SpeckleTracking(DataContainer):
         else:
             return obj
 
-    def iter_update(self, ls_ri, ls_pm, sw_fs, sw_ss=0, blur=None, n_iter=5, f_tol=1e-3,
+    def iter_update(self, ls_ri, ls_pm, sw_fs, sw_ss=0, blur=None, n_iter=5, f_tol=0.,
                     method='search', update_translations=False, verbose=False, return_errors=False):
         """Perform iterative Robust Speckle Tracking update. `ls_ri` and
         `ls_pm` define high frequency cut-off to supress the noise.
@@ -1053,8 +1051,7 @@ class SpeckleTracking(DataContainer):
             # Update pixel_map
             new_obj = obj.update_pixel_map(ls_pm=ls_pm, sw_fs=sw_fs, sw_ss=sw_ss, method=method)
             obj.pixel_map += gaussian_filter(new_obj.pixel_map - obj.pixel_map,
-                                             (0, blur, blur), mode='nearest',
-                                             num_threads=self.num_threads)
+                                             (0, blur, blur), mode='nearest')
 
             # Update dss_pix, dfs_pix
             if update_translations:
