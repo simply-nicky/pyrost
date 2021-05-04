@@ -13,9 +13,9 @@ typedef enum
 } EXTEND_MODE;
 
 void extend_line_complex(double complex *out, const double complex *inp, EXTEND_MODE mode,
-    double complex cval, size_t osize, size_t isize, size_t istride, unsigned long threads);
+    double complex cval, size_t osize, size_t isize, size_t istride);
 void extend_line_double(double *out, const double *inp, EXTEND_MODE mode, double cval, size_t osize,
-    size_t isize, size_t istride, unsigned long threads);
+    size_t isize, size_t istride);
 
 // Speckle Tracking utility functions
 NOINLINE int compare_double(const void *a, const void *b);

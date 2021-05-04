@@ -9,12 +9,12 @@ void gauss_filter_fftw(double *out, const double *inp, int ndim, size_t *dims, d
     unsigned *order, EXTEND_MODE mode, double cval, double truncate, unsigned threads);
 
 int gauss_filter_np(double *out, const double *inp, int ndim, size_t *dims, double *sigma,
-    unsigned *order, EXTEND_MODE mode, double cval, double truncate);
+    unsigned *order, EXTEND_MODE mode, double cval, double truncate, unsigned threads);
 
 void gauss_grad_fftw(double *out, const double *inp, int ndim, size_t *dims, double *sigma,
     EXTEND_MODE mode, double cval, double truncate, unsigned threads);
 
 int gauss_grad_np(double *out, const double *inp, int ndim, size_t *dims, double *sigma,
-    EXTEND_MODE mode, double cval, double truncate);
+    EXTEND_MODE mode, double cval, double truncate, unsigned threads);
 
 #endif

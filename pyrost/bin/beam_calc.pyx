@@ -69,15 +69,15 @@ cdef bint fft_faster(np.npy_intp *in1, np.npy_intp *in2, np.npy_intp ndim):
     cdef double offset, O_fft, O_direct, O_offset
     if ndim == 1:
         if in2_size <= in1_size:
-            O_fft = 4.2646654e-8
+            O_fft = 3.2646654e-9
             O_direct = 2.8478277e-10
             O_offset = -1e-3
         else:
-            O_fft = 4.21635404e-8
+            O_fft = 3.21635404e-9
             O_direct = 1.1773253e-8
             O_offset = -1e-5
     else:
-        O_fft = 3.04735e-8
+        O_fft = 2.04735e-9
         O_direct = 1.55367e-8
         O_offset = -1e-4
     return (O_fft * fft_ops) < (O_direct * direct_ops + O_offset)
@@ -172,7 +172,7 @@ cdef np.ndarray gf_fft(np.ndarray inp, np.ndarray sigma, np.ndarray order, str m
         if backend == 'fftw':
             gauss_filter_fftw(_out, _inp, ndim, _dims, _sig, _ord, _mode, cval, truncate, num_threads)
         elif backend == 'numpy':
-            fail = gauss_filter_np(_out, _inp, ndim, _dims, _sig, _ord, _mode, cval, truncate)
+            fail = gauss_filter_np(_out, _inp, ndim, _dims, _sig, _ord, _mode, cval, truncate, num_threads)
             if fail:
                 raise RuntimeError('NumPy FFT exited with error')
         else:
@@ -259,7 +259,7 @@ cdef np.ndarray ggm_fft(np.ndarray inp, np.ndarray sigma, str mode, double cval,
         if backend == 'fftw':
             gauss_grad_fftw(_out, _inp, ndim, _dims, _sig, _mode, cval, truncate, num_threads)
         elif backend == 'numpy':
-            fail = gauss_grad_np(_out, _inp, ndim, _dims, _sig, _mode, cval, truncate)
+            fail = gauss_grad_np(_out, _inp, ndim, _dims, _sig, _mode, cval, truncate, num_threads)
             if fail:
                 raise RuntimeError('NumPy FFT exited with error')
         else:
@@ -385,10 +385,8 @@ def rsc_wp(wft: np.ndarray, dx0: cython.double, dx: cython.double, z: cython.dou
     cdef np.npy_intp isize = np.PyArray_SIZE(wft)
     cdef int ndim = wft.ndim
     axis = axis if axis >= 0 else ndim + axis
+    cdef np.npy_intp istride = np.PyArray_STRIDE(wft, axis) / np.PyArray_ITEMSIZE(wft)
     cdef np.npy_intp npts = np.PyArray_DIM(wft, axis)
-    cdef int howmany = isize / npts
-    if axis != ndim - 1:
-        wft = <np.ndarray>np.PyArray_SwapAxes(wft, axis, ndim - 1)
     cdef np.npy_intp *dims = wft.shape
     cdef np.ndarray out = <np.ndarray>np.PyArray_SimpleNew(ndim, dims, np.NPY_COMPLEX128)
     cdef complex *_out = <complex *>np.PyArray_DATA(out)
@@ -396,15 +394,13 @@ def rsc_wp(wft: np.ndarray, dx0: cython.double, dx: cython.double, z: cython.dou
     cdef int fail = 0
     with nogil:
         if backend == 'fftw':
-            rsc_fftw(_out, _inp, howmany, npts, dx0, dx, z, wl, num_threads)
+            rsc_fftw(_out, _inp, isize, npts, istride, dx0, dx, z, wl, num_threads)
         elif backend == 'numpy':
-            fail = rsc_np(_out, _inp, howmany, npts, dx0, dx, z, wl)
+            fail = rsc_np(_out, _inp, isize, npts, istride, dx0, dx, z, wl, num_threads)
             if fail:
                 raise RuntimeError('NumPy FFT exited with error')
         else:
             raise ValueError('{:s} is invalid backend'.format(backend))
-    if axis != ndim - 1:
-        out = <np.ndarray>np.PyArray_SwapAxes(wft, axis, ndim - 1)
     return out
 
 def fraunhofer_wp(wft: np.ndarray, dx0: cython.double, dx: cython.double,
@@ -462,10 +458,8 @@ def fraunhofer_wp(wft: np.ndarray, dx0: cython.double, dx: cython.double,
     cdef np.npy_intp isize = np.PyArray_SIZE(wft)
     cdef int ndim = wft.ndim
     axis = axis if axis >= 0 else ndim + axis
+    cdef np.npy_intp istride = np.PyArray_STRIDE(wft, axis) / np.PyArray_ITEMSIZE(wft)
     cdef np.npy_intp npts = np.PyArray_DIM(wft, axis)
-    cdef int howmany = isize / npts
-    if axis != ndim - 1:
-        wft = <np.ndarray>np.PyArray_SwapAxes(wft, axis, ndim - 1)
     cdef np.npy_intp *dims = wft.shape
     cdef np.ndarray out = <np.ndarray>np.PyArray_SimpleNew(ndim, dims, np.NPY_COMPLEX128)
     cdef complex *_out = <complex *>np.PyArray_DATA(out)
@@ -473,15 +467,13 @@ def fraunhofer_wp(wft: np.ndarray, dx0: cython.double, dx: cython.double,
     cdef int fail = 0
     with nogil:
         if backend == 'fftw':
-            fraunhofer_fftw(_out, _inp, howmany, npts, dx0, dx, z, wl, num_threads)
+            fraunhofer_fftw(_out, _inp, isize, npts, istride, dx0, dx, z, wl, num_threads)
         elif backend == 'numpy':
-            fail = fraunhofer_np(_out, _inp, howmany, npts, dx0, dx, z, wl)
+            fail = fraunhofer_np(_out, _inp, isize, npts, istride, dx0, dx, z, wl, num_threads)
             if fail:
                 raise RuntimeError('NumPy FFT exited with error')
         else:
             raise ValueError('{:s} is invalid backend'.format(backend))
-    if axis != ndim - 1:
-        out = <np.ndarray>np.PyArray_SwapAxes(wft, axis, ndim - 1)
     return out
 
 def bar_positions(x0: cython.double, x1: cython.double, b_dx: cython.double,
@@ -636,7 +628,7 @@ def fft_convolve(array: np.ndarray, kernel: np.ndarray, axis: cython.int=-1,
         if backend == 'fftw':
             fft_convolve_fftw(_out, _inp, _krn, isize, npts, istride, ksize, _mode, cval, num_threads)
         elif backend == 'numpy':
-            fail = fft_convolve_np(_out, _inp, _krn, isize, npts, istride, ksize, _mode, cval)
+            fail = fft_convolve_np(_out, _inp, _krn, isize, npts, istride, ksize, _mode, cval, num_threads)
             if fail:
                 raise RuntimeError('NumPy FFT exited with error')
         else:

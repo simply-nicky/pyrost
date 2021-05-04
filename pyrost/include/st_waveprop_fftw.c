@@ -209,12 +209,13 @@ static void rsc_type2_fftw(fftw_plan fftp, fftw_plan ifftp, double complex *out,
     for (int i = 0; i < npts; i++) out[i] = inp[i + (flen - npts) / 2];
 }
 
-void rsc_fftw(double complex *out, const double complex *inp, size_t howmany, size_t npts,
+void rsc_fftw(double complex *out, const double complex *inp, size_t isize, size_t npts, size_t istride,
     double dx0, double dx, double z, double wl, unsigned threads)
 {
     dx = fabs(dx); dx0 = fabs(dx0);
     double alpha = (dx0 <= dx) ? (dx0 / dx) : (dx / dx0);
     size_t flen = next_fast_len_fftw((size_t) (npts * (1 + alpha)) + 1);
+    int repeats = isize / (npts * istride);
     double complex *u = (double complex *)fftw_malloc(flen * sizeof(double complex));
     double complex *k = (double complex *)fftw_malloc(flen * sizeof(double complex));
     fftw_iodim *dim = (fftw_iodim *)malloc(sizeof(fftw_iodim));
@@ -224,11 +225,15 @@ void rsc_fftw(double complex *out, const double complex *inp, size_t howmany, si
     fftw_plan ifftp = fftw_plan_guru_dft(1, dim, 0, NULL, (fftw_complex *)u, (fftw_complex *)u, FFTW_BACKWARD, FFTW_ESTIMATE);
     rsc_func rsc_calc = (dx0 >= dx) ? rsc_type1_fftw : rsc_type2_fftw;
 
-    for (int i = 0; i < (int) howmany; i++)
+    for (int i = 0; i < repeats; i++)
     {
-        extend_line_complex(u, inp, EXTEND_CONSTANT, 0., flen, npts, 1, threads);
-        rsc_calc(fftp, ifftp, out, u, k, flen, npts, dx0, dx, z, wl, threads);
-        inp += npts; out += npts;
+        for (int j = 0; j < (int) istride; j++)
+        {
+            extend_line_complex(u, inp, EXTEND_CONSTANT, 0., flen, npts, istride);
+            rsc_calc(fftp, ifftp, out, u, k, flen, npts, dx0, dx, z, wl, threads);
+            inp += 1; out += 1;
+        }
+        inp += (npts - 1) * istride; out += (npts - 1) * istride;
     }
 
     fftw_destroy_plan(fftp);
@@ -270,11 +275,12 @@ static void fhf_fftw(fftw_plan fftp, fftw_plan ifftp, double complex *out,
     }
 }
 
-void fraunhofer_fftw(double complex *out, const double complex *inp, size_t howmany,
-    size_t npts, double dx0, double dx, double z, double wl, int threads)
+void fraunhofer_fftw(double complex *out, const double complex *inp, size_t isize, size_t istride,
+    size_t npts, double dx0, double dx, double z, double wl, unsigned threads)
 {
     dx = fabs(dx); dx0 = fabs(dx0);
     int flen = next_fast_len_fftw(2 * npts - 1);
+    int repeats = isize / (npts * istride);
     double complex *u = (double complex *)fftw_malloc(flen * sizeof(double complex));
     double complex *k = (double complex *)fftw_malloc(flen * sizeof(double complex));
     fftw_iodim *dim = (fftw_iodim *)malloc(sizeof(fftw_iodim));
@@ -294,11 +300,15 @@ void fraunhofer_fftw(double complex *out, const double complex *inp, size_t howm
     }
     fftw_execute_dft(fftp, (fftw_complex *)k, (fftw_complex *)k);
 
-    for (int i = 0; i < (int) howmany; i++)
+    for (int i = 0; i < repeats; i++)
     {
-        extend_line_complex(u, inp, EXTEND_CONSTANT, 0., flen, npts, 1, threads);
-        fhf_fftw(fftp, ifftp, out, u, k, flen, npts, dx0, dx, alpha, threads);
-        out += npts; inp += npts;
+        for (int j = 0; j < (int) istride; j++)
+        {
+            extend_line_complex(u, inp, EXTEND_CONSTANT, 0., flen, npts, istride);
+            fhf_fftw(fftp, ifftp, out, u, k, flen, npts, dx0, dx, alpha, threads);
+            out += 1; inp += 1;
+        }
+        inp += (npts - 1) * istride; out += (npts - 1) * istride;
     }
 
     fftw_destroy_plan(fftp);
@@ -332,6 +342,7 @@ void fft_convolve_fftw(double *out, const double *inp, const double *krn, size_t
     size_t npts, size_t istride, size_t ksize, EXTEND_MODE mode, double cval, unsigned threads)
 {
     int flen = next_fast_len_fftw(npts + ksize - 1);
+    int repeats = isize / (npts * istride);
     double *inpft = (double *)fftw_malloc(2 * (flen / 2 + 1) * sizeof(double));
     double *krnft = (double *)fftw_malloc(2 * (flen / 2 + 1) * sizeof(double));
     fftw_iodim *dim = (fftw_iodim *)malloc(sizeof(fftw_iodim));
@@ -339,16 +350,15 @@ void fft_convolve_fftw(double *out, const double *inp, const double *krn, size_t
     fftw_plan_with_nthreads(threads);
     fftw_plan rfftp = fftw_plan_guru_dft_r2c(1, dim, 0, NULL, inpft, (fftw_complex *)inpft, FFTW_ESTIMATE);
     fftw_plan irfftp = fftw_plan_guru_dft_c2r(1, dim, 0, NULL, (fftw_complex *)inpft, inpft, FFTW_ESTIMATE);
-    int repeats = isize / (npts * istride);
 
-    extend_line_double(krnft, krn, EXTEND_CONSTANT, 0., flen, ksize, 1, threads);
+    extend_line_double(krnft, krn, EXTEND_CONSTANT, 0., flen, ksize, 1);
     fftw_execute_dft_r2c(rfftp, (double *)krnft, (fftw_complex *)krnft);
 
     for (int i = 0; i < repeats; i++)
     {
         for (int j = 0; j < (int) istride; j++)
         {
-            extend_line_double(inpft, inp, mode, cval, flen, npts, istride, threads);
+            extend_line_double(inpft, inp, mode, cval, flen, npts, istride);
             fftcnv_fftw(rfftp, irfftp, out, inpft, krnft, flen, npts, istride, threads);
             inp += 1; out += 1;
         }

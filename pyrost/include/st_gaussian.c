@@ -49,7 +49,6 @@ void gauss_filter_fftw(double *out, const double *inp, int ndim, size_t *dims, d
 {
     size_t isize = 1;
     for (int i = 0; i < ndim; i++) isize *= dims[i];
-    #pragma omp parallel for num_threads(threads)
     for (int i = 0; i < (int) isize; i++) out[i] = inp[i];
     for (int n = 0; n < ndim; n++)
     {
@@ -67,7 +66,7 @@ void gauss_filter_fftw(double *out, const double *inp, int ndim, size_t *dims, d
 }
 
 int gauss_filter_np(double *out, const double *inp, int ndim, size_t *dims, double *sigma,
-    unsigned *order, EXTEND_MODE mode, double cval, double truncate)
+    unsigned *order, EXTEND_MODE mode, double cval, double truncate, unsigned threads)
 {
     int fail = 0;
     size_t isize = 1;
@@ -82,7 +81,7 @@ int gauss_filter_np(double *out, const double *inp, int ndim, size_t *dims, doub
             size_t ksize = 2 * (size_t) (sigma[n] * truncate) + 1;
             double *krn = (double *)malloc(ksize * sizeof(double));
             gauss_kernel1d(krn, sigma[n], order[n], ksize);
-            fail |= fft_convolve_np(out, out, krn, isize, dims[n], istride, ksize, mode, cval);
+            fail |= fft_convolve_np(out, out, krn, isize, dims[n], istride, ksize, mode, cval, threads);
             free(krn);
         }
     }
@@ -116,17 +115,12 @@ void gauss_grad_fftw(double *out, const double *inp, int ndim, size_t *dims, dou
 
     if (ksizes[0] != 0) fft_convolve_fftw(out, inp, g1[0], isize, dims[0],
         strides[0], ksizes[0], mode, cval, threads);
-    else
-    {
-        #pragma omp parallel for num_threads(threads)
-        for (int i = 0; i < (int) isize; i++) out[i] = inp[i];
-    }
+    else {for (int i = 0; i < (int) isize; i++) out[i] = inp[i];}
     for (int n = 1; n < ndim; n++)
     {
         if (ksizes[n] != 0) fft_convolve_fftw(out, out, g0[n], isize, dims[n],
             strides[n], ksizes[n], mode, cval, threads);
     }
-    #pragma omp parallel for num_threads(threads)
     for (int i = 0; i < (int) isize; i++) out[i] = out[i] * out[i];
 
     double *tmp = (double *)malloc(isize * sizeof(double));
@@ -134,11 +128,7 @@ void gauss_grad_fftw(double *out, const double *inp, int ndim, size_t *dims, dou
     {
         if (ksizes[0] != 0) fft_convolve_fftw(tmp, inp, g0[0], isize, dims[0],
             strides[0], ksizes[0], mode, cval, threads);
-        else
-        {
-            #pragma omp parallel for num_threads(threads)
-            for (int i = 0; i < (int) isize; i++) tmp[i] = inp[i];
-        }
+        else {for (int i = 0; i < (int) isize; i++) tmp[i] = inp[i];}
         for (int n = 1; n < ndim; n++)
         {
             if (ksizes[n])
@@ -149,18 +139,16 @@ void gauss_grad_fftw(double *out, const double *inp, int ndim, size_t *dims, dou
                     strides[n], ksizes[n], mode, cval, threads);}
             }
         }
-        #pragma omp parallel for num_threads(threads)
         for (int i = 0; i < (int) isize; i++) out[i] += tmp[i] * tmp[i];
     }
     free(tmp); free(ksizes); free(strides);
     for (int n = 0; n < ndim; n++) {free(g0[n]); free(g1[n]);}
 
-    #pragma omp parallel for num_threads(threads)
     for (int i = 0; i < (int) isize; i++) out[i] = sqrt(out[i]);
 }
 
 int gauss_grad_np(double *out, const double *inp, int ndim, size_t *dims, double *sigma,
-    EXTEND_MODE mode, double cval, double truncate)
+    EXTEND_MODE mode, double cval, double truncate, unsigned threads)
 {
     int fail = 0;
     size_t isize = 1;
@@ -186,12 +174,12 @@ int gauss_grad_np(double *out, const double *inp, int ndim, size_t *dims, double
     }
 
     if (ksizes[0] != 0) fail |= fft_convolve_np(out, inp, g1[0], isize, dims[0],
-        strides[0], ksizes[0], mode, cval);
+        strides[0], ksizes[0], mode, cval, threads);
     else for (int i = 0; i < (int) isize; i++) out[i] = inp[i];
     for (int n = 1; n < ndim; n++)
     {
         if (ksizes[n] != 0) fail |= fft_convolve_np(out, out, g0[n], isize, dims[n],
-            strides[n], ksizes[n], mode, cval);
+            strides[n], ksizes[n], mode, cval, threads);
     }
     for (int i = 0; i < (int) isize; i++) out[i] = out[i] * out[i];
 
@@ -199,16 +187,16 @@ int gauss_grad_np(double *out, const double *inp, int ndim, size_t *dims, double
     for (int m = 1; m < ndim; m++)
     {
         if (ksizes[0] != 0) fail |= fft_convolve_np(tmp, inp, g0[0], isize, dims[0],
-            strides[0], ksizes[0], mode, cval);
+            strides[0], ksizes[0], mode, cval, threads);
         else for (int i = 0; i < (int) isize; i++) tmp[i] = inp[i];
         for (int n = 1; n < ndim; n++)
         {
             if (ksizes[n])
             {
                 if (n == m) {fail |= fft_convolve_np(tmp, tmp, g1[n], isize, dims[n],
-                    strides[n], ksizes[n], mode, cval);}
+                    strides[n], ksizes[n], mode, cval, threads);}
                 else {fail |= fft_convolve_np(tmp, tmp, g0[n], isize, dims[n],
-                    strides[n], ksizes[n], mode, cval);}
+                    strides[n], ksizes[n], mode, cval, threads);}
             }
         }
         for (int i = 0; i < (int) isize; i++) out[i] += tmp[i] * tmp[i];

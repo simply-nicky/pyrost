@@ -55,15 +55,15 @@ cdef bint fft_faster(np.npy_intp *in1, np.npy_intp *in2, np.npy_intp ndim):
     cdef double offset, O_fft, O_direct, O_offset
     if ndim == 1:
         if in2_size <= in1_size:
-            O_fft = 4.2646654e-8
+            O_fft = 3.2646654e-9
             O_direct = 2.8478277e-10
             O_offset = -1e-3
         else:
-            O_fft = 4.21635404e-8
+            O_fft = 3.21635404e-9
             O_direct = 1.1773253e-8
             O_offset = -1e-5
     else:
-        O_fft = 3.04735e-8
+        O_fft = 2.04735e-9
         O_direct = 1.55367e-8
         O_offset = -1e-4
     return (O_fft * fft_ops) < (O_direct * direct_ops + O_offset)
@@ -158,7 +158,7 @@ cdef np.ndarray gf_fft(np.ndarray inp, np.ndarray sigma, np.ndarray order, str m
         if backend == 'fftw':
             gauss_filter_fftw(_out, _inp, ndim, _dims, _sig, _ord, _mode, cval, truncate, num_threads)
         elif backend == 'numpy':
-            fail = gauss_filter_np(_out, _inp, ndim, _dims, _sig, _ord, _mode, cval, truncate)
+            fail = gauss_filter_np(_out, _inp, ndim, _dims, _sig, _ord, _mode, cval, truncate, num_threads)
             if fail:
                 raise RuntimeError('NumPy FFT exited with error')
         else:
@@ -199,7 +199,7 @@ cdef np.ndarray ggm_fft(np.ndarray inp, np.ndarray sigma, str mode, double cval,
         if backend == 'fftw':
             gauss_grad_fftw(_out, _inp, ndim, _dims, _sig, _mode, cval, truncate, num_threads)
         elif backend == 'numpy':
-            fail = gauss_grad_np(_out, _inp, ndim, _dims, _sig, _mode, cval, truncate)
+            fail = gauss_grad_np(_out, _inp, ndim, _dims, _sig, _mode, cval, truncate, num_threads)
             if fail:
                 raise RuntimeError('NumPy FFT exited with error')
         else:
