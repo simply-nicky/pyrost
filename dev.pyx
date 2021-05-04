@@ -8,7 +8,8 @@ from libc.string cimport memcmp
 from cython.parallel import prange, parallel
 from libc.stdlib cimport abort, malloc, free
 cimport openmp
-import speckle_tracking as st
+from scipy.ndimage import gaussian_gradient_magnitude as ggm, gaussian_filter as gf
+# import speckle_tracking as st
 
 ctypedef fused float_t:
     np.float64_t
@@ -32,56 +33,265 @@ def init_fftw():
 
 init_fftw()
 
-def st_update(I_n, dij, basis, x_ps, y_ps, z, df, search_window, n_iter=5,
-              filter=None, update_translations=False, verbose=False):
+cdef bint fft_faster(np.npy_intp *in1, np.npy_intp *in2, np.npy_intp ndim):
+    cdef np.npy_intp in1_size = 1
+    cdef np.npy_intp in2_size = 1
+    cdef int i
+    for i in range(ndim):
+        in1_size *= in1[i]
+        in2_size *= in2[i]
+
+    cdef np.npy_intp direct_ops = 1
+    if ndim == 1:
+        direct_ops *= in1[0] * in2[0] if in1[0] < in2[0] else in1[0] * in2[0] - (in2[0] // 2) * ((in2[0] + 1) // 2)
+    else:
+        direct_ops *= in1_size * in2_size
+
+    cdef np.npy_intp fft_ops = 1
+    for i in range(ndim):
+        fft_ops *= in1[i] + in2[i] - 1
+    fft_ops = <np.npy_intp>(3 * fft_ops * log(<double>fft_ops))  # 3 separate FFTs of size full_out_shape
+
+    cdef double offset, O_fft, O_direct, O_offset
+    if ndim == 1:
+        if in2_size <= in1_size:
+            O_fft = 3.2646654e-9
+            O_direct = 2.8478277e-10
+            O_offset = -1e-3
+        else:
+            O_fft = 3.21635404e-9
+            O_direct = 1.1773253e-8
+            O_offset = -1e-5
+    else:
+        O_fft = 2.04735e-9
+        O_direct = 1.55367e-8
+        O_offset = -1e-4
+    return (O_fft * fft_ops) < (O_direct * direct_ops + O_offset)
+
+cdef int extend_mode_to_code(str mode) except -1:
+    if mode == 'constant':
+        return EXTEND_CONSTANT
+    elif mode == 'nearest':
+        return EXTEND_NEAREST
+    elif mode == 'mirror':
+        return EXTEND_MIRROR
+    elif mode == 'reflect':
+        return EXTEND_REFLECT
+    elif mode == 'wrap':
+        return EXTEND_WRAP
+    else:
+        raise RuntimeError('boundary mode not supported')
+
+cdef np.ndarray number_to_array(object num, np.npy_intp rank, int type_num):
+    cdef np.npy_intp *dims = [rank,]
+    cdef np.ndarray arr = <np.ndarray>np.PyArray_SimpleNew(1, dims, type_num)
+    cdef int i
+    for i in range(rank):
+        arr[i] = num
+    return arr
+
+cdef np.ndarray normalize_sequence(object inp, np.npy_intp rank, int type_num):
+    r"""If input is a scalar, create a sequence of length equal to the
+    rank by duplicating the input. If input is a sequence,
+    check if its length is equal to the length of array.
     """
-    Andrew's speckle tracking update algorithm
+    cdef np.ndarray arr
+    cdef int tn
+    if np.PyArray_IsAnyScalar(inp):
+        arr = number_to_array(inp, rank, type_num)
+    elif np.PyArray_Check(inp):
+        arr = <np.ndarray>inp
+        tn = np.PyArray_TYPE(arr)
+        if tn != type_num:
+            arr = <np.ndarray>np.PyArray_Cast(arr, type_num)
+    elif isinstance(inp, (list, tuple)):
+        arr = <np.ndarray>np.PyArray_FROM_OTF(inp, type_num, np.NPY_ARRAY_C_CONTIGUOUS)
+    else:
+        raise ValueError("Wrong sequence argument type")
+    cdef np.npy_intp size = np.PyArray_SIZE(arr)
+    if size != rank:
+        raise ValueError("Sequence argument must have length equal to input rank")
+    return arr
+
+def fft_convolve(array: np.ndarray, kernel: np.ndarray, axis: cython.int=-1,
+                 mode: str='constant', cval: cython.double=0.0, backend: str='numpy',
+                 num_threads: cython.uint=1) -> np.ndarray:
+    array = np.PyArray_GETCONTIGUOUS(array)
+    array = np.PyArray_Cast(array, np.NPY_FLOAT64)
+    kernel = np.PyArray_GETCONTIGUOUS(kernel)
+    kernel = np.PyArray_Cast(kernel, np.NPY_FLOAT64)
+
+    cdef np.npy_intp isize = np.PyArray_SIZE(array)
+    cdef int ndim = array.ndim
+    axis = axis if axis >= 0 else ndim + axis
+    cdef np.npy_intp npts = np.PyArray_DIM(array, axis)
+    cdef np.npy_intp istride = np.PyArray_STRIDE(array, axis) / np.PyArray_ITEMSIZE(array)
+    cdef np.npy_intp ksize = np.PyArray_DIM(kernel, 0)
+    cdef int _mode = extend_mode_to_code(mode)
+    cdef np.npy_intp *dims = array.shape
+    cdef np.ndarray out = <np.ndarray>np.PyArray_SimpleNew(ndim, dims, np.NPY_FLOAT64)
+    cdef double *_out = <double *>np.PyArray_DATA(out)
+    cdef double *_inp = <double *>np.PyArray_DATA(array)
+    cdef double *_krn = <double *>np.PyArray_DATA(kernel)
+    cdef int fail = 0
+    with nogil:
+        if backend == 'fftw':
+            fft_convolve_fftw(_out, _inp, _krn, isize, npts, istride, ksize, _mode, cval, num_threads)
+        elif backend == 'numpy':
+            fail = fft_convolve_np(_out, _inp, _krn, isize, npts, istride, ksize, _mode, cval, num_threads)
+            if fail:
+                raise RuntimeError('NumPy FFT exited with error')
+        else:
+            raise ValueError('{:s} is invalid backend'.format(backend))
+    return out
+
+cdef np.ndarray gf_fft(np.ndarray inp, np.ndarray sigma, np.ndarray order, str mode,
+                       double cval, double truncate, str backend, unsigned int num_threads):
+    inp = np.PyArray_GETCONTIGUOUS(inp)
+    inp = np.PyArray_Cast(inp, np.NPY_FLOAT64)
     
-    I_n - measured data
-    W - whitefield
-    basis - detector plane basis vectors
-    x_ps, y_ps - x and y pixel sizes
-    z - distance between the sample and the detector
-    df - defocus distance
-    sw_max - pixel mapping search window size
-    n_iter - number of iterations
-    """
-    M = np.ones((I_n.shape[1], I_n.shape[2]), dtype=bool)
-    W = st.make_whitefield(I_n, M, verbose=verbose)
-    u, dij_pix, res = st.generate_pixel_map(W.shape, dij, basis,
-                                            x_ps, y_ps, z,
-                                            df, verbose=verbose)
-    I0, n0, m0 = st.make_object_map(I_n, M, W, dij_pix, u, subpixel=True, verbose=verbose)
+    cdef int ndim = inp.ndim
+    cdef np.npy_intp *dims = inp.shape
+    cdef np.ndarray out = <np.ndarray>np.PyArray_SimpleNew(ndim, dims, np.NPY_FLOAT64)
+    cdef double *_out = <double *>np.PyArray_DATA(out)
+    cdef double *_inp = <double *>np.PyArray_DATA(inp)
+    cdef unsigned long *_dims = <unsigned long *>dims
+    cdef double *_sig = <double *>np.PyArray_DATA(sigma)
+    cdef unsigned *_ord = <unsigned *>np.PyArray_DATA(order)
+    cdef int _mode = extend_mode_to_code(mode)
+    with nogil:
+        if backend == 'fftw':
+            gauss_filter_fftw(_out, _inp, ndim, _dims, _sig, _ord, _mode, cval, truncate, num_threads)
+        elif backend == 'numpy':
+            fail = gauss_filter_np(_out, _inp, ndim, _dims, _sig, _ord, _mode, cval, truncate, num_threads)
+            if fail:
+                raise RuntimeError('NumPy FFT exited with error')
+        else:
+            raise ValueError('{:s} is invalid backend'.format(backend))
+    return out
 
-    es = []
-    for i in range(n_iter):
+def gaussian_filter(inp: np.ndarray, sigma: object, order: object=0, mode: str='reflect',
+                    cval: cython.double=0., truncate: cython.double=4., backend: str='numpy',
+                    num_threads: cython.uint=1) -> np.ndarray:
+    cdef int ndim = inp.ndim
+    cdef np.ndarray sigmas = normalize_sequence(sigma, ndim, np.NPY_FLOAT64)
+    cdef np.ndarray orders = normalize_sequence(order, ndim, np.NPY_UINT32)
+    cdef int i
+    cdef np.npy_intp *dims = inp.shape
+    cdef np.npy_intp *kdims = <np.npy_intp *>malloc(ndim * sizeof(np.npy_intp))
+    for i in range(ndim):
+        kdims[i] = <np.npy_intp>(2 * sigmas[i] * truncate) + 1
+    cdef bint if_fft = fft_faster(inp.shape, kdims, ndim)
+    free(kdims)
+    if if_fft:
+        return gf_fft(inp, sigmas, orders, mode, cval, truncate, backend, num_threads)
+    else:
+        return gf(input=inp, sigma=sigma, order=order, mode=mode, cval=cval, truncate=truncate)
 
-        # calculate errors
-        error_total = st.calc_error(I_n, M, W, dij_pix, I0, u, n0, m0, subpixel=True, verbose=verbose)[0]
+def rsc_wp(wft: np.ndarray, dx0: cython.double, dx: cython.double, z: cython.double,
+           wl: cython.double, axis: cython.int=-1, backend: str='numpy',
+           num_threads: cython.uint=1) -> np.ndarray:
+    wft = np.PyArray_GETCONTIGUOUS(wft)
+    wft = np.PyArray_Cast(wft, np.NPY_COMPLEX128)
 
-        # store total error
-        es.append(error_total)
+    cdef np.npy_intp isize = np.PyArray_SIZE(wft)
+    cdef int ndim = wft.ndim
+    axis = axis if axis >= 0 else ndim + axis
+    cdef np.npy_intp istride = np.PyArray_STRIDE(wft, axis) / np.PyArray_ITEMSIZE(wft)
+    cdef np.npy_intp npts = np.PyArray_DIM(wft, axis)
+    cdef np.npy_intp *dims = wft.shape
+    cdef np.ndarray out = <np.ndarray>np.PyArray_SimpleNew(ndim, dims, np.NPY_COMPLEX128)
+    cdef complex *_out = <complex *>np.PyArray_DATA(out)
+    cdef complex *_inp = <complex *>np.PyArray_DATA(wft)
+    cdef int fail = 0
+    with nogil:
+        if backend == 'fftw':
+            rsc_fftw(_out, _inp, isize, npts, istride, dx0, dx, z, wl, num_threads)
+        elif backend == 'numpy':
+            fail = rsc_np(_out, _inp, isize, npts, istride, dx0, dx, z, wl, num_threads)
+            if fail:
+                raise RuntimeError('NumPy FFT exited with error')
+        else:
+            raise ValueError('{:s} is invalid backend'.format(backend))
+    return out
 
-        # update pixel map
-        u = st.update_pixel_map(I_n, M, W, I0, u, n0, m0, dij_pix,
-                                search_window=search_window, subpixel=True,
-                                fill_bad_pix=False, integrate=False,
-                                quadratic_refinement=False, verbose=verbose,
-                                filter=filter)[0]
+def fraunhofer_wp(wft: np.ndarray, dx0: cython.double, dx: cython.double,
+                  z: cython.double, wl: cython.double, axis: cython.int=-1,
+                  backend: str='numpy', num_threads: cython.uint=1) -> np.ndarray:
+    wft = np.PyArray_GETCONTIGUOUS(wft)
+    wft = np.PyArray_Cast(wft, np.NPY_COMPLEX128)
 
-        # make reference image
-        I0, n0, m0 = st.make_object_map(I_n, M, W, dij_pix, u, subpixel=True, verbose=verbose)
+    cdef np.npy_intp isize = np.PyArray_SIZE(wft)
+    cdef int ndim = wft.ndim
+    axis = axis if axis >= 0 else ndim + axis
+    cdef np.npy_intp istride = np.PyArray_STRIDE(wft, axis) / np.PyArray_ITEMSIZE(wft)
+    cdef np.npy_intp npts = np.PyArray_DIM(wft, axis)
+    cdef np.npy_intp *dims = wft.shape
+    cdef np.ndarray out = <np.ndarray>np.PyArray_SimpleNew(ndim, dims, np.NPY_COMPLEX128)
+    cdef complex *_out = <complex *>np.PyArray_DATA(out)
+    cdef complex *_inp = <complex *>np.PyArray_DATA(wft)
+    cdef int fail = 0
+    with nogil:
+        if backend == 'fftw':
+            fraunhofer_fftw(_out, _inp, isize, npts, istride, dx0, dx, z, wl, num_threads)
+        elif backend == 'numpy':
+            fail = fraunhofer_np(_out, _inp, isize, npts, istride, dx0, dx, z, wl, num_threads)
+            if fail:
+                raise RuntimeError('NumPy FFT exited with error')
+        else:
+            raise ValueError('{:s} is invalid backend'.format(backend))
+    return out
 
-        # update translations
-        if update_translations:
-            dij_pix = st.update_translations(I_n, M, W, I0, u, n0, m0, dij_pix)[0]
-    return {'u':u, 'I0':I0, 'errors':es, 'n0': n0, 'm0': m0}
+# def st_update(I_n, dij, basis, x_ps, y_ps, z, df, search_window, n_iter=5,
+#               filter=None, update_translations=False, verbose=False):
+#     """
+#     Andrew's speckle tracking update algorithm
+    
+#     I_n - measured data
+#     W - whitefield
+#     basis - detector plane basis vectors
+#     x_ps, y_ps - x and y pixel sizes
+#     z - distance between the sample and the detector
+#     df - defocus distance
+#     sw_max - pixel mapping search window size
+#     n_iter - number of iterations
+#     """
+#     M = np.ones((I_n.shape[1], I_n.shape[2]), dtype=bool)
+#     W = st.make_whitefield(I_n, M, verbose=verbose)
+#     u, dij_pix, res = st.generate_pixel_map(W.shape, dij, basis,
+#                                             x_ps, y_ps, z,
+#                                             df, verbose=verbose)
+#     I0, n0, m0 = st.make_object_map(I_n, M, W, dij_pix, u, subpixel=True, verbose=verbose)
 
-def pixel_translations(basis, dij, df, z):
-    dij_pix = (basis * dij[:, None]).sum(axis=-1)
-    dij_pix /= (basis**2).sum(axis=-1) * df / z
-    dij_pix -= dij_pix.mean(axis=0)
-    return np.ascontiguousarray(dij_pix[:, 0]), np.ascontiguousarray(dij_pix[:, 1])
+#     es = []
+#     for i in range(n_iter):
+
+#         # calculate errors
+#         error_total = st.calc_error(I_n, M, W, dij_pix, I0, u, n0, m0, subpixel=True, verbose=verbose)[0]
+
+#         # store total error
+#         es.append(error_total)
+
+#         # update pixel map
+#         u = st.update_pixel_map(I_n, M, W, I0, u, n0, m0, dij_pix,
+#                                 search_window=search_window, subpixel=True,
+#                                 fill_bad_pix=False, integrate=False,
+#                                 quadratic_refinement=False, verbose=verbose,
+#                                 filter=filter)[0]
+
+#         # make reference image
+#         I0, n0, m0 = st.make_object_map(I_n, M, W, dij_pix, u, subpixel=True, verbose=verbose)
+
+#         # update translations
+#         if update_translations:
+#             dij_pix = st.update_translations(I_n, M, W, I0, u, n0, m0, dij_pix)[0]
+#     return {'u':u, 'I0':I0, 'errors':es, 'n0': n0, 'm0': m0}
+
+# def pixel_translations(basis, dij, df, z):
+#     dij_pix = (basis * dij[:, None]).sum(axis=-1)
+#     dij_pix /= (basis**2).sum(axis=-1) * df / z
+#     dij_pix -= dij_pix.mean(axis=0)
+#     return np.ascontiguousarray(dij_pix[:, 0]), np.ascontiguousarray(dij_pix[:, 1])
 
 # def str_update(I_n, W, dij, basis, x_ps, y_ps, z, df, sw_max=100, n_iter=5, l_scale=2.5):
 #     """
