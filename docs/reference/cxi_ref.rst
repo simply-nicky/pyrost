@@ -83,10 +83,10 @@ is given by:
     classes/protocol
     classes/cxi_protocol
 
-Loader
-------
+CXILoader
+---------
 
-Speckle Tracking loader class (:class:`pyrost.STLoader`) uses a protocol to
+CXI file loader class (:class:`pyrost.CXILoader`) uses a protocol to
 automatically load all the necessary data fields from a CXI file. Other than
 the information provided by a protocol, a loader class requires the following
 attributes:
@@ -98,10 +98,10 @@ attributes:
 
 .. note::
 
-    You can save loader to an INI file with :func:`pyrost.STLoader.export_ini`
-    and import protocol from INI file with :func:`pyrost.STLoader.import_ini`.
+    You can save loader to an INI file with :func:`pyrost.CXILoader.export_ini`
+    and import protocol from INI file with :func:`pyrost.CXILoader.import_ini`.
 
-The default loader can be accessed with :func:`pyrost.loader`. The loader
+The default loader can be accessed with :func:`pyrost.cxi_loader`. The loader
 is given by:
 
 .. code-block:: ini

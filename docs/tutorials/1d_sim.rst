@@ -41,14 +41,14 @@ of 200 frames.
 
 Loading the file
 ----------------
-Load the file with :class:`pyrost.STLoader`. In the case of simulated data you can
+Load the file with :class:`pyrost.CXILoader`. In the case of simulated data you can
 import the protocol file, which is located in the same folder with `data.cxi`.
 
 .. doctest::
 
     >>> import pyrost as rst
     >>> protocol = rst.Protocol.import_ini('results/sim_results/protocol.ini')
-    >>> loader = rst.loader(protocol=protocol)
+    >>> loader = rst.cxi_loader(protocol=protocol)
     >>> data = loader.load('results/sim_results/data.cxi')
 
 Speckle Tracking update

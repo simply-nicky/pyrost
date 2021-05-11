@@ -12,7 +12,7 @@ Generate the default CXI protocol.
 
 Or generate the default CXI loader.
 
->>> rst.loader()
+>>> rst.cxi_loader()
 {'config': {'float_precision': 'float64'}, 'datatypes': {'basis_vectors':
 'float', 'data': 'float', 'defocus': 'float', '...': '...'}, 'default_paths':
 {'basis_vectors': '/entry_1/instrument_1/detector_1/basis_vectors', 'data':
@@ -599,8 +599,8 @@ def cxi_protocol(datatypes=None, default_paths=None, float_precision=None):
     return Protocol(datatypes=kwargs['datatypes'], default_paths=kwargs['default_paths'],
                     float_precision=float_precision)
 
-class STLoader(Protocol):
-    """Speckle Tracking data loader class. Loads data from a
+class CXILoader(Protocol):
+    """CXI file loader class. Loads data from a
     CXI file and returns a :class:`STData` container or a
     :class:`dict` with the data. Search data in the paths
     provided by `protocol` and `load_paths`.
@@ -668,7 +668,7 @@ class STLoader(Protocol):
 
     @classmethod
     def import_ini(cls, protocol_file):
-        """Initialize an :class:`STLoader` object class with an
+        """Initialize an :class:`CXILoader` object class with an
         ini file.
 
         Parameters
@@ -678,8 +678,8 @@ class STLoader(Protocol):
 
         Returns
         -------
-        STLoader
-            An :class:`STLoader` object with all the attributes imported
+        CXILoader
+            An :class:`CXILoader` object with all the attributes imported
             from the INI file.
         """
         kwargs = cls._import_ini(protocol_file)
@@ -703,7 +703,7 @@ class STLoader(Protocol):
         list
             Set of attribute's paths.
         """
-        paths = [super(STLoader, self).get_default_path(attr, value)]
+        paths = [super(CXILoader, self).get_default_path(attr, value)]
         if attr in self.load_paths:
             paths.extend(self.load_paths[attr])
         return paths
@@ -711,7 +711,7 @@ class STLoader(Protocol):
     def get_policy(self, attr, value=None):
         policy = self.policy.get(attr, value)
         if isinstance(policy, str):
-            return policy == 'True'
+            return policy in ['True', 'true', '1', 'y', 'yes']
         else:
             return bool(policy)
 
@@ -744,10 +744,9 @@ class STLoader(Protocol):
         """
         paths = self.get_load_paths(attr)
         for path in paths:
-            if path is None or path in cxi_file:
+            if path in cxi_file:
                 return path
-        else:
-            return None
+        return None
 
     def load_dict(self, path, **kwargs):
         """Load a CXI file and return a :class:`dict` with
@@ -801,7 +800,7 @@ class STLoader(Protocol):
         """
         return STData(self.get_protocol(), **self.load_dict(path, **kwargs))
 
-def loader(protocol=None, load_paths=None, policy=None):
+def cxi_loader(protocol=None, load_paths=None, policy=None):
     """Return the default CXI loader.
 
     Parameters
@@ -822,17 +821,17 @@ def loader(protocol=None, load_paths=None, policy=None):
 
     Returns
     -------
-    STLoader
+    CXILoader
         Default CXI loader.
 
     See Also
     --------
     cxi_protocol : Default CXI protocol.
-    STLoader : Full loader class description.
+    CXILoader : Full loader class description.
     STData : Data container with all the data  necessary for
         Speckle Tracking.
     """
-    kwargs = STLoader.import_ini(PROTOCOL_FILE).export_dict()
+    kwargs = CXILoader.import_ini(PROTOCOL_FILE).export_dict()
     if protocol is None:
         protocol = Protocol(datatypes=kwargs['datatypes'],
                             default_paths=kwargs['default_paths'],
@@ -843,5 +842,5 @@ def loader(protocol=None, load_paths=None, policy=None):
         policy = {}
     kwargs['load_paths'].update(**load_paths)
     kwargs['policy'].update(**policy)
-    return STLoader(protocol, load_paths=kwargs['load_paths'],
+    return CXILoader(protocol, load_paths=kwargs['load_paths'],
                     policy=kwargs['policy'])

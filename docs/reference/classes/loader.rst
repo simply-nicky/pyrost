@@ -1,4 +1,4 @@
-loader
-======
+cxi_loader
+==========
 
-.. autofunction:: pyrost.loader
+.. autofunction:: pyrost.cxi_loader

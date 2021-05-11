@@ -46,20 +46,20 @@ where each frame is an image of 516x1556 pixels.
 
 Loading the file
 ----------------
-Load the CXI file into a data container :class:`pyrost.STData` with :class:`pyrost.STLoader`.
-:func:`pyrost.loader` returns the default loader with the default CXI protocol
+Load the CXI file into a data container :class:`pyrost.STData` with :class:`pyrost.CXILoader`.
+:func:`pyrost.cxi_loader` returns the default loader with the default CXI protocol
 (:func:`pyrost.protocol`).
 
-.. note:: :class:`pyrost.STLoader` will raise an :class:`AttributeError` while loading the data
+.. note:: :class:`pyrost.CXILoader` will raise an :class:`AttributeError` while loading the data
     from the CXI file if some of the necessary attributes for Speckle Tracking algorithm
     are not provided. You can see full list of the necessary attributes in
-    :class:`pyrost.STData`. Adding the missing attributes to :func:`pyrost.STLoader.load`
+    :class:`pyrost.STData`. Adding the missing attributes to :func:`pyrost.CXILoader.load`
     solves the problem.
 
 .. doctest::
 
     >>> import pyrost as rst
-    >>> loader = rst.loader()
+    >>> loader = rst.cxi_loader()
     >>> data = loader.load('results/diatom.cxi') # doctest: +SKIP
 
 Moreover, you can crop the data with the provided region of interest at the detector plane,

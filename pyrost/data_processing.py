@@ -9,10 +9,10 @@ nonlinear least-squares algorithm.
 
 Examples
 --------
-Extract all the necessary data using a :func:`pyrost.loader` function.
+Extract all the necessary data using a :func:`pyrost.cxi_loader` function.
 
 >>> import pyrost as rst
->>> loader = rst.loader()
+>>> loader = rst.cxi_loader()
 >>> rst_data = loader.load('results/test/data.cxi')
 
 Perform the Robust Speckle Tracking using a :class:`pyrost.SpeckleTracking` object.
@@ -41,6 +41,7 @@ from .data_container import DataContainer, dict_to_object
 from .bin import make_whitefield, make_reference, update_pixel_map_gs, update_pixel_map_nm
 from .bin import update_translations_gs, mse_frame, mse_total, ct_integrate
 from .bin import gaussian_filter, gaussian_gradient_magnitude
+from tqdm.auto import tqdm
 from multiprocessing import cpu_count
 
 class STData(DataContainer):
@@ -468,7 +469,8 @@ class STData(DataContainer):
         if defoci_ss is None:
             defoci_ss = defoci_fs.copy()
         grad_mag, sweep_scan = [], []
-        for defocus_fs, defocus_ss in zip(defoci_fs.ravel(), defoci_ss.ravel()):
+        for defocus_fs, defocus_ss in tqdm(zip(defoci_fs.ravel(), defoci_ss.ravel()), total=len(defoci_fs),
+                                           desc='Generating defocus sweep'):
             st_data = self.update_defocus(defocus_fs, defocus_ss)
             st_obj = st_data.get_st().update_reference(ls_ri=ls_ri)
             ri_gm = gaussian_gradient_magnitude(st_obj.reference_image, sigma=ls_ri,
@@ -947,14 +949,17 @@ class SpeckleTracking(DataContainer):
         obj.update_errors.inplace_update()
         extra = {'errors': [obj.error_frame.mean()],
                  'lss_ri': [ls_ri]}
+        it = range(1, n_iter + 1)
         if verbose:
-            print('Initial MSE = {:.6f}, Initial ls_ri = {:.2f}'.format(extra['errors'][-1],
-                                                                        extra['lss_ri'][-1]))
-        for it in range(1, n_iter + 1):
+            it = tqdm(it, bar_format='{desc} {percentage:3.0f}% {bar} '\
+                      'Iteration {n_fmt} / {total_fmt} [{elapsed}<{remaining}, {rate_fmt}{postfix}]')
+            print(f"Initial MSE = {extra['errors'][-1]:.6f}, "\
+                  f"Initial ls_ri = {extra['lss_ri'][-1]:.2f}")
+        for n in it:
             # Update pixel_map
             new_obj = obj.update_pixel_map(ls_pm=ls_pm, sw_fs=sw_fs, sw_ss=sw_ss, method=method)
             obj.pixel_map += gaussian_filter(new_obj.pixel_map - obj.pixel_map,
-                                             (0, blur, blur), mode='nearest')
+                                             (0, blur, blur), mode='nearest', num_threads=self.num_threads)
 
             # Update dss_pix, dfs_pix
             if update_translations:
@@ -973,8 +978,8 @@ class SpeckleTracking(DataContainer):
             obj.update_errors.inplace_update()
             extra['errors'].append(obj.error_frame.mean())
             if verbose:
-                print('Iteration No. {:d}: Total MSE = {:.6f}, ls_ri = {:.2f}'.format(it, extra['errors'][-1],
-                                                                                      extra['lss_ri'][-1]))
+                it.set_description(f"Total MSE = {extra['errors'][-1]:.6f}, "\
+                                   f"ls_ri = {extra['lss_ri'][-1]:.2f}")
 
             # Break if function tolerance is satisfied
             if (extra['errors'][-2] - extra['errors'][-1]) <= f_tol:
@@ -1041,13 +1046,16 @@ class SpeckleTracking(DataContainer):
         obj = self.update_reference(ls_ri=ls_ri)
         obj.update_errors.inplace_update()
         errors = [obj.error_frame.mean()]
+        it = range(1, n_iter + 1)
         if verbose:
-            print('Initial MSE = {:.6f}'.format(errors[0]))
-        for it in range(1, n_iter + 1):
+            it = tqdm(it, bar_format='{desc} {percentage:3.0f}% {bar} '\
+                      'Iteration {n_fmt} / {total_fmt} [{elapsed}<{remaining}, {rate_fmt}{postfix}]')
+            print(f"Initial MSE = {errors[0]:.6f}")
+        for n in it:
             # Update pixel_map
             new_obj = obj.update_pixel_map(ls_pm=ls_pm, sw_fs=sw_fs, sw_ss=sw_ss, method=method)
             obj.pixel_map += gaussian_filter(new_obj.pixel_map - obj.pixel_map,
-                                             (0, blur, blur), mode='nearest')
+                                             (0, blur, blur), mode='nearest', num_threads=self.num_threads)
 
             # Update dss_pix, dfs_pix
             if update_translations:
@@ -1061,8 +1069,7 @@ class SpeckleTracking(DataContainer):
             # Calculate errors
             errors.append(obj.error_frame.mean())
             if verbose:
-                print('Iteration No. {:d}: Total MSE = {:.6f}'.format(it, errors[-1]))
-
+                it.set_description(f'Iteration No. {n:d}: Total MSE = {errors[-1]:.6f}')
 
             # Break if function tolerance is satisfied
             if (errors[-2] - errors[-1]) <= f_tol * errors[0]:

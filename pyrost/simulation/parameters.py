@@ -76,6 +76,9 @@ class STParams(INIParser):
     def __init__(self, **kwargs):
         super(STParams, self).__init__(**kwargs)
         self.__dict__['_lookup'] = self.lookup_dict()
+        if self.seed <= 0:
+            self.seed = np.random.default_rng().integers(0, np.iinfo(np.int_).max,
+                                                         endpoint=False)
 
     def __iter__(self):
         return self._lookup.__iter__()
@@ -101,13 +104,6 @@ class STParams(INIParser):
 
     def __str__(self):
         return self._format(self.export_dict()).__str__()
-
-    def get_seed(self):
-        if self.seed > 0:
-            return self.seed
-        else:
-            return np.random.default_rng().integers(0, np.iinfo(np.int_).max,
-                                                    endpoint=False)
 
     @classmethod
     def import_dict(cls, **kwargs):
@@ -289,7 +285,7 @@ class STParams(INIParser):
             generation algorithm.
         """
         x0, x1 = self.beam_span(dist)
-        seed = self.get_seed() if rnd_dev else -1
+        seed = self.seed if rnd_dev else -1
         return bar_positions(x0=x0 + self.offset, b_dx=self.bar_size, rd=self.bar_rnd,
                              x1=x1 + self.step_size * self.n_frames - self.offset,
                              seed=seed)
@@ -302,7 +298,7 @@ class STParams(INIParser):
         smp_pos : numpy.ndarray
             Array of sample translations [um].
         """
-        rng = np.random.default_rng(self.get_seed())
+        rng = np.random.default_rng(self.seed)
         rnd_arr = 2 * self.step_rnd * (rng.random(self.n_frames) - 0.5)
         return self.step_size * (np.arange(self.n_frames) + rnd_arr)
 

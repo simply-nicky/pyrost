@@ -266,7 +266,7 @@ class STSim(DataContainer):
             wfieldy /= wfieldy.mean()
         dx = self.params.fs_size * self.params.pix_size / self.n_x
         dy = self.params.ss_size * self.params.pix_size / self.n_y
-        seed = self.params.get_seed() if apply_noise else -1
+        seed = self.params.seed if apply_noise else -1
         frames = make_frames(pfx=self.det_ix, pfy=self.det_iy, wfx=wfieldx,
                              wfy=wfieldy, dx=dx, dy=dy, seed=seed,
                              num_threads=self.num_threads)

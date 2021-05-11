@@ -31,7 +31,7 @@ def loader(request):
     Return the default loader.
     """
     protocol = rst.cxi_protocol(float_precision=request.param)
-    return rst.loader(protocol=protocol)
+    return rst.cxi_loader(protocol=protocol)
 
 @pytest.fixture(params=['float32', 'float64'])
 def converter(request):
