@@ -47,7 +47,7 @@ import the protocol file, which is located in the same folder with `data.cxi`.
 .. doctest::
 
     >>> import pyrost as rst
-    >>> protocol = rst.Protocol.import_ini('results/sim_results/protocol.ini')
+    >>> protocol = rst.CXIProtocol.import_ini('results/sim_results/protocol.ini')
     >>> loader = rst.cxi_loader(protocol=protocol)
     >>> data = loader.load('results/sim_results/data.cxi')
 

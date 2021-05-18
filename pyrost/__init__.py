@@ -12,5 +12,5 @@ from __future__ import absolute_import
 
 from .data_processing import SpeckleTracking, STData
 from .aberrations_fit import AberrationsFit
-from .protocol import INIParser, Protocol, CXILoader, cxi_loader, cxi_protocol
+from .protocol import INIParser, LogProtocol, CXIProtocol, CXILoader, cxi_loader, cxi_protocol, log_protocol
 from .bin import *

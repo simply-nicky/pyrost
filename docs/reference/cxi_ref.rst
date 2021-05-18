@@ -1,10 +1,10 @@
 pyrost CXI Protocol
 ===================
 
-Protocol
---------
+CXIProtocol
+-----------
 
-CXI protocol (:class:`pyrost.Protocol`) is helper class for a :class:`pyrost.STData`
+CXI protocol (:class:`pyrost.CXIProtocol`) is helper class for a :class:`pyrost.STData`
 data container, which tells it where to look for the necessary data fields in a CXI
 file. The class is fully customizable so you can tailor it to your particular data
 structure of CXI file. The protocol consists of the following attributes for each
@@ -15,8 +15,8 @@ data field (`data`, `whitefield`, etc.):
 
 .. note::
 
-    You can save protocol to an INI file with :func:`pyrost.Protocol.export_ini`
-    and import protocol from INI file with :func:`pyrost.Protocol.import_ini`.
+    You can save protocol to an INI file with :func:`pyrost.CXIProtocol.export_ini`
+    and import protocol from INI file with :func:`pyrost.CXIProtocol.import_ini`.
 
 The default protocol can be accessed with :func:`pyrost.cxi_protocol`. The protocol
 is given by:

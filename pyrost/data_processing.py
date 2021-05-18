@@ -54,8 +54,8 @@ class STData(DataContainer):
 
     Parameters
     ----------
-    protocol : Protocol
-        CXI :class:`Protocol` object.
+    protocol : CXIProtocol
+        CXI :class:`CXIProtocol` object.
     num_threads : int, optional
         Specify number of threads that are used in all the calculations.
 
@@ -550,7 +550,7 @@ class STData(DataContainer):
         """
         return self._st_objects.copy()
 
-    def get_fit(self, axis=1):
+    def get_fit(self, center=0, axis=1):
         """Return an :class:`AberrationsFit` object for
         parametric regression of the lens' aberrations
         profile. Return None if `defocus_fs` or
@@ -568,7 +568,7 @@ class STData(DataContainer):
             None if `defocus_fs` or `defocus_ss` is None.
         """
         if self._isphase:
-            return self._ab_fits[axis]
+            return AberrationsFit.import_data(self, center=center, axis=axis)
         else:
             return None
 
@@ -598,7 +598,7 @@ class SpeckleTracking(DataContainer):
 
     Parameters
     ----------
-    data_ref : STData
+    st_data : STData
         :class:`STData` object, from which the
         :class:`SpeckleTracking` object was derived.
     **kwargs : dict
@@ -652,8 +652,8 @@ class SpeckleTracking(DataContainer):
     attr_set = {'data', 'dfs_pix', 'dss_pix', 'num_threads', 'pixel_map', 'whitefield'}
     init_set = {'error_frame', 'ls_ri', 'n0', 'm0', 'reference_image'}
 
-    def __init__(self, data_ref, **kwargs):
-        self.__dict__['_reference'] = data_ref
+    def __init__(self, st_data, **kwargs):
+        self.__dict__['_reference'] = st_data
         super(SpeckleTracking, self).__init__(**kwargs)
         self._reference._st_objects.append(self)
 
@@ -695,7 +695,7 @@ class SpeckleTracking(DataContainer):
         if aberrations:
             pixel_map += st_data.get('pixel_aberrations')
         dij_pix = np.ascontiguousarray(np.swapaxes(st_data.get('pixel_translations'), 0, 1))
-        return cls(data=data, data_ref=st_data, dfs_pix=dij_pix[1], dss_pix=dij_pix[0],
+        return cls(data=data, st_data=st_data, dfs_pix=dij_pix[1], dss_pix=dij_pix[0],
                    num_threads=st_data.num_threads, pixel_map=pixel_map,
                    whitefield=st_data.get('whitefield'))
 
@@ -729,7 +729,7 @@ class SpeckleTracking(DataContainer):
         I0, n0, m0 = make_reference(I_n=self.data, W=self.whitefield, u=self.pixel_map,
                                     di=self.dss_pix, dj=self.dfs_pix, sw_ss=sw_ss,
                                     sw_fs=sw_fs, ls=ls_ri, num_threads=self.num_threads)
-        return {'data_ref': self._reference, 'ls_ri': ls_ri, 'n0': n0, 'm0': m0, 'reference_image': I0}
+        return {'st_data': self._reference, 'ls_ri': ls_ri, 'n0': n0, 'm0': m0, 'reference_image': I0}
 
     @dict_to_object
     def update_pixel_map(self, ls_pm, sw_fs, sw_ss=0, method='search'):
@@ -791,7 +791,7 @@ class SpeckleTracking(DataContainer):
                                                 num_threads=self.num_threads)
             else:
                 raise ValueError('Wrong method argument: {:s}'.format(method))
-            return {'data_ref': self._reference, 'pixel_map': pixel_map}
+            return {'st_data': self._reference, 'pixel_map': pixel_map}
     
     @dict_to_object
     def update_errors(self):
@@ -825,7 +825,7 @@ class SpeckleTracking(DataContainer):
                                     I0=self.reference_image, u=self.pixel_map,
                                     di=self.dss_pix - self.n0, dj=self.dfs_pix - self.m0,
                                     num_threads=self.num_threads)
-            return {'data_ref': self._reference, 'error_frame': error_frame}
+            return {'st_data': self._reference, 'error_frame': error_frame}
 
     @dict_to_object
     def update_translations(self, sw_fs, sw_ss=0):
@@ -879,7 +879,7 @@ class SpeckleTracking(DataContainer):
                                          num_threads=self.num_threads)
             dss_pix = np.ascontiguousarray(dij[:, 0]) + self.n0
             dfs_pix = np.ascontiguousarray(dij[:, 1]) + self.m0
-            return {'data_ref': self._reference, 'dss_pix': dss_pix, 'dfs_pix': dfs_pix}
+            return {'st_data': self._reference, 'dss_pix': dss_pix, 'dfs_pix': dfs_pix}
 
     def iter_update_gd(self, ls_ri, ls_pm, sw_fs, sw_ss=0, blur=None, n_iter=30, f_tol=0., momentum=0.,
                        learning_rate=1e1, gstep=.1, method='search', update_translations=False,
@@ -1069,7 +1069,7 @@ class SpeckleTracking(DataContainer):
             # Calculate errors
             errors.append(obj.error_frame.mean())
             if verbose:
-                it.set_description(f'Iteration No. {n:d}: Total MSE = {errors[-1]:.6f}')
+                it.set_description(f"Total MSE = {errors[-1]:.6f}")
 
             # Break if function tolerance is satisfied
             if (errors[-2] - errors[-1]) <= f_tol * errors[0]:

@@ -158,7 +158,7 @@ class AberrationsFit(DataContainer):
     * pixel_aberrations : Pixel aberrations profile [pixels].
     * pixel_size : Pixel's size [m].
     * roi : Region of interest.
-    * theta_aberrations : 
+    * theta_aberrations : angular displacement profile [rad].
     * wavelength : Incoming beam's wavelength [m].
 
     See Also
@@ -166,19 +166,25 @@ class AberrationsFit(DataContainer):
     :func:`scipy.optimize.least_squares` : Full nonlinear least-squares
         algorithm description.
     """
-    attr_set = {'defocus', 'distance', 'phase', 'pixels', 'pixel_aberrations',
+    attr_set = {'defocus', 'distance', 'pixels', 'pixel_aberrations',
                 'pixel_size', 'wavelength'}
-    init_set = {'roi', 'theta_aberrations'}
+    init_set = {'roi', 'theta_aberrations', 'phase'}
     fs_lookup = {'defocus': 'defocus_fs', 'pixel_size': 'x_pixel_size'}
     ss_lookup = {'defocus': 'defocus_ss', 'pixel_size': 'y_pixel_size'}
 
-    def __init__(self, **kwargs):
+    def __init__(self, st_data, **kwargs):
+        self.__dict__['_reference'] = st_data
         super(AberrationsFit, self).__init__(**kwargs)
         self.pix_ap = self.pixel_size / self.distance
         if self.roi is None:
             self.roi = np.array([0, self.pixels.size])
         if self.theta_aberrations is None:
             self.theta_aberrations = self.pixel_aberrations * self.pix_ap
+        if self.phase is None:
+            self.phase = np.cumsum(self.pixel_aberrations)
+            self.phase *= 2 * np.pi * np.abs(self.defocus / self.wavelength) * self.pix_ap**2
+            self.phase -= self.phase.mean()
+        self._reference._ab_fits.append(self)
 
     @classmethod
     def import_data(cls, st_data, center=0, axis=1):
@@ -205,11 +211,15 @@ class AberrationsFit(DataContainer):
             data_dict.update({attr: st_data.get(data_attr) for attr, data_attr in cls.fs_lookup.items()})
         else:
             raise ValueError('invalid axis value: {:d}'.format(axis))
-        data_dict['pixel_aberrations'] = data_dict['pixel_aberrations'][axis].mean(axis=1 - axis)
-        data_dict['pixels'] = np.arange(st_data.roi[2 * axis], st_data.roi[2 * axis + 1]) - center
-        data_dict['phase'] = data_dict['phase'].mean(axis=1 - axis)
         data_dict['defocus'] = np.abs(data_dict['defocus'])
-        return cls(**data_dict)
+        if center >= st_data.roi[2 * axis + 1] - 1 or center <= st_data.roi[2 * axis]:
+            data_dict['pixels'] = np.abs(np.arange(st_data.roi[2 * axis], st_data.roi[2 * axis + 1]) - center)
+            idxs = np.argsort(data_dict['pixels'])
+            data_dict['pixel_aberrations'] = data_dict['pixel_aberrations'][axis].mean(axis=1 - axis)[idxs]
+            data_dict['pixels'] = data_dict['pixels'][idxs]
+        else:
+            raise ValueError('Origin must be outside of the region of interest')
+        return cls(st_data=st_data, **data_dict)
 
     @dict_to_object
     def crop_data(self, roi):
@@ -225,7 +235,31 @@ class AberrationsFit(DataContainer):
         STData
             New :class:`AberrationsFit` object with the updated `roi`.
         """
-        return {'roi': np.asarray(roi, dtype=int)}
+        return {'st_data': self._reference, 'roi': np.asarray(roi, dtype=int)}
+
+    @dict_to_object
+    def update_origin(self, center):
+        """Return a new :class:`AberrationsFit` object with the pixels centered
+        around `center`.
+
+        Parameters
+        ----------
+        center : float
+            Pixel center value.
+
+        Returns
+        -------
+        STData
+            New :class:`AberrationsFit` object with the updated `pixels`,
+            `phase`, and `pixel_aberrations`.
+        """
+        if center >= self.pixels[0] or center <= self.pixels[-1]:
+            pixels = np.abs(self.pixels - center)
+            idxs = np.argsort(pixels)
+            return {'st_data': self._reference, 'pixels': pixels[idxs],
+                    'phase': None, 'pixel_aberrations': self.pixel_aberrations[idxs]}
+        else:
+            raise ValueError('Origin must be outside of the region of interest')
 
     def get(self, attr, value=None):
         """Return a dataset with `mask` and `roi` applied.

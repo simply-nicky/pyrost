@@ -33,7 +33,8 @@ import numpy as np
 from .data_processing import STData
 
 ROOT_PATH = os.path.dirname(__file__)
-PROTOCOL_FILE = os.path.join(ROOT_PATH, 'config/cxi_protocol.ini')
+CXI_PROTOCOL = os.path.join(ROOT_PATH, 'config/cxi_protocol.ini')
+LOG_PROTOCOL = os.path.join(ROOT_PATH, 'config/log_protocol.ini')
 
 class hybridmethod:
     """Hybrid method descriptor supporting
@@ -354,7 +355,54 @@ class INIParser:
         """
         return type(self).export_ini(**self.__dict__)
 
-class Protocol(INIParser):
+class LogProtocol(INIParser):
+    attr_dict = {'log_keys': ('ALL',), 'datatypes': ('ALL',)}
+    fmt_dict = {'log_keys': 'str', 'datatypes': 'str'}
+
+    def __init__(self, log_keys=None, datatypes=None):
+        if log_keys is None:
+            log_keys = {}
+        if datatypes is None:
+            datatypes = {}
+        log_keys = {attr: val for attr, val in log_keys.items() if attr in datatypes}
+        datatypes = {attr: val for attr, val in datatypes.items() if attr in log_keys}
+        super(LogProtocol, self).__init__(log_keys=log_keys, datatypes=datatypes)
+
+    def load_attributes(self, path):
+        with open(path, 'r') as log_file:
+            log_str = ''
+            for line in log_file:
+                if line.startswith('# '):
+                    log_str += line.strip('# ')
+
+        # Divide log into sectors
+        parts = [part for part in re.split('(' + \
+                 '|'.join([key[0] for key in self.log_keys.values()]) + \
+                 '|--------------------------------)\n*', log_str) if part]
+
+        # Rearrange logged attributes sector
+        if 'Session logged attributes' in parts:
+            idx = parts.index('Session logged attributes') + 1
+            attr_keys, attr_vals = parts[idx].strip('\n').split('\n')
+            parts[idx] = ''
+            for key, val in zip(attr_keys.split(';'), attr_vals.split(';')):
+                parts[idx] += key + ': ' + val + '\n'
+
+        # Populate attributes dictionary
+        attr_dict = {}
+        for attr, [log_type, log_key] in self.log_keys.items():
+            part = parts[parts.index(log_type) + 1]
+            val_str = re.search(log_key + '.*\n', part)[0].split(': ')[-1][:-1]
+            val_m = re.search('\d+[.]*\d*', val_str)
+            
+            dtype = self.known_types[self.datatypes[attr]]
+            attr_dict[attr] = dtype(val_m[0] if val_m else val_str)
+        return attr_dict
+
+    def load_data(self, path):
+        return np.loadtxt(path, usecols=2, delimiter=';')
+
+class CXIProtocol(INIParser):
     """CXI protocol class. Contains a CXI file tree path with
     the paths written to all the data attributes necessary for
     the Speckle Tracking algorithm, corresponding attributes'
@@ -395,8 +443,8 @@ class Protocol(INIParser):
             default_paths = {}
         datatypes = {attr: val for attr, val in datatypes.items() if attr in default_paths}
         default_paths = {attr: val for attr, val in default_paths.items() if attr in datatypes}
-        super(Protocol, self).__init__(config={'float_precision': float_precision},
-                                       datatypes=datatypes, default_paths=default_paths)
+        super(CXIProtocol, self).__init__(config={'float_precision': float_precision},
+                                          datatypes=datatypes, default_paths=default_paths)
 
         if self.config['float_precision'] == 'float32':
             self.known_types['float'] = np.float32
@@ -407,7 +455,7 @@ class Protocol(INIParser):
 
     @classmethod
     def import_ini(cls, protocol_file):
-        """Initialize an :class:`Protocol` object class with an
+        """Initialize an :class:`CXIProtocol` object class with an
         ini file.
 
         Parameters
@@ -417,8 +465,8 @@ class Protocol(INIParser):
 
         Returns
         -------
-        Protocol
-            An :class:`Protocol` object with all the attributes imported
+        CXIProtocol
+            An :class:`CXIProtocol` object with all the attributes imported
             from the INI file.
         """
         kwargs = cls._import_ini(protocol_file)
@@ -492,6 +540,14 @@ class Protocol(INIParser):
         """
         return self.known_types.get(self.datatypes.get(attr), value)
 
+    def get_from_dset(self, attr, dset, dtype=None):
+        data = dset[()]
+        if np.ndim(data) == 0 or np.size(data) == 1:
+            data = self.get_dtype(attr, dtype)(data)
+        else:
+            data = data.astype(self.get_dtype(attr, dtype))
+        return data
+
     def read_cxi(self, attr, cxi_file, cxi_path=None, dtype=None):
         """Read `attr` from the CXI file `cxi_file` at the path
         defined by the protocol. If `cxi_path` or `dtype` argument
@@ -518,7 +574,14 @@ class Protocol(INIParser):
         if cxi_path is None:
             cxi_path = self.get_default_path(attr, cxi_path)
         if cxi_path in cxi_file:
-            return cxi_file[cxi_path][()].astype(self.get_dtype(attr, dtype))
+            cxi_obj = cxi_file[cxi_path]
+            if isinstance(cxi_obj, h5py.Dataset):
+                return self.get_from_dset(attr, cxi_obj, dtype)
+            elif isinstance(cxi_obj, h5py.Group):
+                return np.stack([self.get_from_dset(attr, dset, dtype)
+                                 for dset in cxi_obj.values()])
+            else:
+                raise ValueError(f"Invalid CXI object at '{cxi_path:s}'")
         else:
             return None
 
@@ -579,7 +642,7 @@ def cxi_protocol(datatypes=None, default_paths=None, float_precision=None):
 
     Returns
     -------
-    Protocol
+    CXIProtocol
         Default CXI protocol.
 
     See Also
@@ -591,15 +654,40 @@ def cxi_protocol(datatypes=None, default_paths=None, float_precision=None):
         datatypes = {}
     if default_paths is None:
         default_paths = {}
-    kwargs = Protocol.import_ini(PROTOCOL_FILE).export_dict()
+    kwargs = CXIProtocol.import_ini(CXI_PROTOCOL).export_dict()
     kwargs['datatypes'].update(**datatypes)
     kwargs['default_paths'].update(**default_paths)
     if float_precision is None:
         float_precision = kwargs['config']['float_precision']
-    return Protocol(datatypes=kwargs['datatypes'], default_paths=kwargs['default_paths'],
-                    float_precision=float_precision)
+    return CXIProtocol(datatypes=kwargs['datatypes'], default_paths=kwargs['default_paths'],
+                       float_precision=float_precision)
 
-class CXILoader(Protocol):
+def log_protocol(datatypes=None, log_keys=None):
+    """Return the default log file porotocol.
+
+    Parameters
+    ----------
+    datatypes : dict, optional
+        Dictionary with attributes' datatypes. 'float', 'int', or 'str'
+        are allowed.
+    log_keys : dict, optional
+        Dictionary with attributes' log keys.
+
+    Returns
+    -------
+    LogProtocol
+        Default log file protocol.
+    """
+    if datatypes is None:
+        datatypes = {}
+    if log_keys is None:
+        log_keys = {}
+    kwargs = LogProtocol.import_ini(LOG_PROTOCOL).export_dict()
+    kwargs['datatypes'].update(**datatypes)
+    kwargs['log_keys'].update(**log_keys)
+    return LogProtocol(datatypes=kwargs['datatypes'], log_keys=kwargs['log_keys'])
+
+class CXILoader(CXIProtocol):
     """CXI file loader class. Loads data from a
     CXI file and returns a :class:`STData` container or a
     :class:`dict` with the data. Search data in the paths
@@ -607,7 +695,7 @@ class CXILoader(Protocol):
 
     Parameters
     ----------
-    protocol : Protocol
+    protocol : CXIProtocol
         Protocol object.
     load_paths : dict, optional
         Extra paths to the data attributes in a CXI file,
@@ -656,8 +744,8 @@ class CXILoader(Protocol):
         else:
             policy = {attr: paths for attr, paths in policy.items()
                           if attr in protocol.default_paths}
-        super(Protocol, self).__init__(config=protocol.config, datatypes=protocol.datatypes,
-                                       default_paths=protocol.default_paths, load_paths=load_paths, policy=policy)
+        super(CXIProtocol, self).__init__(config=protocol.config, datatypes=protocol.datatypes,
+                                          default_paths=protocol.default_paths, load_paths=load_paths, policy=policy)
 
         if self.config['float_precision'] == 'float32':
             self.known_types['float'] = np.float32
@@ -683,7 +771,7 @@ class CXILoader(Protocol):
             from the INI file.
         """
         kwargs = cls._import_ini(protocol_file)
-        protocol = Protocol.import_ini(protocol_file)
+        protocol = CXIProtocol.import_ini(protocol_file)
         return cls(protocol=protocol, load_paths=kwargs['load_paths'], policy=kwargs['policy'])
 
     def get_load_paths(self, attr, value=None):
@@ -723,8 +811,8 @@ class CXILoader(Protocol):
         Protocol
             CXI protocol.
         """
-        return Protocol(datatypes=self.datatypes, default_paths=self.default_paths,
-                        float_precision=self.config['float_precision'])
+        return CXIProtocol(datatypes=self.datatypes, default_paths=self.default_paths,
+                           float_precision=self.config['float_precision'])
 
     def find_path(self, attr, cxi_file):
         """Find attribute's path in a CXI file `cxi_file`.
@@ -748,30 +836,16 @@ class CXILoader(Protocol):
                 return path
         return None
 
-    def load_dict(self, path, **kwargs):
-        """Load a CXI file and return a :class:`dict` with
-        all the data fetched from the file.
-
-        Parameters
-        ----------
-        path : str
-            Path to the cxi file.
-        **kwargs : dict, optional
-            Dictionary of attribute values,
-            which will be parsed to the `STData` object instead.
-
-        Returns
-        -------
-        dict
-            Dictionary with all the data fetched from the CXI file.
-        """
+    def load_attributes(self, path, **attributes):
+        attrs = list(self)
+        attrs.remove('data')
         data_dict = {}
         with h5py.File(path, 'r') as cxi_file:
-            for attr in self:
+            for attr in attrs:
                 if self.get_policy(attr, False):
                     cxi_path = self.find_path(attr, cxi_file)
-                    if attr in kwargs and not kwargs[attr] is None:
-                        data_dict[attr] = np.asarray(kwargs[attr], dtype=self.get_dtype(attr))
+                    if attr in attributes and not attributes[attr] is None:
+                        data_dict[attr] = np.asarray(attributes[attr], dtype=self.get_dtype(attr))
                     else:
                         data_dict[attr] = self.read_cxi(attr, cxi_file, cxi_path=cxi_path)
                 else:
@@ -781,14 +855,57 @@ class CXILoader(Protocol):
             data_dict['defocus_fs'] = data_dict['defocus']
         return data_dict
 
-    def load(self, path, **kwargs):
+    def load_data(self, paths):
+        if isinstance(paths, str):
+            with h5py.File(paths, 'r') as cxi_file:
+                cxi_path = self.find_path('data', cxi_file)
+                data = self.read_cxi('data', cxi_file, cxi_path)
+        elif isinstance(paths, list):
+            data = []
+            for path in paths:
+                with h5py.File(path, 'r') as cxi_file:
+                    cxi_path = self.find_path('data', cxi_file)
+                    data.append(self.read_cxi('data', cxi_file, cxi_path))
+            data = np.concatenate(data) if data[0].ndim >= 3 else np.stack(data)
+        else:
+            raise ValueError('paths must be a string or a list of strings')
+        return data
+
+    def load_to_dict(self, paths, **attributes):
+        """Load a CXI file and return a :class:`dict` with
+        all the data fetched from the files.
+
+        Parameters
+        ----------
+        path : str or list of str
+            Paths to cxi files.
+        **attributes : dict, optional
+            Dictionary of attribute values, that override the loaded
+            values.
+
+        Returns
+        -------
+        dict
+            Dictionary with all the data fetched from the CXI files.
+        """
+        data_dict = {}
+        if isinstance(paths, str):
+            data_dict.update(self.load_attributes(paths, **attributes))
+        elif isinstance(paths, list):
+            data_dict.update(self.load_attributes(paths[0], **attributes))
+        else:
+            raise ValueError('paths must be a string or a list of strings')
+        data_dict['data'] = self.load_data(paths)
+        return data_dict
+
+    def load(self, path, **attributes):
         """Load a CXI file and return an :class:`STData` class object.
 
         Parameters
         ----------
         path : str
             Path to the cxi file.
-        **kwargs : dict
+        **attributes : dict
             Dictionary of attribute values,
             which will be parsed to the `STData` object instead.
 
@@ -798,7 +915,7 @@ class CXILoader(Protocol):
             Data container object with all the necessary data
             for the Speckle Tracking algorithm.
         """
-        return STData(self.get_protocol(), **self.load_dict(path, **kwargs))
+        return STData(self.get_protocol(), **self.load_to_dict(path, **attributes))
 
 def cxi_loader(protocol=None, load_paths=None, policy=None):
     """Return the default CXI loader.
@@ -831,11 +948,11 @@ def cxi_loader(protocol=None, load_paths=None, policy=None):
     STData : Data container with all the data  necessary for
         Speckle Tracking.
     """
-    kwargs = CXILoader.import_ini(PROTOCOL_FILE).export_dict()
+    kwargs = CXILoader.import_ini(CXI_PROTOCOL).export_dict()
     if protocol is None:
-        protocol = Protocol(datatypes=kwargs['datatypes'],
-                            default_paths=kwargs['default_paths'],
-                            float_precision=kwargs['config']['float_precision'])
+        protocol = CXIProtocol(datatypes=kwargs['datatypes'],
+                               default_paths=kwargs['default_paths'],
+                               float_precision=kwargs['config']['float_precision'])
     if load_paths is None:
         load_paths = {}
     if policy is None:

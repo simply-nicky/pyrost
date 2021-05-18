@@ -58,8 +58,8 @@ List of experimental parameters:
 
 .. note::
 
-    You can save protocol to an INI file with :func:`pyrost.Protocol.export_ini`
-    and import protocol from INI file with :func:`pyrost.Protocol.import_ini`.
+    You can save protocol to an INI file with :func:`pyrost.CXIProtocol.export_ini`
+    and import protocol from INI file with :func:`pyrost.CXIProtocol.import_ini`.
 
 The default parameters are accessed width :func:`pyrost.simulation.parameters`.
 The parameters are given by:

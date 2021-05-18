@@ -4,7 +4,7 @@ theory. :class:`pyrost.simulation.STSim` does the heavy lifting
 of calculating the wavefront propagation to the detector plane.
 :class:`pyrost.simulation.STConverter` exports simulated data to a
 `CXI <https://www.cxidb.org/cxi.html>`_ format file accordingly to
-the provided :class:`pyrost.Protocol` object and saves the protocol
+the provided :class:`pyrost.CXIProtocol` object and saves the protocol
 and experimental parameters to the same folder.
 
 Examples
@@ -301,7 +301,7 @@ class STConverter:
 
     Parameters
     ----------
-    protocol : Protocol
+    protocol : CXIProtocol
         CXI protocol, which contains all the attribute's paths and data types.
     coord_ratio : float, optional
         Coordinates ratio between the simulated and saved data.
@@ -312,7 +312,7 @@ class STConverter:
         Path to ini templates (for exporting `protocol` and :class:`STParams`).
     write_attrs : dict
         Dictionary with all the attributes which are saved in CXI file.
-    protocol : Protocol
+    protocol : CXIProtocol
         CXI protocol, which contains all the attribute's paths and data types.
     coord_ratio : float, optional
         Coordinates ratio between the simulated and saved data.
