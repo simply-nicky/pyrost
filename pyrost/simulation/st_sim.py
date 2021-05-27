@@ -107,7 +107,7 @@ class STSim(DataContainer):
 
     def __init__(self, params, backend='numpy', num_threads=None, **kwargs):
         if num_threads is None:
-            num_threads = cpu_count()
+            num_threads = np.clip(1, 64, cpu_count())
         if not backend in self.backends:
             err_msg = f'backend must be one of the following: {str(self.backends):s}'
             raise ValueError(err_msg)
@@ -360,7 +360,9 @@ class STConverter:
                    'energy', 'good_frames', 'mask', 'roi', 'translations',
                    'wavelength', 'whitefield', 'x_pixel_size', 'y_pixel_size'}
 
-    def __init__(self, protocol, coord_ratio=1e-6):
+    def __init__(self, protocol=None, coord_ratio=1e-6):
+        if protocol is None:
+            protocol = CXIProtocol()
         self.protocol, self.crd_rat = protocol, coord_ratio
 
     def _ini_parsers(self, st_params):

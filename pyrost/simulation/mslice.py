@@ -483,7 +483,7 @@ class MSPropagator(DataContainer):
 
     def __init__(self, params, sample, num_threads=None, **kwargs):
         if num_threads is None:
-            num_threads = cpu_count()
+            num_threads = np.clip(1, 64, cpu_count())
         super(MSPropagator, self).__init__(params=params, sample=sample,
                                            num_threads=num_threads, **kwargs)
         self._init_dict()

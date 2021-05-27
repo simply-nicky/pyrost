@@ -113,7 +113,7 @@ class STData(DataContainer):
 
     def __init__(self, protocol, num_threads=None, **kwargs):
         if num_threads is None:
-            num_threads = cpu_count()
+            num_threads = np.clip(1, 64, cpu_count())
         self.__dict__['num_threads'] = num_threads
         # Initialize protocol for the proper data type conversion in __setattr__
         self.__dict__['protocol'] = protocol
