@@ -263,10 +263,13 @@ class STData(DataContainer):
         basis_vectors = np.copy(self.basis_vectors)
         basis_vectors[:, axis] *= -1.
         data = np.flip(self.data, axis=axis + 1)
+        whitefield = np.flip(self.whitefield, axis=axis)
+        mask = np.flip(self.mask, axis=axis + 1)
         roi = np.copy(self.roi)
         roi[2 * axis] = self.whitefield.shape[axis] - self.roi[2 * axis + 1]
         roi[2 * axis + 1] = self.whitefield.shape[axis] - self.roi[2 * axis]
-        return {'basis_vectors': basis_vectors, 'data': data, 'roi': roi}
+        return {'basis_vectors': basis_vectors, 'data': data, 'roi': roi,
+                'mask': mask, 'whitefield': whitefield,  'pixel_translations': None}
 
     @dict_to_object
     def update_mask(self, method='no-bad', pmin=0., pmax=99.99, vmin=0, vmax=65535,
