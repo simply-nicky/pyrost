@@ -1,5 +1,5 @@
-pyrost CXI Protocol
-===================
+Working With CXI Files
+======================
 
 CXIProtocol
 -----------
@@ -18,7 +18,7 @@ data field (`data`, `whitefield`, etc.):
     You can save protocol to an INI file with :func:`pyrost.CXIProtocol.export_ini`
     and import protocol from INI file with :func:`pyrost.CXIProtocol.import_ini`.
 
-The default protocol can be accessed with :func:`pyrost.cxi_protocol`. The protocol
+The default protocol can be accessed with :func:`pyrost.CXIProtocol.import_default`. The protocol
 is given by:
 
 .. code-block:: ini
@@ -76,13 +76,6 @@ is given by:
     x_pixel_size = /entry_1/instrument_1/detector_1/x_pixel_size
     y_pixel_size = /entry_1/instrument_1/detector_1/y_pixel_size
 
-.. toctree::
-    :maxdepth: 1
-    :caption: Contents
-
-    classes/protocol
-    classes/cxi_protocol
-
 CXILoader
 ---------
 
@@ -99,9 +92,9 @@ attributes:
 .. note::
 
     You can save loader to an INI file with :func:`pyrost.CXILoader.export_ini`
-    and import protocol from INI file with :func:`pyrost.CXILoader.import_ini`.
+    and import loader from an INI file with :func:`pyrost.CXILoader.import_ini`.
 
-The default loader can be accessed with :func:`pyrost.cxi_loader`. The loader
+The default loader can be accessed with :func:`pyrost.CXILoader.import_default`. The loader
 is given by:
 
 .. code-block:: ini
@@ -137,11 +130,13 @@ is given by:
     x_pixel_size = True
     y_pixel_size = True
 
-.. automodule:: pyrost.protocol
+.. automodule:: pyrost.cxi_protocol
+
+Contents
+--------
 
 .. toctree::
     :maxdepth: 1
-    :caption: Contents
 
-    classes/st_loader
-    classes/loader
+    classes/cxi_protocol
+    classes/cxi_loader

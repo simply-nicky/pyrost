@@ -10,14 +10,6 @@ from scipy.ndimage import gaussian_gradient_magnitude as ggm, gaussian_filter as
 # *ALWAYS* do that, or you will have segfaults
 np.import_array()
 
-def init_fftw():
-    fftw_init_threads()
-    
-    if Py_AtExit(fftw_cleanup_threads) != 0:
-        raise ImportError('Failed to register the fftw library shutdown callback')
-
-init_fftw()
-
 def next_fast_len(np.npy_intp target, str backend='numpy'):
     r"""Find the next fast size of input data to fft, for zero-padding, etc.
     FFT algorithms gain their speed by a recursive divide and conquer strategy.
@@ -40,6 +32,8 @@ def next_fast_len(np.npy_intp target, str backend='numpy'):
     n : int
         The smallest fast length greater than or equal to `target`.
     """
+    if target < 0:
+        raise ValueError('Target length must be positive')
     if backend == 'fftw':
         return next_fast_len_fftw(target)
     elif backend == 'numpy':
@@ -47,7 +41,9 @@ def next_fast_len(np.npy_intp target, str backend='numpy'):
     else:
         raise ValueError('{:s} is invalid backend'.format(backend))
 
+# Helper functions
 cdef bint fft_faster(np.npy_intp *in1, np.npy_intp *in2, np.npy_intp ndim):
+    # Copied from scipy, look scipy/signaltools.py:_fftconv_faster 
     cdef np.npy_intp in1_size = 1
     cdef np.npy_intp in2_size = 1
     cdef int i
@@ -105,10 +101,9 @@ cdef np.ndarray number_to_array(object num, np.npy_intp rank, int type_num):
     return arr
 
 cdef np.ndarray normalize_sequence(object inp, np.npy_intp rank, int type_num):
-    r"""If input is a scalar, create a sequence of length equal to the
-    rank by duplicating the input. If input is a sequence,
-    check if its length is equal to the length of array.
-    """
+    # If input is a scalar, create a sequence of length equal to the
+    # rank by duplicating the input. If input is a sequence,
+    # check if its length is equal to the length of array.
     cdef np.ndarray arr
     cdef int tn
     if np.PyArray_IsAnyScalar(inp):
@@ -507,23 +502,33 @@ def bar_positions(x0: cython.double, x1: cython.double, b_dx: cython.double,
             barcode_bars(_bars, size, x0, b_dx, rd, seed)
     return bars
 
-cdef np.ndarray ml_profile_wrapper(np.ndarray x_arr, np.ndarray[double] layers, complex mt0,
+cdef np.ndarray ml_profile_wrapper(np.ndarray x_arr, np.ndarray layers, complex mt0,
                                    complex mt1, complex mt2, double sigma, unsigned num_threads):
     x_arr = np.PyArray_GETCONTIGUOUS(x_arr)
     x_arr = np.PyArray_Cast(x_arr, np.NPY_FLOAT64)
     layers = np.PyArray_GETCONTIGUOUS(layers)
     layers = np.PyArray_Cast(layers, np.NPY_FLOAT64)
 
-    cdef np.npy_intp npts = np.PyArray_SIZE(x_arr)
-    cdef np.npy_intp nlyr = np.PyArray_SIZE(layers)
-    cdef int ndim = x_arr.ndim
-    cdef np.npy_intp *dims = x_arr.shape
-    cdef np.ndarray out = <np.ndarray>np.PyArray_SimpleNew(ndim, dims, np.NPY_COMPLEX128)
+    cdef int indim = x_arr.ndim
+    cdef int lndim = layers.ndim
+    cdef np.npy_intp isize = np.PyArray_SIZE(x_arr)
+    cdef np.npy_intp lsize = np.PyArray_SIZE(layers)
+    cdef np.npy_intp nlyr = layers.shape[lndim - 1]
+    cdef np.npy_intp *dims = <np.npy_intp *>malloc((indim + lndim - 1) * sizeof(np.npy_intp))
+    if dims is NULL:
+        abort()
+    cdef int i
+    for i in range(lndim - 1):
+        dims[i] = layers.shape[i]
+    for i in range(indim):
+        dims[i + lndim - 1] = x_arr.shape[i] 
+    cdef np.ndarray out = <np.ndarray>np.PyArray_SimpleNew(indim + lndim - 1, dims, np.NPY_COMPLEX128)
     cdef complex *_out = <complex *>np.PyArray_DATA(out)
     cdef double *_x = <double *>np.PyArray_DATA(x_arr)
     cdef double *_lyrs = <double *>np.PyArray_DATA(layers)
     with nogil:
-        ml_profile(_out, _x, _lyrs, npts, nlyr, mt0, mt1, mt2, sigma, num_threads)
+        ml_profile(_out, _x, _lyrs, isize, lsize, nlyr, mt0, mt1, mt2, sigma, num_threads)
+    free(dims)
     return out
 
 def barcode_profile(x_arr: np.ndarray, bars: np.ndarray, bulk_atn: cython.double,
@@ -579,6 +584,52 @@ def barcode_profile(x_arr: np.ndarray, bars: np.ndarray, bulk_atn: cython.double
 
 def mll_profile(x_arr: np.ndarray, layers: np.ndarray, complex mt0,
                 complex mt1, sigma: cython.double, num_threads: cython.uint) -> np.ndarray:
+    r"""Return an array of MLL's transmission profile calculated
+    at `x_arr` coordinates.
+
+    Parameters
+    ----------
+    x_arr : numpy.ndarray
+        Array of the coordinates, where the transmission coefficients
+        are calculated [um].    
+    layers : numpy.ndarray
+        Coordinates of MLL's layers positions [um].
+    mt0 : complex
+        Fresnel transmission coefficient for the first material of MLL's
+        bilayer.
+    mt1 : complex
+        Fresnel transmission coefficient for the first material of MLL's
+        bilayer.
+    sigma : float
+        Interdiffusion length [um].
+    num_threads : int, optional
+        Number of threads.
+    
+    Returns
+    -------
+    bar_profile : numpy.ndarray
+        Array of barcode's transmission profiles.
+
+    Notes
+    -----
+    MLL's transmission profile is simulated with a set
+    of error functions:
+    
+    .. math::
+        \begin{multline}
+            T_{b}(x) = 1 - \frac{T_{bulk}}{2} \left\{
+            \mathrm{erf}\left[ \frac{x - x_{lyr}[0]}{\sqrt{2} \sigma} \right] +
+            \mathrm{erf}\left[ \frac{x_{lyr}[n - 1] - x}{\sqrt{2} \sigma} \right]
+            \right\} -\\
+            \frac{T_{bar}}{4} \sum_{i = 1}^{n - 2} \left\{
+            2 \mathrm{erf}\left[ \frac{x - x_{lyr}[i]}{\sqrt{2} \sigma} \right] -
+            \mathrm{erf}\left[ \frac{x - x_{lyr}[i - 1]}{\sqrt{2} \sigma} \right] -
+            \mathrm{erf}\left[ \frac{x - x_{lyr}[i + 1]}{\sqrt{2} \sigma} \right]
+            \right\}
+        \end{multline}
+    
+    where :math:`x_{lyr}` is an array of MLL's layer coordinates.
+    """
     return ml_profile_wrapper(x_arr, layers, 0., mt0, mt1, sigma, num_threads)
 
 def fft_convolve(array: np.ndarray, kernel: np.ndarray, axis: cython.int=-1,

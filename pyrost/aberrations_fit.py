@@ -15,7 +15,7 @@ order polynomial:
 
 >>> fit = fit_obj.fit(max_order=3)
 >>> print(fit)
-{'alpha': -0.04718488324311934,
+{'c_3': -0.04718488324311934, 'c_4':  0.,
  'fit': array([-9.03305155e-04,  2.14699128e+00, -1.17287983e+03]),
  'ph_fit': array([-9.81298119e-07,  3.49854945e-03, -3.82244504e+00,  1.26179239e+03]),
  'rel_err': array([0.02331385, 0.01966198, 0.01679612]),
@@ -124,14 +124,16 @@ class LeastSquares:
         return fit.x, err, r_sq
 
 class AberrationsFit(DataContainer):
-    """Lens' aberrations profile model regression using
-    nonlinear least-squares algorithm. :class:`AberrationsFit`
-    is capable of fitting lens' pixel aberrations, deviation 
-    angles, and phase profile with polynomial function.
-    Based on :func:`scipy.optimise.least_squares`.
+    """Least squares optimizer for the lens aberrations' profiles.
+    :class:`AberrationsFit` is capable of fitting lens' pixel
+    aberrations, deviation  angles, and phase profile with polynomial
+    function. Based on :func:`scipy.optimise.least_squares`.
 
     Parameters
     ----------
+    st_data : STData
+        The Speckle tracking data container, from which the object
+        is derived.
     **kwargs : dict
         Dictionary of the attributes' data specified in `attr_set`
         and `init_set`.
@@ -145,7 +147,8 @@ class AberrationsFit(DataContainer):
     Raises
     ------
     ValueError
-        If an attribute specified in `attr_set` has not been provided.
+        If an attribute specified in `attr_set` has not been
+        provided.
 
     Notes
     -----
@@ -153,18 +156,21 @@ class AberrationsFit(DataContainer):
 
     * defocus : Defocus distance [m].
     * distance : Sample-to-detector distance [m].
-    * phase : aberrations phase profile [rad].
     * pixels : Pixel coordinates [pixels].
     * pixel_aberrations : Pixel aberrations profile [pixels].
     * pixel_size : Pixel's size [m].
+    * wavelength : Incoming beam's wavelength [m].
+
+    Optional attributes:
+
     * roi : Region of interest.
     * theta_aberrations : angular displacement profile [rad].
-    * wavelength : Incoming beam's wavelength [m].
+    * phase : aberrations phase profile [rad].
 
     See Also
     --------
-    :func:`scipy.optimize.least_squares` : Full nonlinear least-squares
-        algorithm description.
+    :func:`scipy.optimize.least_squares` : Full nonlinear
+        least-squares algorithm description.
     """
     attr_set = {'defocus', 'distance', 'pixels', 'pixel_aberrations',
                 'pixel_size', 'wavelength'}
@@ -196,6 +202,9 @@ class AberrationsFit(DataContainer):
         ----------
         st_data : STData
             :class:`STData` container object.
+        center : int, optional
+            Index of the zerro scattering angle or direct
+            beam pixel.
         axis : int, optional
             Detector's axis (0 - slow axis, 1 - fast axis).
 
@@ -212,10 +221,13 @@ class AberrationsFit(DataContainer):
         else:
             raise ValueError('invalid axis value: {:d}'.format(axis))
         data_dict['defocus'] = np.abs(data_dict['defocus'])
-        if center >= st_data.roi[2 * axis + 1] - 1 or center <= st_data.roi[2 * axis]:
-            data_dict['pixels'] = np.abs(np.arange(st_data.roi[2 * axis], st_data.roi[2 * axis + 1]) - center)
+        if center <= st_data.roi[2 * axis]:
+            data_dict['pixels'] = np.arange(st_data.roi[2 * axis], st_data.roi[2 * axis + 1]) - center
+            data_dict['pixel_aberrations'] = data_dict['pixel_aberrations'][axis].mean(axis=1 - axis)
+        elif center >= st_data.roi[2 * axis - 1] - 1:
+            data_dict['pixels'] = center - np.arange(st_data.roi[2 * axis], st_data.roi[2 * axis + 1])
             idxs = np.argsort(data_dict['pixels'])
-            data_dict['pixel_aberrations'] = data_dict['pixel_aberrations'][axis].mean(axis=1 - axis)[idxs]
+            data_dict['pixel_aberrations'] = -data_dict['pixel_aberrations'][axis].mean(axis=1 - axis)[idxs]
             data_dict['pixels'] = data_dict['pixels'][idxs]
         else:
             raise ValueError('Origin must be outside of the region of interest')
@@ -232,20 +244,38 @@ class AberrationsFit(DataContainer):
 
         Returns
         -------
-        STData
+        AberrationsFit
             New :class:`AberrationsFit` object with the updated `roi`.
         """
         return {'st_data': self._reference, 'roi': np.asarray(roi, dtype=int)}
 
     @dict_to_object
-    def update_origin(self, center):
-        """Return a new :class:`AberrationsFit` object with the pixels centered
-        around `center`.
+    def remove_linear_term(self):
+        """Return a new :class:`AberrationsFit` object with the
+        romved linear term in `pixel_aberrations` profile.
+
+        Returns
+        -------
+        AberrationsFit
+            New :class:`AberrationsFit` object with the updated
+            `pixel_aberrations` and `phase`.
+        """
+        pixel_aberrations = np.copy(self.pixel_aberrations)
+        pixel_aberrations -= np.gradient(pixel_aberrations).mean() * np.arange(self.pixels.size)
+        pixel_aberrations -= pixel_aberrations.mean()
+        return {'st_data': self._reference, 'pixel_aberrations': pixel_aberrations,
+                'phase': None}
+
+    @dict_to_object
+    def update_center(self, center):
+        """Return a new :class:`AberrationsFit` object with the pixels
+        centered around `center`.
 
         Parameters
         ----------
         center : float
-            Pixel center value.
+            Index of the zerro scattering angle or direct
+            beam pixel.
 
         Returns
         -------
@@ -253,13 +283,28 @@ class AberrationsFit(DataContainer):
             New :class:`AberrationsFit` object with the updated `pixels`,
             `phase`, and `pixel_aberrations`.
         """
-        if center >= self.pixels[0] or center <= self.pixels[-1]:
-            pixels = np.abs(self.pixels - center)
-            idxs = np.argsort(pixels)
+        if center <= self.pixels[0]:
+            pixels = self.pixels - center
+            return {'st_data': self._reference, 'pixels': pixels}
+        elif center >= self.pixels[-1]:
+            pixels = center - self.pixels
+            idxs = np.argsort(self.pixels)
             return {'st_data': self._reference, 'pixels': pixels[idxs],
-                    'phase': None, 'pixel_aberrations': self.pixel_aberrations[idxs]}
+                    'phase': None, 'pixel_aberrations': -self.pixel_aberrations[idxs]}
         else:
             raise ValueError('Origin must be outside of the region of interest')
+
+    @dict_to_object
+    def update_phase(self):
+        """Return a new :class:`AberrationsFit` object with the updated
+        `phase`.
+
+        Returns
+        -------
+        AberrationsFit
+            New :class:`AberrationsFit` object with the updated `phase`.
+        """
+        return {'st_data': self._reference, 'phase': None}
 
     def get(self, attr, value=None):
         """Return a dataset with `mask` and `roi` applied.
@@ -295,8 +340,6 @@ class AberrationsFit(DataContainer):
         ----------
         fit : numpy.ndarray
             Lens` pixel aberrations fit coefficients.
-        roi : iterable, optional
-            Region of interest. Full region if `roi` is None.
 
         Returns
         -------
@@ -313,8 +356,6 @@ class AberrationsFit(DataContainer):
         ----------
         fit : numpy.ndarray
             Lens' pixel aberrations fit coefficients.
-        roi : iterable, optional
-            Region of interest. Full region if `roi` is None.
 
         Returns
         -------
@@ -380,7 +421,8 @@ class AberrationsFit(DataContainer):
         dict
             :class:`dict` with the following fields defined:
 
-            * alpha : Third order aberrations ceofficient [rad/mrad^3].
+            * c_3 : Third order aberrations coefficient [rad / mrad^3].
+            * c_4 : Fourth order aberrations coefficient [rad / mrad^4].
             * fit : Array of the polynomial function coefficients of the
               pixel aberrations fit.
             * ph_fit : Array of the polynomial function coefficients of
@@ -393,14 +435,14 @@ class AberrationsFit(DataContainer):
         :func:`scipy.optimize.least_squares` : Full nonlinear least-squares
             algorithm description.
         """
-        fit, err, r_sq = LeastSquares.fit(x=self.pixels, y=self.pixel_aberrations, roi=self.roi,
-                                          max_order=max_order, xtol=xtol, ftol=ftol, loss=loss)
+        fit, err, r_sq = LeastSquares.fit(x=self.pixels, y=self.pixel_aberrations,
+                                          roi=self.roi, max_order=max_order,
+                                          xtol=xtol, ftol=ftol, loss=loss)
         ph_fit = self.pix_to_phase(fit)
-        if ph_fit.size >= 4:
-            alpha = ph_fit[-4] / self.pix_ap**3 * 1e-9
-        else:
-            alpha = None
-        return {'alpha': alpha, 'fit': fit, 'ph_fit': ph_fit, 'rel_err': np.abs(err / fit), 'r_sq': r_sq}
+        c_3 = ph_fit[-4] / self.pix_ap**3 * 1e-9 if ph_fit.size >= 4 else 0.
+        c_4 = ph_fit[-5] / self.pix_ap**4 * 1e-12 if ph_fit.size >= 5 else 0.
+        return {'c_3': c_3, 'c_4': c_4, 'fit': fit, 'ph_fit': ph_fit,
+                'rel_err': np.abs(err / fit), 'r_sq': r_sq}
 
     def fit_phase(self, max_order=3, xtol=1e-14, ftol=1e-14, loss='linear'):
         """Fit lens' phase aberrations with polynomial function using
@@ -431,15 +473,14 @@ class AberrationsFit(DataContainer):
               process.
             * 'arctan' : ``rho(z) = arctan(z)``. Limits a maximum loss on
               a single residual, has properties similar to 'cauchy'.
-        roi : iterable, optional
-            Region of interest. Full region if `roi` is None.
 
         Returns
         -------
         dict
             :class:`dict` with the following fields defined:
 
-            * alpha : Third order aberrations ceofficient [rad/mrad^3].
+            * c_3 : Third order aberrations coefficient [rad / mrad^3].
+            * c_4 : Fourth order aberrations coefficient [rad / mrad^4].
             * fit : Array of the polynomial function coefficients of the
               pixel aberrations fit.
             * ph_fit : Array of the polynomial function coefficients of
@@ -455,8 +496,7 @@ class AberrationsFit(DataContainer):
         ph_fit, err, r_sq = LeastSquares.fit(x=self.pixels, y=self.phase, roi=self.roi,
                                              max_order=max_order, xtol=xtol, ftol=ftol, loss=loss)
         fit = self.phase_to_pix(ph_fit)
-        if ph_fit.size >= 4:
-            alpha = ph_fit[-4] / self.pix_ap**3 * 1e-9
-        else:
-            alpha = None
-        return {'alpha': alpha, 'fit': fit, 'ph_fit': ph_fit, 'rel_err': np.abs(err / ph_fit)[:-1], 'r_sq': r_sq}
+        c_3 = ph_fit[-4] / self.pix_ap**3 * 1e-9 if ph_fit.size >= 4 else 0.
+        c_4 = ph_fit[-5] / self.pix_ap**4 * 1e-12 if ph_fit.size >= 5 else 0.
+        return {'c_3': c_3, 'c_4': c_4, 'fit': fit, 'ph_fit': ph_fit,
+                'rel_err': np.abs(err / ph_fit)[:-1], 'r_sq': r_sq}

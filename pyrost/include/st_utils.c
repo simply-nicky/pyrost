@@ -149,12 +149,12 @@ size_t binary_search(const void *key, const void *array, size_t l, size_t r, siz
     return 0;
 }
 
-size_t searchsorted(const void *key, const void *base, size_t num, size_t size,
+size_t searchsorted(const void *key, const void *base, size_t npts, size_t size,
     int (*compar)(const void*, const void*))
 {
     if (compar(key, base) < 0) return 0;
-    if (compar(key, base + (num - 1) * size) > 0) return num;
-    return binary_search(key, base, 0, num, size, compar);
+    if (compar(key, base + (npts - 1) * size) > 0) return npts;
+    return binary_search(key, base, 0, npts, size, compar);
 }
 
 void barcode_bars(double *bars, size_t size, double x0, double b_dx, double rd, long seed)
@@ -172,26 +172,30 @@ void barcode_bars(double *bars, size_t size, double x0, double b_dx, double rd, 
     else {for (int i = 0; i < (int) size; i++) bars[i] = x0 + b_dx * i;}
 }
 
-void ml_profile(double complex *out, const double *x, const double *layers, int npts, int nlyr,
-    double complex mt0, double complex mt1, double complex mt2, double sgm, unsigned threads)
+void ml_profile(double complex *out, const double *inp, const double *layers, size_t isize, size_t lsize, 
+    size_t nlyr, double complex mt0, double complex mt1, double complex mt2, double sgm, unsigned threads)
 {
     int b = 2 * (nlyr / 2);
-    #pragma omp parallel for num_threads(threads)
-    for (int i = 0; i < npts; i++)
+    int repeats = lsize / nlyr;
+    for (int i = 0; i < repeats; i++)
     {
-        double complex ref_idx = 0;
-        int j0 = searchsorted(&x[i], layers, nlyr, sizeof(double), compare_double);
-        if (j0 > 0 && j0 < b)
+        #pragma omp parallel for num_threads(threads)
+        for (int n = 0; n < (int) isize; n++)
         {
-            double x0 = (x[i] - layers[j0 - 1]) / sqrt(2) / sgm;
-            double x1 = (x[i] - layers[j0]) / sqrt(2) / sgm;
-            ref_idx += (mt1 - mt2) / 2 * ((double) (j0 % 2) - 0.5) * (erf(x0) - erf(x1));
-            ref_idx -= (mt1 - mt2) / 4 * erf((x[i] - layers[0]) / sqrt(2) / sgm);
-            ref_idx += (mt1 - mt2) / 4 * erf((x[i] - layers[b - 1]) / sqrt(2) / sgm);
+            double complex ref_idx = 0;
+            int j0 = searchsorted(&inp[n], &layers[i * nlyr], nlyr, sizeof(double), compare_double);
+            if (j0 > 0 && j0 < b)
+            {
+                double x0 = (inp[n] - layers[j0 - 1 + i * nlyr]) / sqrt(2) / sgm;
+                double x1 = (inp[n] - layers[j0 + i * nlyr]) / sqrt(2) / sgm;
+                ref_idx += (mt1 - mt2) / 2 * ((double) (j0 % 2) - 0.5) * (erf(x0) - erf(x1));
+                ref_idx -= (mt1 - mt2) / 4 * erf((inp[n] - layers[i * nlyr]) / sqrt(2) / sgm);
+                ref_idx += (mt1 - mt2) / 4 * erf((inp[n] - layers[b - 1 + i * nlyr]) / sqrt(2) / sgm);
+            }
+            ref_idx += (mt1 + mt0) / 2 * erf((inp[n] - layers[i * nlyr]) / sqrt(2) / sgm);
+            ref_idx -= (mt1 + mt0) / 2 * erf((inp[n] - layers[b - 1 + i * nlyr]) / sqrt(2) / sgm);
+            out[n + i * isize] = (cos(creal(ref_idx)) + sin(creal(ref_idx)) * I) * exp(-cimag(ref_idx));
         }
-        ref_idx += (mt1 + mt0) / 2 * erf((x[i] - layers[0]) / sqrt(2) / sgm);
-        ref_idx -= (mt1 + mt0) / 2 * erf((x[i] - layers[b - 1]) / sqrt(2) / sgm);
-        out[i] = (cos(creal(ref_idx)) + sin(creal(ref_idx)) * I) * exp(-cimag(ref_idx));
     }
 }
 

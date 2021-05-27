@@ -1,6 +1,3 @@
-cdef extern from "Python.h":
-    int Py_AtExit(void(*func)())
-
 cdef extern from "st_gaussian.h":
     void gauss_kernel1d(double *out, double sigma, unsigned order, unsigned long ksize) nogil
     
@@ -45,8 +42,8 @@ cdef extern from "st_waveprop_np.h":
 cdef extern from "st_utils.h":
     void barcode_bars(double *bars, unsigned long size, double x0, double b_dx, double rd, long seed) nogil
 
-    void ml_profile(complex *out, double *x, double *layers, unsigned npts, unsigned nlyr,
-                    complex mt0, complex mt1, complex mt2, double sgm, unsigned threads) nogil
+    void ml_profile(complex *out, double *inp, double *layers, unsigned long isize, unsigned long lsize,
+                    unsigned long nlyr, complex mt0, complex mt1, complex mt2, double sgm, unsigned threads) nogil
 
     void frames(double *out, double *pfx, double *pfy, double *wfx, double *wfy, double dx,
                 double dy, unsigned long xpts, unsigned long ypts, unsigned long nframes,

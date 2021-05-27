@@ -47,8 +47,8 @@ where each frame is an image of 516x1556 pixels.
 Loading the file
 ----------------
 Load the CXI file into a data container :class:`pyrost.STData` with :class:`pyrost.CXILoader`.
-:func:`pyrost.cxi_loader` returns the default loader with the default CXI protocol
-(:func:`pyrost.protocol`).
+:func:`pyrost.CXILoader.import_default` returns the default loader with the default CXI protocol
+(:func:`pyrost.CXIProtocol.import_default`).
 
 .. note:: :class:`pyrost.CXILoader` will raise an :class:`AttributeError` while loading the data
     from the CXI file if some of the necessary attributes for Speckle Tracking algorithm
@@ -59,7 +59,7 @@ Load the CXI file into a data container :class:`pyrost.STData` with :class:`pyro
 .. doctest::
 
     >>> import pyrost as rst
-    >>> loader = rst.cxi_loader()
+    >>> loader = rst.CXILoader()
     >>> data = loader.load('results/diatom.cxi') # doctest: +SKIP
 
 Moreover, you can crop the data with the provided region of interest at the detector plane,
@@ -131,11 +131,6 @@ and generating the unabberated profile of the sample.
 
     >>> st_obj = data.get_st()
     >>> st_res, errors = st_obj.iter_update(sw_fs=15, sw_ss=15, ls_pm=1.5, ls_ri=0.7, verbose=True, n_iter=5)
-    Iteration No. 0: Total MSE = 0.798
-    Iteration No. 1: Total MSE = 0.711
-    Iteration No. 2: Total MSE = 0.256
-    Iteration No. 3: Total MSE = 0.205
-    Iteration No. 4: Total MSE = 0.209
 
     >>> fig, ax = plt.subplots(figsize=(10, 10)) # doctest: +SKIP
     >>> ax.imshow(st_res.reference_image[700:1200, 100:700], vmin=0.7, vmax=1.3, extent=[100, 700, 1200, 700]) # doctest: +SKIP

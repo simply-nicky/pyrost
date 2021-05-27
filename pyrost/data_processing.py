@@ -33,16 +33,14 @@ Extract lens' aberrations wavefront and fit it with a polynomial.
 array([-5.19025587e+07, -8.63773622e+05,  3.42849675e+03,  2.98523995e+01,
         1.19773905e-02])
 """
-from __future__ import division
-
+from multiprocessing import cpu_count
+from tqdm.auto import tqdm
 import numpy as np
 from .aberrations_fit import AberrationsFit
 from .data_container import DataContainer, dict_to_object
 from .bin import make_whitefield, make_reference, update_pixel_map_gs, update_pixel_map_nm
 from .bin import update_translations_gs, mse_frame, mse_total, ct_integrate
 from .bin import gaussian_filter, gaussian_gradient_magnitude
-from tqdm.auto import tqdm
-from multiprocessing import cpu_count
 
 class STData(DataContainer):
     """Speckle Tracking algorithm data container class.
@@ -156,9 +154,9 @@ class STData(DataContainer):
 
             # Flip pixel mapping if defocus is negative
             if self.defocus_ss < 0:
-                self.pixel_map = self.pixel_map[:, ::-1, :]
+                self.pixel_map = np.flip(self.pixel_map, axis=1)
             if self.defocus_fs < 0:
-                self.pixel_map = self.pixel_map[:, :, ::-1]
+                self.pixel_map = np.flip(self.pixel_map, axis=2)
 
         # Initialize a list of SpeckleTracking objects
         self._st_objects = []
@@ -210,8 +208,8 @@ class STData(DataContainer):
 
         Parameters
         ----------
-        axis : int
-            Axis along which a sum is performed. 
+        axis : int, optional
+            Axis along which a sum is performed.
 
         Returns
         -------
@@ -244,7 +242,34 @@ class STData(DataContainer):
                 'whitefield': None}
 
     @dict_to_object
-    def update_mask(self, method='no-bad', pmin = 0., pmax=99.99, vmin=0, vmax=65535,
+    def mirror_data(self, axis=1):
+        """Return a new :class:`STData` object with the data mirrored
+        along the given axis.
+
+        Parameters
+        ----------
+        axis : int, optional
+            Choose between the slow axis (0) and
+            the fast axis (1).
+
+        Returns
+        -------
+        STData
+            New :class:`STData` object with the updated `data` and
+            `basis_vectors`.
+        """
+        if not axis in [0, 1]:
+            raise ValueError('Axis must equal to 0 or 1')
+        basis_vectors = np.copy(self.basis_vectors)
+        basis_vectors[:, axis] *= -1.
+        data = np.flip(self.data, axis=axis + 1)
+        roi = np.copy(self.roi)
+        roi[2 * axis] = self.whitefield.shape[axis] - self.roi[2 * axis + 1]
+        roi[2 * axis + 1] = self.whitefield.shape[axis] - self.roi[2 * axis]
+        return {'basis_vectors': basis_vectors, 'data': data, 'roi': roi}
+
+    @dict_to_object
+    def update_mask(self, method='no-bad', pmin=0., pmax=99.99, vmin=0, vmax=65535,
                     update='reset'):
         """Return a new :class:`STData` object with the updated
         bad pixels mask.
@@ -259,14 +284,15 @@ class STData(DataContainer):
               of (`vmin`, `vmax`) range.
             * 'perc-bad' : Mask the pixels which values lie outside
               of the (`pmin`, `pmax`) percentiles.
-
         vmin, vmax : float, optional
             Lower and upper intensity values of 'range-bad' masking
             method.
-
         pmin, pmax : float, optional
             Lower and upper percentage values of 'perc-bad' masking
             method.
+        update : {'reset', 'multiply'}, optional
+            Multiply the new mask and the old one if 'multiply',
+            use the new one if 'reset'.
 
         Returns
         -------
@@ -358,37 +384,39 @@ class STData(DataContainer):
         ValueError
             If `st_obj` doesn't belong to the :class:`STData` object.
         """
-        if st_obj in self._st_objects:
-            # Update phase, pixel_aberrations, and reference_image
-            dev_ss, dev_fs = (st_obj.pixel_map - self.get('pixel_map'))
-            dev_ss -= dev_ss.mean()
-            dev_fs -= dev_fs.mean()
-            self.pixel_aberrations = np.zeros(self.pixel_map.shape)
-            self.pixel_aberrations[:, self.roi[0]:self.roi[1], self.roi[2]:self.roi[3]] = np.stack((dev_ss, dev_fs))
-            phase = ct_integrate(self.y_pixel_size**2 * dev_ss * np.abs(self.defocus_ss / self.wavelength),
-                                 self.x_pixel_size**2 * dev_fs * np.abs(self.defocus_fs / self.wavelength)) \
-                    * 2 * np.pi / self.distance**2
-            self.phase = np.zeros(self.whitefield.shape)
-            self.phase[self.roi[0]:self.roi[1], self.roi[2]:self.roi[3]] = phase
-            self.error_frame = np.zeros(self.whitefield.shape)
-            self.error_frame[self.roi[0]:self.roi[1], self.roi[2]:self.roi[3]] = st_obj.error_frame
-            self.reference_image = st_obj.reference_image
-
-            # Initialize AberrationsFit objects
-            self._ab_fits.clear()
-            self._ab_fits.extend([AberrationsFit.import_data(self, axis=0),
-                                  AberrationsFit.import_data(self, axis=1)])
-            return self
-        else:
+        if not st_obj in self._st_objects:
             raise ValueError("the SpeckleTracking object doesn't belong to the data container")
+        # Update phase, pixel_aberrations, and reference_image
+        dev_ss, dev_fs = (st_obj.pixel_map - self.get('pixel_map'))
+        dev_ss -= dev_ss.mean()
+        dev_fs -= dev_fs.mean()
+        self.pixel_aberrations = np.zeros(self.pixel_map.shape)
+        self.pixel_aberrations[:, self.roi[0]:self.roi[1], self.roi[2]:self.roi[3]] = np.stack((dev_ss, dev_fs))
+        phase = ct_integrate(self.y_pixel_size**2 * dev_ss * np.abs(self.defocus_ss / self.wavelength),
+                                self.x_pixel_size**2 * dev_fs * np.abs(self.defocus_fs / self.wavelength)) \
+                * 2 * np.pi / self.distance**2
+        self.phase = np.zeros(self.whitefield.shape)
+        self.phase[self.roi[0]:self.roi[1], self.roi[2]:self.roi[3]] = phase
+        self.error_frame = np.zeros(self.whitefield.shape)
+        self.error_frame[self.roi[0]:self.roi[1], self.roi[2]:self.roi[3]] = st_obj.error_frame
+        self.reference_image = st_obj.reference_image
 
-    def fit_phase(self, axis=1, max_order=2, xtol=1e-14, ftol=1e-14, loss='cauchy'):
+        # Initialize AberrationsFit objects
+        self._ab_fits.clear()
+        self._ab_fits.extend([AberrationsFit.import_data(self, axis=0),
+                                AberrationsFit.import_data(self, axis=1)])
+        return self
+
+    def fit_phase(self, center=0, axis=1, max_order=2, xtol=1e-14, ftol=1e-14, loss='cauchy'):
         """Fit `pixel_aberrations` with the polynomial function
         using nonlinear least-squares algorithm. The function uses
         least-squares algorithm from :func:`scipy.optimize.least_squares`.
 
         Parameters
         ----------
+        center : int, optional
+            Index of the zerro scattering angle or direct
+            beam pixel.
         axis : int, optional
             Axis along which `pixel_aberrations` is fitted.
         max_order : int, optional
@@ -419,7 +447,8 @@ class STData(DataContainer):
         dict
             :class:`dict` with the following fields defined:
 
-            * alpha : Third order aberrations ceofficient [rad/mrad^3].
+            * c_3 : Third order aberrations coefficient [rad / mrad^3].
+            * c_4 : Fourth order aberrations coefficient [rad / mrad^4].
             * fit : Array of the polynomial function coefficients of the
               pixel aberrations fit.
             * ph_fit : Array of the polynomial function coefficients of
@@ -432,8 +461,8 @@ class STData(DataContainer):
         AberrationsFit.fit - Full details of the aberrations fitting algorithm.
         """
         if self._isphase:
-            return self._ab_fits[axis].fit(max_order=max_order, xtol=xtol,
-                                           ftol=ftol, loss=loss)
+            ab_fit = self.get_fit(center, axis)
+            return ab_fit.fit(max_order=max_order, xtol=xtol, ftol=ftol, loss=loss)
         else:
             return None
 
@@ -484,8 +513,7 @@ class STData(DataContainer):
             for idx, ref_img in zip(np.ndindex(defoci_fs.shape), sweep_scan):
                 sweep_img[idx][:ref_img.shape[0], :ref_img.shape[1]] = ref_img
             return grad_mag, sweep_img
-        else:
-            return grad_mag
+        return grad_mag
 
     def get(self, attr, value=None):
         """Return a dataset with `mask` and `roi` applied.
@@ -515,13 +543,18 @@ class STData(DataContainer):
                             'translations']:
                     val = np.ascontiguousarray(val[self.good_frames])
             return val
-        else:
-            return value
+        return value
 
     def get_st(self, aberrations=False):
         """Return :class:`SpeckleTracking` object derived
         from the container. Return None if `defocus_fs`
         or `defocus_ss` doesn't exist in the container.
+
+        Parameters
+        ----------
+        aberrations : bool, optional
+            Add `pixel_aberrations` to `pixel_map` of
+            :class:`SpeckleTracking` object if it's True.
 
         Returns
         -------
@@ -529,14 +562,10 @@ class STData(DataContainer):
             An instance of :class:`SpeckleTracking` derived
             from the container. None if `defocus_fs` or
             `defocus_ss` is None.
-        aberrations : bool, optional
-            Add `pixel_aberrations` to `pixel_map` of
-            :class:`SpeckleTracking` object if it's True.
         """
-        if self._isdefocus:
-            return SpeckleTracking.import_data(self, aberrations)
-        else:
+        if not self._isdefocus:
             return None
+        return SpeckleTracking.import_data(self, aberrations)
 
     def get_st_list(self):
         """Return a list of all the :class:`SpeckleTracking`
@@ -558,7 +587,10 @@ class STData(DataContainer):
 
         Parameters
         ----------
-        axis : int
+        center : int, optional
+            Index of the zerro scattering angle or direct
+            beam pixel.
+        axis : int, optional
             Detector axis along which the fitting is performed.
 
         Returns
@@ -567,10 +599,9 @@ class STData(DataContainer):
             An instance of :class:`AberrationsFit` class.
             None if `defocus_fs` or `defocus_ss` is None.
         """
-        if self._isphase:
-            return AberrationsFit.import_data(self, center=center, axis=axis)
-        else:
+        if not self._isphase:
             return None
+        return AberrationsFit.import_data(self, center=center, axis=axis)
 
     def write_cxi(self, cxi_file, overwrite=True):
         """Write all the `attr` to a CXI file `cxi_file`.
@@ -599,8 +630,8 @@ class SpeckleTracking(DataContainer):
     Parameters
     ----------
     st_data : STData
-        :class:`STData` object, from which the
-        :class:`SpeckleTracking` object was derived.
+        The Speckle tracking data container, from which the
+        object is derived.
     **kwargs : dict
         Dictionary of the attributes' data specified in `attr_set`
         and `init_set`.
@@ -636,6 +667,8 @@ class SpeckleTracking(DataContainer):
 
     * error_frame : MSE (mean-squared-error) of the reference image
       and pixel mapping fit per pixel.
+    * ls_ri : Smoothing kernel bandwidth used in `reference_image`
+      regression. The value is given in pixels.
     * reference_image : The unabberated reference image of the sample.
     * m0 : The lower bounds of the fast detector axis of
       the reference image at the reference frame in pixels.
@@ -677,10 +710,6 @@ class SpeckleTracking(DataContainer):
         ----------
         st_data : STData
             :class:`STData` container object.
-        num_threds : int
-            Specify number of threads that are used in all the
-            calculations performed by a :class:`SpeckleTracking`
-            object
         aberrations : bool, optional
             Add `pixel_aberrations` from `st_data` to
             `pixel_map` if it's True.
@@ -706,8 +735,9 @@ class SpeckleTracking(DataContainer):
 
         Parameters
         ----------
-        ls_ri : float, optional
-            `reference_image` length scale in pixels.
+        ls_ri : float
+            Smoothing kernel bandwidth used in `reference_image`
+            regression. The value is given in pixels.
         sw_ss : int, optional
             Search window size in pixels along the slow detector
             axis.
@@ -729,7 +759,8 @@ class SpeckleTracking(DataContainer):
         I0, n0, m0 = make_reference(I_n=self.data, W=self.whitefield, u=self.pixel_map,
                                     di=self.dss_pix, dj=self.dfs_pix, sw_ss=sw_ss,
                                     sw_fs=sw_fs, ls=ls_ri, num_threads=self.num_threads)
-        return {'st_data': self._reference, 'ls_ri': ls_ri, 'n0': n0, 'm0': m0, 'reference_image': I0}
+        return {'st_data': self._reference, 'ls_ri': ls_ri, 'n0': n0, 'm0': m0,
+                'reference_image': I0}
 
     @dict_to_object
     def update_pixel_map(self, ls_pm, sw_fs, sw_ss=0, method='search'):
@@ -738,14 +769,15 @@ class SpeckleTracking(DataContainer):
 
         Parameters
         ----------
+        ls_pm : float
+            Smoothing kernel bandwidth used in `pixel_map`
+            regression. The value is given in pixels.
         sw_fs : int
             Search window size in pixels along the fast detector
             axis.
         sw_ss : int, optional
             Search window size in pixels along the slow detector
             axis.
-        ls_pm : float, optional
-            `pixel_map` length scale in pixels.
         method : {'search', 'newton'}, optional
             `pixel_map` update algorithm. The following keyword
             values are allowed:
@@ -774,34 +806,28 @@ class SpeckleTracking(DataContainer):
         """
         if self.reference_image is None:
             raise AttributeError('The reference image has not been generated')
+        if method == 'search':
+            pixel_map = update_pixel_map_gs(I_n=self.data, W=self.whitefield,
+                                            I0=self.reference_image, u0=self.pixel_map,
+                                            di=self.dss_pix - self.n0,
+                                            dj=self.dfs_pix - self.m0,
+                                            sw_ss=sw_ss, sw_fs=sw_fs, ls=ls_pm,
+                                            num_threads=self.num_threads)
+        elif method == 'newton':
+            pixel_map = update_pixel_map_nm(I_n=self.data, W=self.whitefield,
+                                            I0=self.reference_image, u0=self.pixel_map,
+                                            di=self.dss_pix - self.n0,
+                                            dj=self.dfs_pix - self.m0,
+                                            sw_fs=sw_fs, ls=ls_pm,
+                                            num_threads=self.num_threads)
         else:
-            if method == 'search':
-                pixel_map = update_pixel_map_gs(I_n=self.data, W=self.whitefield,
-                                                I0=self.reference_image, u0=self.pixel_map,
-                                                di=self.dss_pix - self.n0,
-                                                dj=self.dfs_pix - self.m0,
-                                                sw_ss=sw_ss, sw_fs=sw_fs, ls=ls_pm,
-                                                num_threads=self.num_threads)
-            elif method == 'newton':
-                pixel_map = update_pixel_map_nm(I_n=self.data, W=self.whitefield,
-                                                I0=self.reference_image, u0=self.pixel_map,
-                                                di=self.dss_pix - self.n0,
-                                                dj=self.dfs_pix - self.m0,
-                                                sw_fs=sw_fs, ls=ls_pm,
-                                                num_threads=self.num_threads)
-            else:
-                raise ValueError('Wrong method argument: {:s}'.format(method))
-            return {'st_data': self._reference, 'pixel_map': pixel_map}
-    
+            raise ValueError('Wrong method argument: {:s}'.format(method))
+        return {'st_data': self._reference, 'pixel_map': pixel_map}
+
     @dict_to_object
     def update_errors(self):
         """Return a new :class:`SpeckleTracking` object with
         the updated `error_frame`.
-
-        Parameters
-        ----------
-        ls_ri : float
-            `reference_image` length scale in pixels.
 
         Returns
         -------
@@ -820,12 +846,11 @@ class SpeckleTracking(DataContainer):
         """
         if self.reference_image is None:
             raise AttributeError('The reference image has not been generated')
-        else:
-            error_frame = mse_frame(I_n=self.data, W=self.whitefield, ls=self.ls_ri,
-                                    I0=self.reference_image, u=self.pixel_map,
-                                    di=self.dss_pix - self.n0, dj=self.dfs_pix - self.m0,
-                                    num_threads=self.num_threads)
-            return {'st_data': self._reference, 'error_frame': error_frame}
+        error_frame = mse_frame(I_n=self.data, W=self.whitefield, ls=self.ls_ri,
+                                I0=self.reference_image, u=self.pixel_map,
+                                di=self.dss_pix - self.n0, dj=self.dfs_pix - self.m0,
+                                num_threads=self.num_threads)
+        return {'st_data': self._reference, 'error_frame': error_frame}
 
     @dict_to_object
     def update_translations(self, sw_fs, sw_ss=0):
@@ -870,20 +895,19 @@ class SpeckleTracking(DataContainer):
         """
         if self.reference_image is None:
             raise AttributeError('The reference image has not been generated')
-        else:
-            dij = update_translations_gs(I_n=self.data, W=self.whitefield,
-                                         I0=self.reference_image, u=self.pixel_map,
-                                         di=self.dss_pix - self.n0,
-                                         dj=self.dfs_pix - self.m0,
-                                         sw_ss=sw_ss, sw_fs=sw_fs, ls=self.ls_ri,
-                                         num_threads=self.num_threads)
-            dss_pix = np.ascontiguousarray(dij[:, 0]) + self.n0
-            dfs_pix = np.ascontiguousarray(dij[:, 1]) + self.m0
-            return {'st_data': self._reference, 'dss_pix': dss_pix, 'dfs_pix': dfs_pix}
+        dij = update_translations_gs(I_n=self.data, W=self.whitefield,
+                                        I0=self.reference_image, u=self.pixel_map,
+                                        di=self.dss_pix - self.n0,
+                                        dj=self.dfs_pix - self.m0,
+                                        sw_ss=sw_ss, sw_fs=sw_fs, ls=self.ls_ri,
+                                        num_threads=self.num_threads)
+        dss_pix = np.ascontiguousarray(dij[:, 0]) + self.n0
+        dfs_pix = np.ascontiguousarray(dij[:, 1]) + self.m0
+        return {'st_data': self._reference, 'dss_pix': dss_pix, 'dfs_pix': dfs_pix}
 
-    def iter_update_gd(self, ls_ri, ls_pm, sw_fs, sw_ss=0, blur=None, n_iter=30, f_tol=0., momentum=0.,
-                       learning_rate=1e1, gstep=.1, method='search', update_translations=False,
-                       verbose=False, return_extra=False):
+    def iter_update_gd(self, ls_ri, ls_pm, sw_fs, sw_ss=0, blur=None, n_iter=30, f_tol=0.,
+                       momentum=0., learning_rate=1e1, gstep=.1, method='search',
+                       update_translations=False, verbose=False, return_extra=False):
         """Perform iterative Robust Speckle Tracking update. `ls_ri` and
         `ls_pm` define high frequency cut-off to supress the noise. `ls_ri`
         is iteratively updated by dint of Gradient Descent with momentum
@@ -893,18 +917,18 @@ class SpeckleTracking(DataContainer):
 
         Parameters
         ----------
+        ls_ri : float
+            Smoothing kernel bandwidth used in `reference_image`
+            regression. The value is given in pixels.
+        ls_pm : float
+            Smoothing kernel bandwidth used in `pixel_map`
+            regression. The value is given in pixels.
         sw_fs : int
             Search window size in pixels along the fast detector
             axis.
         sw_ss : int, optional
             Search window size in pixels along the slow detector
             axis.
-        ls_pm : float, optional
-            Smoothing kernel bandwidth used in `pixel_map`
-            regression. The value is given in pixels.
-        ls_ri : float, optional
-            Smoothing kernel bandwidth used in `reference_image`
-            regression. The value is given in pixels.
         blur : float, optional
             Smoothing kernel bandwidth used in `reference_image`
             post-update. The default value is equal to `ls_pm`. The value
@@ -929,6 +953,8 @@ class SpeckleTracking(DataContainer):
             * 'search' : Grid search along the search window.
         update_translations : bool, optional
             Update sample pixel translations if True.
+        verbose : bool, optional
+            Set verbosity of the computation process.
         return_extra : bool, optional
             Return errors and `ls_ri` array if True.
 
@@ -949,13 +975,13 @@ class SpeckleTracking(DataContainer):
         obj.update_errors.inplace_update()
         extra = {'errors': [obj.error_frame.mean()],
                  'lss_ri': [ls_ri]}
-        it = range(1, n_iter + 1)
+        itor = range(1, n_iter + 1)
         if verbose:
-            it = tqdm(it, bar_format='{desc} {percentage:3.0f}% {bar} '\
+            itor = tqdm(itor, bar_format='{desc} {percentage:3.0f}% {bar} '\
                       'Iteration {n_fmt} / {total_fmt} [{elapsed}<{remaining}, {rate_fmt}{postfix}]')
             print(f"Initial MSE = {extra['errors'][-1]:.6f}, "\
                   f"Initial ls_ri = {extra['lss_ri'][-1]:.2f}")
-        for n in it:
+        for _ in itor:
             # Update pixel_map
             new_obj = obj.update_pixel_map(ls_pm=ls_pm, sw_fs=sw_fs, sw_ss=sw_ss, method=method)
             obj.pixel_map += gaussian_filter(new_obj.pixel_map - obj.pixel_map,
@@ -978,8 +1004,8 @@ class SpeckleTracking(DataContainer):
             obj.update_errors.inplace_update()
             extra['errors'].append(obj.error_frame.mean())
             if verbose:
-                it.set_description(f"Total MSE = {extra['errors'][-1]:.6f}, "\
-                                   f"ls_ri = {extra['lss_ri'][-1]:.2f}")
+                itor.set_description(f"Total MSE = {extra['errors'][-1]:.6f}, "\
+                                     f"ls_ri = {extra['lss_ri'][-1]:.2f}")
 
             # Break if function tolerance is satisfied
             if (extra['errors'][-2] - extra['errors'][-1]) <= f_tol:
@@ -990,7 +1016,8 @@ class SpeckleTracking(DataContainer):
             return obj
 
     def iter_update(self, ls_ri, ls_pm, sw_fs, sw_ss=0, blur=None, n_iter=5, f_tol=0.,
-                    method='search', update_translations=False, verbose=False, return_errors=False):
+                    method='search', update_translations=False, verbose=False,
+                    return_errors=False):
         """Perform iterative Robust Speckle Tracking update. `ls_ri` and
         `ls_pm` define high frequency cut-off to supress the noise.
         Iterative update terminates when the difference between total
@@ -999,18 +1026,18 @@ class SpeckleTracking(DataContainer):
 
         Parameters
         ----------
+        ls_ri : float
+            Smoothing kernel bandwidth used in `reference_image`
+            regression. The value is given in pixels.
+        ls_pm : float
+            Smoothing kernel bandwidth used in `pixel_map`
+            regression. The value is given in pixels.
         sw_fs : int
             Search window size in pixels along the fast detector
             axis.
         sw_ss : int, optional
             Search window size in pixels along the slow detector
             axis.
-        ls_pm : float, optional
-            Smoothing kernel bandwidth used in `pixel_map`
-            regression. The value is given in pixels.
-        ls_ri : float, optional
-            Smoothing kernel bandwidth used in `reference_image`
-            regression. The value is given in pixels.
         blur : float, optional
             Smoothing kernel bandwidth used in `reference_image`
             post-update. The default value is equal to `ls_pm`. The value
@@ -1028,6 +1055,8 @@ class SpeckleTracking(DataContainer):
             * 'search' : Grid search along the search window.
         update_translations : bool, optional
             Update sample pixel translations if True.
+        verbose : bool, optional
+            Set verbosity of the computation process.
         return_errors : bool, optional
             Return errors array if True.
 
@@ -1046,12 +1075,12 @@ class SpeckleTracking(DataContainer):
         obj = self.update_reference(ls_ri=ls_ri)
         obj.update_errors.inplace_update()
         errors = [obj.error_frame.mean()]
-        it = range(1, n_iter + 1)
+        itor = range(1, n_iter + 1)
         if verbose:
-            it = tqdm(it, bar_format='{desc} {percentage:3.0f}% {bar} '\
-                      'Iteration {n_fmt} / {total_fmt} [{elapsed}<{remaining}, {rate_fmt}{postfix}]')
+            itor = tqdm(itor, bar_format='{desc} {percentage:3.0f}% {bar} '\
+                        'Iteration {n_fmt} / {total_fmt} [{elapsed}<{remaining}, {rate_fmt}{postfix}]')
             print(f"Initial MSE = {errors[0]:.6f}")
-        for n in it:
+        for _ in itor:
             # Update pixel_map
             new_obj = obj.update_pixel_map(ls_pm=ls_pm, sw_fs=sw_fs, sw_ss=sw_ss, method=method)
             obj.pixel_map += gaussian_filter(new_obj.pixel_map - obj.pixel_map,
@@ -1069,7 +1098,7 @@ class SpeckleTracking(DataContainer):
             # Calculate errors
             errors.append(obj.error_frame.mean())
             if verbose:
-                it.set_description(f"Total MSE = {errors[-1]:.6f}")
+                itor.set_description(f"Total MSE = {errors[-1]:.6f}")
 
             # Break if function tolerance is satisfied
             if (errors[-2] - errors[-1]) <= f_tol * errors[0]:

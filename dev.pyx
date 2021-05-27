@@ -9,7 +9,7 @@ from cython.parallel import prange, parallel
 from libc.stdlib cimport abort, malloc, free
 cimport openmp
 from scipy.ndimage import gaussian_gradient_magnitude as ggm, gaussian_filter as gf
-import speckle_tracking as st
+# import speckle_tracking as st
 
 ctypedef fused float_t:
     np.float64_t
@@ -25,135 +25,56 @@ DEF NO_VAR = -1.0
 # *ALWAYS* do that, or you will have segfaults
 np.import_array()
 
-def init_fftw():
-    fftw_init_threads()
+# def st_update(I_n, dij, basis, x_ps, y_ps, z, df, search_window, n_iter=5,
+#               filter=None, update_translations=False, verbose=False):
+#     """
+#     Andrew's speckle tracking update algorithm
     
-    if Py_AtExit(fftw_cleanup_threads) != 0:
-        raise ImportError('Failed to register the fftw library shutdown callback')
+#     I_n - measured data
+#     W - whitefield
+#     basis - detector plane basis vectors
+#     x_ps, y_ps - x and y pixel sizes
+#     z - distance between the sample and the detector
+#     df - defocus distance
+#     sw_max - pixel mapping search window size
+#     n_iter - number of iterations
+#     """
+#     M = np.ones((I_n.shape[1], I_n.shape[2]), dtype=bool)
+#     W = st.make_whitefield(I_n, M, verbose=verbose)
+#     u, dij_pix, res = st.generate_pixel_map(W.shape, dij, basis,
+#                                             x_ps, y_ps, z,
+#                                             df, verbose=verbose)
+#     I0, n0, m0 = st.make_object_map(I_n, M, W, dij_pix, u, subpixel=True, verbose=verbose)
 
-init_fftw()
+#     es = []
+#     for i in range(n_iter):
 
-cdef np.ndarray number_to_array(object num, np.npy_intp rank, int type_num):
-    cdef np.npy_intp *dims = [rank,]
-    cdef np.ndarray arr = <np.ndarray>np.PyArray_SimpleNew(1, dims, type_num)
-    cdef int i
-    for i in range(rank):
-        arr[i] = num
-    return arr
+#         # calculate errors
+#         error_total = st.calc_error(I_n, M, W, dij_pix, I0, u, n0, m0, subpixel=True, verbose=verbose)[0]
 
-cdef np.ndarray normalize_sequence(object inp, np.npy_intp rank, int type_num):
-    r"""If input is a scalar, create a sequence of length equal to the
-    rank by duplicating the input. If input is a sequence,
-    check if its length is equal to the length of array.
-    """
-    cdef np.ndarray arr
-    cdef int tn
-    if np.PyArray_IsAnyScalar(inp):
-        arr = number_to_array(inp, rank, type_num)
-    elif np.PyArray_Check(inp):
-        arr = <np.ndarray>inp
-        tn = np.PyArray_TYPE(arr)
-        if tn != type_num:
-            arr = <np.ndarray>np.PyArray_Cast(arr, type_num)
-    elif isinstance(inp, (list, tuple)):
-        arr = <np.ndarray>np.PyArray_FROM_OTF(inp, type_num, np.NPY_ARRAY_C_CONTIGUOUS)
-    else:
-        raise ValueError("Wrong sequence argument type")
-    cdef np.npy_intp size = np.PyArray_SIZE(arr)
-    if size != rank:
-        raise ValueError("Sequence argument must have length equal to input rank")
-    return arr
+#         # store total error
+#         es.append(error_total)
 
-def make_whitefield(data: np.ndarray, mask: np.ndarray, axis: cython.int=0,
-                    num_threads: cython.uint=1) -> np.ndarray:
-    data = np.PyArray_GETCONTIGUOUS(data)
-    mask = np.PyArray_GETCONTIGUOUS(mask)
+#         # update pixel map
+#         u = st.update_pixel_map(I_n, M, W, I0, u, n0, m0, dij_pix,
+#                                 search_window=search_window, subpixel=True,
+#                                 fill_bad_pix=False, integrate=False,
+#                                 quadratic_refinement=False, verbose=verbose,
+#                                 filter=filter)[0]
 
-    if not np.PyArray_ISBOOL(mask):
-        raise TypeError('mask array must be of boolean type')
-    cdef int ndim = data.ndim
-    if memcmp(data.shape, mask.shape, ndim * sizeof(np.npy_intp)):
-        raise ValueError('mask and data arrays must have identical shapes')
-    axis = axis if axis >= 0 else ndim + axis
-    cdef np.npy_intp isize = np.PyArray_SIZE(data)
-    cdef np.npy_intp *dims = <np.npy_intp *>malloc((ndim - 1) * sizeof(np.npy_intp))
-    if dims is NULL:
-        abort()
-    cdef int i
-    for i in range(axis):
-        dims[i] = data.shape[i]
-    cdef np.npy_intp npts = data.shape[axis]
-    for i in range(axis + 1, ndim):
-        dims[i - 1] = data.shape[i]
-    cdef np.npy_intp istride = np.PyArray_STRIDE(data, axis) / np.PyArray_ITEMSIZE(data)
-    cdef int type_num = np.PyArray_TYPE(data)
-    cdef np.ndarray out = <np.ndarray>np.PyArray_SimpleNew(ndim - 1, dims, type_num)
-    cdef void *_out = <void *>np.PyArray_DATA(out)
-    cdef void *_data = <void *>np.PyArray_DATA(data)
-    cdef unsigned char *_mask = <unsigned char *>np.PyArray_DATA(mask)
-    print(isize, npts, istride)
-    with nogil:
-        if type_num == np.NPY_FLOAT64:
-                whitefield(_out, _data, _mask, isize, npts, istride, 8, compare_double, num_threads)
-        elif type_num == np.NPY_FLOAT32:
-                whitefield(_out, _data, _mask, isize, npts, istride, 4, compare_float, num_threads)
-        elif type_num == np.NPY_INT32:
-                whitefield(_out, _data, _mask, isize, npts, istride, 4, compare_long, num_threads)
-        else:
-            raise TypeError('data argument has incompatible type: {:s}'.format(data.dtype))
-    free(dims)
-    return out
+#         # make reference image
+#         I0, n0, m0 = st.make_object_map(I_n, M, W, dij_pix, u, subpixel=True, verbose=verbose)
 
-def st_update(I_n, dij, basis, x_ps, y_ps, z, df, search_window, n_iter=5,
-              filter=None, update_translations=False, verbose=False):
-    """
-    Andrew's speckle tracking update algorithm
-    
-    I_n - measured data
-    W - whitefield
-    basis - detector plane basis vectors
-    x_ps, y_ps - x and y pixel sizes
-    z - distance between the sample and the detector
-    df - defocus distance
-    sw_max - pixel mapping search window size
-    n_iter - number of iterations
-    """
-    M = np.ones((I_n.shape[1], I_n.shape[2]), dtype=bool)
-    W = st.make_whitefield(I_n, M, verbose=verbose)
-    u, dij_pix, res = st.generate_pixel_map(W.shape, dij, basis,
-                                            x_ps, y_ps, z,
-                                            df, verbose=verbose)
-    I0, n0, m0 = st.make_object_map(I_n, M, W, dij_pix, u, subpixel=True, verbose=verbose)
+#         # update translations
+#         if update_translations:
+#             dij_pix = st.update_translations(I_n, M, W, I0, u, n0, m0, dij_pix)[0]
+#     return {'u':u, 'I0':I0, 'errors':es, 'n0': n0, 'm0': m0}
 
-    es = []
-    for i in range(n_iter):
-
-        # calculate errors
-        error_total = st.calc_error(I_n, M, W, dij_pix, I0, u, n0, m0, subpixel=True, verbose=verbose)[0]
-
-        # store total error
-        es.append(error_total)
-
-        # update pixel map
-        u = st.update_pixel_map(I_n, M, W, I0, u, n0, m0, dij_pix,
-                                search_window=search_window, subpixel=True,
-                                fill_bad_pix=False, integrate=False,
-                                quadratic_refinement=False, verbose=verbose,
-                                filter=filter)[0]
-
-        # make reference image
-        I0, n0, m0 = st.make_object_map(I_n, M, W, dij_pix, u, subpixel=True, verbose=verbose)
-
-        # update translations
-        if update_translations:
-            dij_pix = st.update_translations(I_n, M, W, I0, u, n0, m0, dij_pix)[0]
-    return {'u':u, 'I0':I0, 'errors':es, 'n0': n0, 'm0': m0}
-
-def pixel_translations(basis, dij, df, z):
-    dij_pix = (basis * dij[:, None]).sum(axis=-1)
-    dij_pix /= (basis**2).sum(axis=-1) * df / z
-    dij_pix -= dij_pix.mean(axis=0)
-    return np.ascontiguousarray(dij_pix[:, 0]), np.ascontiguousarray(dij_pix[:, 1])
+# def pixel_translations(basis, dij, df, z):
+#     dij_pix = (basis * dij[:, None]).sum(axis=-1)
+#     dij_pix /= (basis**2).sum(axis=-1) * df / z
+#     dij_pix -= dij_pix.mean(axis=0)
+#     return np.ascontiguousarray(dij_pix[:, 0]), np.ascontiguousarray(dij_pix[:, 1])
 
 # def str_update(I_n, W, dij, basis, x_ps, y_ps, z, df, sw_max=100, n_iter=5, l_scale=2.5):
 #     """

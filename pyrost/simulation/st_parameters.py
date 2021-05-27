@@ -2,46 +2,56 @@
 Examples
 --------
 
-Generate parameters, which could be later parsed to :class:`pyrost.simulation.STSim`
+:func:`pyrost.st_parameters` generates the speckle tracking experimental
+parameters, which could be later parsed to :class:`pyrost.simulation.STSim`
 in order to perform the simulation.
 
->>> import pyrost.simulation as st_sim
->>> st_params = st_sim.parameters()
+>>> import pyrost.simulation as sim
+>>> st_params = sim.STParams.import_ini()
 >>> print(st_params)
 {'defocus': 400.0, 'det_dist': 2000000.0, 'step_size': 0.1, 'n_frames': 300,
 'fs_size': 2000, 'ss_size': 1000, 'pix_size': 55.0, '...': '...'}
 """
 import os
 import numpy as np
-from ..protocol import INIParser, ROOT_PATH
+from ..ini_parser import INIParser, ROOT_PATH
 from ..bin import bar_positions, barcode_profile, gaussian_kernel
-from .materials import Material, MLL
 
-PARAMETERS_FILE = os.path.join(ROOT_PATH, 'config/parameters.ini')
+ST_PARAMETERS = os.path.join(ROOT_PATH, 'config/st_parameters.ini')
 
 class STParams(INIParser):
     """Container with the experimental parameters of
     one-dimensional Speckle Tracking scan. All the experimental
-    parameters are enlisted in `attr_dict`.
+    parameters are enlisted in :mod:`st_parameters`.
 
     Parameters
     ----------
-    **kwargs : dict
-        Values for the exerimental parameters specified
-        in `attr_dict`.
+    barcode : dict, optional
+        Barcode sample parameters. Default parameters are
+        used if not provided.
+    detector : dict, optional
+        Detector parameters. Default parameters are used
+        if not provided.
+    exp_geom : dict, optional
+        Experimental geometry parameters. Default parameters
+        are used if not provided.
+    lens : dict, optional
+        Lens parameters. Default parameters are used if
+        not provided.
+    source : dict, optional
+        X-ray source parameters. Default parameters are
+        used if not provided.
+    seed : int, optional
+        Seed value for random number generation.
 
     Attributes
     ----------
-    attr_dict : dict
-        Dictionary which contains all the experimental
-        parameters.
-    fmt_dict: dict
-        Dictionary which specifies the data types of the
-        parameters in `attr_dict`.
+    **kwargs : dict
+        Experimental parameters enlisted in :mod:`st_parameters`.
 
     See Also
     --------
-    st_sim_param : Full list of experimental parameters.
+    st_parameters : Full list of experimental parameters.
     """
     attr_dict = {'exp_geom': ('defocus', 'det_dist', 'n_frames',
                               'step_size', 'step_rnd'),
@@ -58,46 +68,36 @@ class STParams(INIParser):
                 'system/seed': 'int'}
     FMT_LEN = 7
 
-    @classmethod
-    def lookup_dict(cls):
-        """Look-up table between the sections and the parameters.
+    def __init__(self, barcode=None, detector=None, exp_geom=None, lens=None, source=None, seed=0):
+        if barcode is None:
+            barcode = self._import_ini(ST_PARAMETERS)['barcode']
+        if detector is None:
+            detector = self._import_ini(ST_PARAMETERS)['detector']
+        if exp_geom is None:
+            exp_geom = self._import_ini(ST_PARAMETERS)['exp_geom']
+        if lens is None:
+            lens = self._import_ini(ST_PARAMETERS)['lens']
+        if source is None:
+            source = self._import_ini(ST_PARAMETERS)['source']
+        super(STParams, self).__init__(barcode=barcode, detector=detector,
+                                       exp_geom=exp_geom, lens=lens, source=source,
+                                       system={'seed': seed})
+        if self.seed <= 0:
+            self.update_seed()
 
-        Returns
-        -------
-        dict
-            Look-up dictionary.
-        """
+    @classmethod
+    def _lookup_dict(cls):
         lookup = {}
         for section in cls.attr_dict:
             for option in cls.attr_dict[section]:
                 lookup[option] = section
         return lookup
 
-    def __init__(self, **kwargs):
-        super(STParams, self).__init__(**kwargs)
-        self.__dict__['_lookup'] = self.lookup_dict()
-        if self.seed <= 0:
-            self.seed = np.random.default_rng().integers(0, np.iinfo(np.int_).max,
-                                                         endpoint=False)
-
     def __iter__(self):
         return self._lookup.__iter__()
 
     def __contains__(self, attr):
         return attr in self._lookup
-
-    def __getattr__(self, attr):
-        if attr in self._lookup:
-            return self.__dict__[self._lookup[attr]][attr]
-        else:
-            raise AttributeError(attr + " doesn't exist")
-
-    def __setattr__(self, attr, value):
-        if attr in self._lookup:
-            fmt = self.get_format(self._lookup[attr], attr)
-            self.__dict__[self._lookup[attr]][attr] = fmt(value)
-        else:
-            raise AttributeError(attr + ' not allowed')
 
     def __repr__(self):
         return self._format(self.export_dict()).__repr__()
@@ -106,25 +106,62 @@ class STParams(INIParser):
         return self._format(self.export_dict()).__str__()
 
     @classmethod
-    def import_dict(cls, **kwargs):
-        """Initialize experimental parameters from a dictionary `kwargs`.
+    def import_default(cls, **kwargs):
+        """Return the default :class:`STParams`. Extra arguments
+        override the default values if provided.
 
         Parameters
         ----------
         **kwargs : dict
-            Dictionary with experimental parameters.
+            Experimental parameters enlisted in :mod:`st_parameters`.
 
         Returns
         -------
         STParams
-            An :class:`STParams` object with the parameters from `kwargs`.
+            An :class:`STParams` object with the default parameters.
+
+        See Also
+        --------
+        st_parameters : Full list of the experimental parameters.
         """
-        init_dict = {}
-        for section in cls.attr_dict:
-            init_dict[section] = {}
-            for option in cls.attr_dict[section]:
-                init_dict[section][option] = kwargs[option]
-        return cls(**init_dict)
+        return cls.import_ini(ST_PARAMETERS, **kwargs)
+
+    @classmethod
+    def import_ini(cls, ini_file, **kwargs):
+        """Initialize a :class:`STParams` object with an
+        ini file.
+
+        Parameters
+        ----------
+        ini_file : str, optional
+            Path to the ini file. Load the default parameters if None.
+        **kwargs : dict
+            Experimental parameters enlisted in :mod:`st_parameters`.
+            Initialized with `ini_file` if not provided.
+
+        Returns
+        -------
+        st_params : STParams
+            A :class:`STParams` object with all the attributes imported
+            from the ini file.
+
+        See Also
+        --------
+        st_parameters : Full list of the experimental parameters.
+        """
+        attr_dict = cls._import_ini(ini_file)
+        for option, section in cls._lookup_dict().items():
+            if option in kwargs:
+                attr_dict[section][option] = kwargs[option]
+        attr_dict['seed'] = attr_dict.pop('system')['seed']
+        return cls(**attr_dict)
+
+    def update_seed(self, seed=None):
+        """
+        """
+        if seed is None or seed <= 0:
+            seed = np.random.default_rng().integers(0, np.iinfo(np.int_).max, endpoint=False)
+        self.seed = seed
 
     def x_wavefront_size(self):
         r"""Return wavefront array size along the x axis, that
@@ -152,8 +189,10 @@ class STParams(INIParser):
             N_x >= \frac{\Delta x_{sample} \Delta x_{det}}{\lambda d} =
             \frac{2 a_x n_{fs} \Delta_{pix} df}{f \lambda d_{det}}
         """
-        nx_ltos = int(4 * self.ap_x**2 * max(self.focus, np.abs(self.defocus)) / self.focus**2 / self.wl)
-        nx_stod = int(2 * self.fs_size * self.pix_size * self.ap_x * np.abs(self.defocus) / self.focus / self.wl / self.det_dist)
+        nx_ltos = int(4 * self.ap_x**2 * max(self.focus, np.abs(self.defocus)) \
+                      / self.focus**2 / self.wl)
+        nx_stod = int(2 * self.fs_size * self.pix_size * self.ap_x * np.abs(self.defocus) \
+                      / self.focus / self.wl / self.det_dist)
         return max(nx_ltos, nx_stod)
 
     def y_wavefront_size(self):
@@ -273,6 +312,8 @@ class STParams(INIParser):
         ----------
         dist : float
             Distance from the focal plane [um].
+        rnd_dev : bool, optional
+            Randomize positions if it's True.
 
         Returns
         -------
@@ -313,6 +354,8 @@ class STParams(INIParser):
         x_arr : numpy.ndarray
             Array of the coordinates, where the transmission
             coefficients are calculated [um].
+        num_threads : int, optional
+            Number of threads.
 
         Returns
         -------
@@ -328,7 +371,7 @@ class STParams(INIParser):
                                bar_atn=self.bar_atn, bar_sigma=self.bar_sigma,
                                num_threads=num_threads)
 
-    def source_curve(self, dist, dx):
+    def source_curve(self, dist, step):
         """Return source's rocking curve profile at `dist` distance from
         the lens.
 
@@ -336,119 +379,12 @@ class STParams(INIParser):
         ----------
         dist : float
             Distance from the lens to the rocking curve profile [um].
-        dx : float
-            Sampling distance [um].
+        step : float
+            Sampling interval [um].
 
         Returns
         -------
         numpy.ndarray
             Source's rocking curve profile.
         """
-        return gaussian_kernel(dist * self.th_s / dx)
-
-    def export_dict(self):
-        """Export experimental parameters to :class:`dict`.
-
-        Returns
-        -------
-        param_dict : dict
-            Experimental parameters.
-        """
-        param_dict = {}
-        for section in self.attr_dict:
-            for option in self.attr_dict[section]:
-                param_dict[option] = self.__dict__[section][option]
-        return param_dict
-
-def parameters(**kwargs):
-    """Return the default :class:`STParams` object. Override any
-    experimental parameters with `**kwargs`.
-
-    Parameters
-    ----------
-    **kwargs : dict
-        Dictionary which contains experimental
-        parameters values.
-
-    Returns
-    -------
-    st_params : STParams
-        Default experimental parameters.
-
-    See Also
-    --------
-    STParams : Full list of the experimental parameters.
-    """
-    st_params = STParams.import_ini(PARAMETERS_FILE).export_dict()
-    st_params.update(**kwargs)
-    return STParams.import_dict(**st_params)
-
-class MSParams(INIParser):
-    attr_dict = {'multislice':   ('x_step', 'z_step', 'distance'),
-                 'mll_mat1':   ('formula', 'density'),
-                 'mll_mat2':   ('formula', 'density'),
-                 'mll':          ('ap_x', 'n_min', 'n_max', 'focus', 'sigma', 'wavelength')}
-
-    fmt_dict = {'exp_geom': 'float', 'mll_mat1/formula': 'str', 'mll_mat1/density': 'float',
-                'mll_mat2/formula': 'str', 'mll_mat2/density': 'float', 'mll/n_min': 'int',
-                'mll/n_max': 'int', 'mll/focus': 'float', 'mll/sigma': 'float', 'mll/wavelength': 'float'}
-
-    def __init__(self, **kwargs):
-        super(MSParams, self).__init__(**kwargs)
-        self.__dict__['_lookup'] = self.lookup_dict()
-
-    @classmethod
-    def lookup_dict(cls):
-        """Look-up table between the sections and the parameters.
-
-        Returns
-        -------
-        dict
-            Look-up dictionary.
-        """
-        lookup = {}
-        for section in ('exp_geom', 'mll'):
-            for option in cls.attr_dict[section]:
-                lookup[option] = section
-        return lookup
-
-    def __getattr__(self, attr):
-        if attr in self._lookup:
-            return self.__dict__[self._lookup[attr]][attr]
-        else:
-            raise AttributeError(attr + " doesn't exist")
-
-    def __setattr__(self, attr, value):
-        if attr in self._lookup:
-            self.__dict__[self._lookup[attr]][attr] = value
-        else:
-            raise AttributeError(attr + ' not allowed')
-
-    def get_coords(self):
-        mll = self.get_mll()
-        x_min, x_max = mll.get_span()
-        x_arr = np.arange((x_min - (x_max - x_min) / 2) // self.x_step,
-                          (x_max + (x_max - x_min) / 2) // self.x_step)
-        return self.x_step * x_arr
-
-    def get_kernel(self, size=None):
-        if size is None:
-            size = int(10 * self.z_step / self.x_step)
-        x_arr = self.x_step * np.arange(-size // 2, size // 2)
-        dist = np.sqrt(x_arr**2 + self.z_step**2)
-        return self.x_step * self.z_step * np.exp(-2j * np.pi / self.wavelength * dist) / \
-               (1j * self.wavelength**0.5 * dist**1.5)
-
-    def get_mat1(self):
-        return Material(**self.mll_mat1)
-
-    def get_mat2(self):
-        return Material(**self.mll_mat2)
-
-    def get_mll(self):
-        layers = np.arange(self.n_min, self.n_max, dtype=int)
-        return MLL(mat1=self.get_mat1(), mat2=self.get_mat2(), layers=layers,
-                   focus=self.focus, sigma=self.sigma, wavelength=self.wavelength)
-
-    def get_wavefront(self, x_arr):
-        return np.where(np.abs(x_arr - x_arr.mean()) < self.ap_x / 2, 1. + 0.j, 0. + 0.j)
+        return gaussian_kernel(dist * self.th_s / step)

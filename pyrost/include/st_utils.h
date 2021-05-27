@@ -25,13 +25,13 @@ NOINLINE int compare_long(const void *a, const void *b);
 size_t binary_search(const void *key, const void *array, size_t l, size_t r, size_t size,
     int (*compar)(const void*, const void*));
 
-size_t searchsorted(const void *key, const void *base, size_t num, size_t size,
+size_t searchsorted(const void *key, const void *base, size_t npts, size_t size,
     int (*compar)(const void*, const void*));
 
 void barcode_bars(double *bars, size_t size, double x0, double b_dx, double rd, long seed);
 
-void ml_profile(double complex *out, const double *x, const double *layers, int npts, int nlyr,
-    double complex mt0, double complex mt1, double complex mt2, double sgm, unsigned threads);
+void ml_profile(double complex *out, const double *inp, const double *layers, size_t isize, size_t lsize, 
+    size_t nlyr, double complex mt0, double complex mt1, double complex mt2, double sgm, unsigned threads);
 
 void frames(double *out, const double *pfx, const double *pfy, const double *wfx, const double *wfy,
     double dx, double dy, size_t xpts, size_t ypts, size_t nframes, size_t ss_size, size_t fs_size, long seed, unsigned threads);

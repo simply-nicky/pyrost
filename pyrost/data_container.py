@@ -55,7 +55,7 @@ class DataContainer:
     ValueError
         If an attribute specified in `attr_set` has not been provided.
     """
-    attr_set, init_set = {}, {}
+    attr_set, init_set = set(), set()
 
     def __init__(self, **kwargs):
         self.__dict__['attr_dict'] = {key: None for key in self.attr_set | self.init_set}
@@ -83,8 +83,8 @@ class DataContainer:
         return self.attr_dict.__repr__()
 
     def __setattr__(self, attr, value):
-        if attr in self.__dict__['attr_dict']:
-            self.__dict__['attr_dict'][attr] = value
+        if attr in self.attr_dict:
+            self.attr_dict[attr] = value
         else:
             super(DataContainer, self).__setattr__(attr, value)
 

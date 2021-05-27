@@ -14,7 +14,7 @@ else:
 ext = '.pyx' if USE_CYTHON else '.c'
 extension_args = {'language': 'c',
                   'extra_compile_args': ['-fopenmp', '-std=c99'],
-                  'extra_link_args': ['-fopenmp', '-Wl,-rpath,/usr/local/lib'],
+                  'extra_link_args': ['-lgomp', '-Wl,-rpath,/usr/local/lib'],
                   'libraries': ['gsl', 'gslcblas', 'fftw3', 'fftw3_omp'],
                   'library_dirs': ['/usr/local/lib',
                                    os.path.join(sys.prefix, 'lib')],
@@ -25,10 +25,12 @@ extension_args = {'language': 'c',
 src_dir = 'pyrost/include'
 src_files = [os.path.join(src_dir, src_file)
              for src_file in os.listdir(src_dir) if src_file.endswith('.c')]
-extensions = [Extension(name='pyrost.bin.beam_calc',
-                        sources=['pyrost/bin/beam_calc' + ext,] + src_files, **extension_args),
-              Extension(name='pyrost.bin.st_utils',
-                        sources=['pyrost/bin/st_utils' + ext,], **extension_args)]
+extensions = [Extension(name='pyrost.bin.simulation',
+                        sources=['pyrost/bin/simulation' + ext,] + src_files, **extension_args),
+              Extension(name='pyrost.bin.pyrost',
+                        sources=['pyrost/bin/pyrost' + ext,], **extension_args),
+              Extension(name='pyrost.bin.pyfftw',
+                        sources=['pyrost/bin/pyfftw' + ext,], **extension_args)]
 
 if USE_CYTHON:
     extensions = cythonize(extensions, annotate=True, language_level="3",
@@ -42,7 +44,7 @@ with open('README.md', 'r') as readme:
     long_description = readme.read()
 
 setup(name='pyrost',
-      version='0.4.0',
+      version='0.5.0',
       author='Nikolay Ivanov',
       author_email="nikolay.ivanov@desy.de",
       long_description=long_description,

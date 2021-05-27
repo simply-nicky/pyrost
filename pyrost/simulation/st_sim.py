@@ -13,7 +13,7 @@ Examples
 Perform the simulation for a given :class:`pyrost.simulation.STParams` object.
 
 >>> import pyrost.simulation as st_sim
->>> st_params = st_sim.parameters()
+>>> st_params = st_sim.STParams.import_ini()
 >>> sim_obj = st_sim.STSim(st_params)
 
 Return an array of intensity frames at the detector plane.
@@ -28,15 +28,15 @@ the default protocol.
 """
 import os
 import argparse
+from multiprocessing import cpu_count
 import h5py
 import numpy as np
-from ..protocol import cxi_protocol, ROOT_PATH
+from ..cxi_protocol import CXIProtocol, ROOT_PATH
 from ..data_container import DataContainer, dict_to_object
 from ..data_processing import STData
-from .parameters import STParams, parameters
+from .st_parameters import STParams
 from ..bin import rsc_wp, fraunhofer_wp, fft_convolve
 from ..bin import make_frames, make_whitefield, gaussian_gradient_magnitude
-from multiprocessing import cpu_count
 
 class STSim(DataContainer):
     """One-dimensional Speckle Tracking scan simulation class.
@@ -48,6 +48,10 @@ class STSim(DataContainer):
     ----------
     params : STParams
         Experimental parameters.
+    backend : {'fftw', 'numpy'}, optional
+        Choose the backend library for the FFT implementation.
+    num_threads : int, optional
+        Number of threads used in the calculations.
     **kwargs : dict, optional
         Attributes specified in `init_set`.
 
@@ -63,7 +67,7 @@ class STSim(DataContainer):
     -----
     Necessary attributes:
 
-    * backend : Choose backend library for the FFT implementation.
+    * backend : Choose the backend library for the FFT implementation.
     * num_threads : Number of threads used in the calculations.
     * params : Experimental parameters.
 
@@ -99,13 +103,14 @@ class STSim(DataContainer):
     backends = {'numpy', 'fftw'}
     attr_set = {'backend', 'num_threads', 'params'}
     init_set = {'bars', 'det_wfx', 'det_wfy', 'det_ix', 'det_iy', 'lens_wfx',
-                'lens_wfy','n_x', 'n_y', 'roi', 'smp_pos', 'smp_profile', 'smp_wfx', 'smp_wfy'}
+                'lens_wfy', 'roi', 'smp_pos', 'smp_profile', 'smp_wfx', 'smp_wfy'}
 
     def __init__(self, params, backend='numpy', num_threads=None, **kwargs):
         if num_threads is None:
             num_threads = cpu_count()
         if not backend in self.backends:
-            raise ValueError('backend must be one of the following: {:s}'.format(str(self.backends)))
+            err_msg = f'backend must be one of the following: {str(self.backends):s}'
+            raise ValueError(err_msg)
         super(STSim, self).__init__(backend=backend, num_threads=num_threads,
                                     params=params, **kwargs)
         self._init_dict()
@@ -115,25 +120,19 @@ class STSim(DataContainer):
         if self.bars is None:
             self.bars = self.params.bar_positions(dist=self.params.defocus)
 
-        # Initialize wavefronts' sizes
-        if self.n_x is None:
-            self.n_x = self.params.x_wavefront_size()
-        if self.n_y is None:
-            self.n_y = self.params.y_wavefront_size()
-
         # Initialize wavefronts at the lens plane
         if self.lens_wfx is None or self.lens_wfy is None:
-            self.lens_wfx, self.lens_wfy = self.params.lens_wavefronts(n_x=self.n_x, n_y=self.n_y)
+            self.lens_wfx, self.lens_wfy = self.params.lens_wavefronts()
 
         # Initialize wavefronts at the sample plane
         if self.smp_wfx is None:
-            dx0 = 2 * self.params.ap_x / self.n_x
+            dx0 = 2 * self.params.ap_x / self.x_size
             dx1 = np.abs(dx0 * self.params.defocus / self.params.focus)
             z01 = self.params.focus + self.params.defocus
             self.smp_wfx = rsc_wp(wft=self.lens_wfx, dx0=dx0, dx=dx1, z=z01, wl=self.params.wl,
                                   backend=self.backend, num_threads=self.num_threads)
         if self.smp_wfy is None:
-            dy0 = 2 * self.params.ap_y / self.n_y
+            dy0 = 2 * self.params.ap_y / self.y_size
             z01 = self.params.focus + self.params.defocus
             self.smp_wfy = rsc_wp(wft=self.lens_wfy, dx0=dy0, dx=dy0, z=z01, wl=self.params.wl,
                                   backend=self.backend, num_threads=self.num_threads)
@@ -144,41 +143,45 @@ class STSim(DataContainer):
 
         # Initialize sample's transmission profile
         if self.smp_profile is None:
-            dx1 = np.abs(2 * self.params.ap_x * self.params.defocus / self.params.focus / self.n_x)
-            x1_arr = dx1 * np.arange(-self.n_x // 2, self.n_x // 2) + self.smp_pos[:, None]
+            dx1 = np.abs(2 * self.params.ap_x * self.params.defocus \
+                         / self.params.focus / self.x_size)
+            x1_arr = dx1 * np.arange(-self.x_size // 2, self.x_size // 2) + self.smp_pos[:, None]
             self.smp_profile = self.params.barcode_profile(x_arr=x1_arr, bars=self.bars,
                                                            num_threads=self.num_threads)
 
         # Initialize wavefronts at the detector plane
         if self.det_wfx is None:
-            dx1 = np.abs(2 * self.params.ap_x * self.params.defocus / self.params.focus / self.n_x)
-            dx2 = self.params.fs_size * self.params.pix_size / self.n_x
+            dx1 = np.abs(2 * self.params.ap_x * self.params.defocus \
+                         / self.params.focus / self.x_size)
+            dx2 = self.params.fs_size * self.params.pix_size / self.x_size
             wft = self.smp_wfx * self.smp_profile
             self.det_wfx = fraunhofer_wp(wft=wft, dx0=dx1, dx=dx2, z=self.params.det_dist,
                                          wl=self.params.wl, backend=self.backend,
                                          num_threads=self.num_threads)
-            self.det_wx = np.abs(fraunhofer_wp(wft=self.smp_wfx, dx0=dx1, dx=dx2, z=self.params.det_dist,
-                                               wl=self.params.wl, backend=self.backend, num_threads=1))
+            self.det_wx = np.abs(fraunhofer_wp(wft=self.smp_wfx, dx0=dx1, dx=dx2,
+                                               z=self.params.det_dist, wl=self.params.wl,
+                                               backend=self.backend, num_threads=1))
 
         if self.det_wfy is None:
-            dy1 = 2 * self.params.ap_y / self.n_y
-            dy2 = self.params.ss_size * self.params.pix_size / self.n_y
+            dy1 = 2 * self.params.ap_y / self.y_size
+            dy2 = self.params.ss_size * self.params.pix_size / self.y_size
             self.det_wfy = fraunhofer_wp(wft=self.smp_wfy, dx0=dy1, dx=dy2, z=self.params.det_dist,
                                          wl=self.params.wl, backend=self.backend,
                                          num_threads=1)
-            self.det_wy = np.abs(fraunhofer_wp(wft=self.smp_wfy, dx0=dy1, dx=dy2, z=self.params.det_dist,
-                                               wl=self.params.wl, backend=self.backend, num_threads=1))
+            self.det_wy = np.abs(fraunhofer_wp(wft=self.smp_wfy, dx0=dy1, dx=dy2,
+                                               z=self.params.det_dist, wl=self.params.wl,
+                                               backend=self.backend, num_threads=1))
 
         # Initialize intensity profiles at the detector plane
         if self.det_ix is None:
-            dx = self.params.fs_size * self.params.pix_size / self.n_x
-            sc_x = self.params.source_curve(dist=self.params.defocus + self.params.det_dist, dx=dx)
+            dx = self.params.fs_size * self.params.pix_size / self.x_size
+            sc_x = self.params.source_curve(dist=self.params.defocus + self.params.det_dist, step=dx)
             det_ix = np.sqrt(self.params.p0) / self.params.ap_x * np.abs(self.det_wfx)**2
             self.det_ix = fft_convolve(array=det_ix, kernel=sc_x, backend=self.backend,
                                        num_threads=self.num_threads)
         if self.det_iy is None:
-            dy = self.params.ss_size * self.params.pix_size / self.n_y
-            sc_y = self.params.source_curve(dist=self.params.defocus + self.params.det_dist, dx=dy)
+            dy = self.params.ss_size * self.params.pix_size / self.y_size
+            sc_y = self.params.source_curve(dist=self.params.defocus + self.params.det_dist, step=dy)
             det_iy = np.sqrt(self.params.p0) / self.params.ap_y * np.abs(self.det_wfy)**2
             self.det_iy = fft_convolve(array=det_iy, kernel=sc_y, backend=self.backend,
                                        num_threads=self.num_threads)
@@ -187,19 +190,29 @@ class STSim(DataContainer):
         if self.roi is None:
             x0, x1 = self.params.beam_span(self.params.det_dist)
             if (x1 - x0) < self.params.fs_size * self.params.pix_size:
-                dx = self.params.fs_size * self.params.pix_size / self.n_x
-                cnt_x, cnt_y = self.n_x // 2 + int((x0 + x1) / 2 // dx), self.n_y // 2
-                grad_x = gaussian_gradient_magnitude(self.det_wx, self.n_x // 100, mode='nearest',
+                dx = self.params.fs_size * self.params.pix_size / self.x_size
+                cnt_x, cnt_y = self.x_size // 2 + int((x0 + x1) / 2 // dx), self.y_size // 2
+                grad_x = gaussian_gradient_magnitude(self.det_wx, self.x_size // 100,
+                                                     mode='nearest',
                                                      num_threads=self.num_threads)
-                grad_y = gaussian_gradient_magnitude(self.det_wy, self.n_y // 100, mode='nearest',
+                grad_y = gaussian_gradient_magnitude(self.det_wy, self.y_size // 100,
+                                                     mode='nearest',
                                                      num_threads=self.num_threads)
-                fs0 = (np.argmax(grad_x[:cnt_x]) * self.params.fs_size) // self.n_x
-                fs1 = ((cnt_x + np.argmax(grad_x[cnt_x:])) * self.params.fs_size) // self.n_x
+                fs0 = (np.argmax(grad_x[:cnt_x]) * self.params.fs_size) // self.x_size
+                fs1 = ((cnt_x + np.argmax(grad_x[cnt_x:])) * self.params.fs_size) // self.x_size
             else:
                 fs0, fs1 = 0, self.params.fs_size
-            ss0 = (np.argmax(grad_y[:cnt_y]) * self.params.ss_size) // self.n_y
-            ss1 = ((cnt_y + np.argmax(grad_y[cnt_y:])) * self.params.ss_size) // self.n_y
+            ss0 = (np.argmax(grad_y[:cnt_y]) * self.params.ss_size) // self.y_size
+            ss1 = ((cnt_y + np.argmax(grad_y[cnt_y:])) * self.params.ss_size) // self.y_size
             self.roi = np.array([ss0, ss1, fs0, fs1])
+
+    @property
+    def x_size(self):
+        return self.lens_wfx.size
+
+    @property
+    def y_size(self):
+        return self.lens_wfy.size
 
     @dict_to_object
     def update_bars(self, bars):
@@ -264,8 +277,8 @@ class STSim(DataContainer):
             wfieldy = np.ones(self.params.ss_size)
         else:
             wfieldy /= wfieldy.mean()
-        dx = self.params.fs_size * self.params.pix_size / self.n_x
-        dy = self.params.ss_size * self.params.pix_size / self.n_y
+        dx = self.params.fs_size * self.params.pix_size / self.x_size
+        dy = self.params.ss_size * self.params.pix_size / self.y_size
         seed = self.params.seed if apply_noise else -1
         frames = make_frames(pfx=self.det_ix, pfy=self.det_iy, wfx=wfieldx,
                              wfy=wfieldy, dx=dx, dy=dy, seed=seed,
@@ -449,8 +462,8 @@ class STConverter:
         --------
         STConverter - full list of the attributes stored in `data_dict`.
         """
-        return STData(protocol=self.protocol,
-                      **self.export_dict(data, roi=sim_obj.roi, smp_pos=sim_obj.smp_pos, st_params=sim_obj.params))
+        return STData(protocol=self.protocol, **self.export_dict(data, roi=sim_obj.roi,
+                      smp_pos=sim_obj.smp_pos, st_params=sim_obj.params))
 
     def save_sim(self, data, sim_obj, dir_path):
         """Export simulated data `data` (fetched from :func:`STSim.frames`
@@ -479,7 +492,8 @@ class STConverter:
           Andrew's `speckle_tracking <https://github.com/andyofmelbourne/speckle-tracking>`_
           GUI.
         """
-        self.save(data=data, roi=sim_obj.roi, smp_pos=sim_obj.smp_pos, st_params=sim_obj.params, dir_path=dir_path)
+        self.save(data=data, roi=sim_obj.roi, smp_pos=sim_obj.smp_pos,
+                  st_params=sim_obj.params, dir_path=dir_path)
 
     def save(self, data, roi, smp_pos, st_params, dir_path):
         """Export simulated data `data` (fetched from :func:`STSim.frames`
@@ -514,28 +528,6 @@ class STConverter:
             for attr in data_dict:
                 self.protocol.write_cxi(attr, data_dict[attr], cxi_file)
 
-def converter(coord_ratio=1e-6, float_precision='float64'):
-    """Return the default simulation converter.
-
-    Parameters
-    ----------
-    coord_ratio : float, optional
-        Coordinates ratio between the simulated and saved data.
-    float_precision: {'float32', 'float64'}, optional
-        Floating point precision.
-
-    Returns
-    -------
-    STConverter
-        Default simulation data converter.
-
-    See Also
-    --------
-    STConverter : Full converter class description.
-    """
-    return STConverter(protocol=cxi_protocol(float_precision=float_precision),
-                       coord_ratio=coord_ratio)
-
 def main():
     """Main fuction to run Speckle Tracking simulation and save the results to a CXI file.
     """
@@ -545,9 +537,11 @@ def main():
     parser.add_argument('-f', '--ini_file', type=str,
                         help="Path to an INI file to fetch all of the simulation parameters")
     parser.add_argument('--defocus', type=float, help="Lens defocus distance, [um]")
-    parser.add_argument('--det_dist', type=float, help="Distance between the barcode and the detector [um]")
+    parser.add_argument('--det_dist', type=float,
+                        help="Distance between the barcode and the detector [um]")
     parser.add_argument('--step_size', type=float, help="Scan step size [um]")
-    parser.add_argument('--step_rnd', type=float, help="Random deviation of sample translations [0.0 - 1.0]")
+    parser.add_argument('--step_rnd', type=float,
+                        help="Random deviation of sample translations [0.0 - 1.0]")
     parser.add_argument('--n_frames', type=int, help="Number of frames")
     parser.add_argument('--fs_size', type=int, help="Fast axis frames size in pixels")
     parser.add_argument('--ss_size', type=int, help="Slow axis frames size in pixels")
@@ -558,7 +552,8 @@ def main():
     parser.add_argument('--ap_y', type=float, help="Lens size along the y axis [um]")
     parser.add_argument('--focus', type=float, help="Focal distance [um]")
     parser.add_argument('--alpha', type=float, help="Third order aberrations [rad/mrad^3]")
-    parser.add_argument('--ab_cnt', type=float, help="Lens' aberrations center point [0.0 - 1.0]")
+    parser.add_argument('--ab_cnt', type=float,
+                        help="Lens' aberrations center point [0.0 - 1.0]")
     parser.add_argument('--bar_size', type=float, help="Average bar size [um]")
     parser.add_argument('--bar_sigma', type=float, help="Bar haziness width [um]")
     parser.add_argument('--bar_atn', type=float, help="Bar attenuation")
@@ -567,19 +562,19 @@ def main():
     parser.add_argument('--offset', type=float,
                         help="sample's offset at the beginning and the end of the scan [um]")
     parser.add_argument('-p', '--ptych', action='store_true', help="Generate ptychograph data")
-    parser.set_defaults(**parameters().export_dict())
+    parser.set_defaults(**STParams().export_dict())
 
     args = vars(parser.parse_args())
     if args['ini_file']:
         st_params = STParams.import_ini(args['ini_file'])
     else:
-        st_params = STParams.import_dict(**args)
+        st_params = STParams(**args)
 
-    st_converter = converter()
+    st_converter = STConverter()
     sim_obj = STSim(st_params)
     if args['ptych']:
         data = sim_obj.ptychograph()
     else:
         data = sim_obj.frames()
     st_converter.save_sim(data, sim_obj, args['out_path'])
-    print('The simulation results have been saved to {:s}'.format(os.path.abspath(args['out_path'])))
+    print(f"The simulation results have been saved to {os.path.abspath(args['out_path']):s}")

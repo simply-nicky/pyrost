@@ -1,5 +1,5 @@
 CXILoader
-========
+=========
 
 .. autoclass:: pyrost.CXILoader
     :members:

@@ -11,8 +11,7 @@ Experimental parameters
 ^^^^^^^^^^^^^^^^^^^^^^^
 
 Before performing the simulation, you need to choose experimental
-parameters. You can do it with :class:`pyrost.simulation.STParams` or
-:func:`pyrost.simulation.parameters`.
+parameters. You can do it with :class:`pyrost.simulation.STParams`.
 
 .. note:: Full list of experimental parameters is written in
     :doc:`../reference/st_params_ref`. All the spatial parameters are
@@ -21,10 +20,10 @@ parameters. You can do it with :class:`pyrost.simulation.STParams` or
 .. doctest::
 
     >>> import pyrost.simulation as st_sim
-    >>> params = st_sim.parameters(bar_size=0.7, bar_sigma=0.12, bar_atn=0.18,
-    >>>                            bulk_atn=0.2, p0 = 5e4, th_s=8e-5, n_frames=100,
-    >>>                            offset=2.0, step_size=0.1, defocus=150, alpha=0.05,
-    >>>                            ab_cnt=0.7, bar_rnd=0.8)
+    >>> params = st_sim.STParams.import_default(bar_size=0.7, bar_sigma=0.12, bar_atn=0.18,
+    >>>                                         bulk_atn=0.2, p0 = 5e4, th_s=8e-5, n_frames=100,
+    >>>                                         offset=2.0, step_size=0.1, defocus=150, alpha=0.05,
+    >>>                                         ab_cnt=0.7, bar_rnd=0.8)
 
 Performing the simulation
 ^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -55,7 +54,7 @@ Or you can directly generate an :class:`pyrost.STData` data container to perform
 
 .. doctest::
 
-    >>> sim_obj = st_sim.STSim(params)=
+    >>> sim_obj = st_sim.STSim(params)
     >>> ptych = sim_obj.ptychograph()
     >>> st_conv = st_sim.STConverter()
     >>> st_data = st_conv.export_data(ptych, sim_obj)

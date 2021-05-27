@@ -31,7 +31,7 @@ List of experimental parameters:
 * **Source parameters**:
 
     * `p0` : Source beam flux [cnt / s].
-    * `wl` : Incoming beam's wavelength [um].
+    * `wl` : Source beam's wavelength [um].
     * `th_s` : Source rocking curve width [rad].
 
 * **Lens parameters**:
@@ -39,7 +39,7 @@ List of experimental parameters:
     * `ap_x` : Lens' aperture size along the x axis [um].
     * `ap_y` : Lens' aperture size along the y axis [um].
     * `focus` : Focal distance [um].
-    * `alpha` : Third order aberrations ceofficient [rad/mrad^3].
+    * `alpha` : Third order aberrations coefficient [rad / mrad^3].
     * `ab_cnt` : Lens' aberrations center point [0.0 - 1.0].
 
 * **Barcode sample parameters**:
@@ -58,10 +58,10 @@ List of experimental parameters:
 
 .. note::
 
-    You can save protocol to an INI file with :func:`pyrost.CXIProtocol.export_ini`
-    and import protocol from INI file with :func:`pyrost.CXIProtocol.import_ini`.
+    You can save parameters to an INI file with :func:`pyrost.simulation.STParams.export_ini`
+    and import parameters from an INI file with :func:`pyrost.simulation.STParams.import_ini`.
 
-The default parameters are accessed width :func:`pyrost.simulation.parameters`.
+The default parameters are accessed with :func:`pyrost.simulation.STParams.import_default`.
 The parameters are given by:
 
 .. code-block:: ini
@@ -101,11 +101,10 @@ The parameters are given by:
     [system]
     seed = 0
 
-.. automodule:: pyrost.simulation.parameters
+.. automodule:: pyrost.simulation.st_parameters
 
 .. toctree::
     :maxdepth: 1
     :caption: Contents
 
     classes/st_params
-    classes/parameters

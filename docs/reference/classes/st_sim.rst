@@ -3,6 +3,7 @@ STSim
 
 .. autoclass:: pyrost.simulation.STSim
     :members:
-    :exclude-members: update_bar_positions
+    :exclude-members: update_bars, update_roi
 
-    .. automethod:: update_bar_positions
+    .. automethod:: update_bars
+    .. automethod:: update_roi

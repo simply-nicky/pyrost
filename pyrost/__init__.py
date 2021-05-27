@@ -12,5 +12,11 @@ from __future__ import absolute_import
 
 from .data_processing import SpeckleTracking, STData
 from .aberrations_fit import AberrationsFit
-from .protocol import INIParser, LogProtocol, CXIProtocol, CXILoader, cxi_loader, cxi_protocol, log_protocol
-from .bin import *
+from .cxi_protocol import CXIProtocol, CXILoader
+from .log_protocol import LogProtocol
+from . import bin
+
+del locals()['cxi_protocol']
+del locals()['log_protocol']
+del locals()['data_processing']
+del locals()['aberrations_fit']

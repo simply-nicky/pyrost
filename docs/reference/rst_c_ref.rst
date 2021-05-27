@@ -2,13 +2,15 @@ pyrost Core Functions
 =====================
 
 Core functions of the rst data processing 
-pipeline. All the functions are written in `Cython`_.
+pipeline. All the functions are written in `Cython`_ or C.
 
 .. _Cython: https://cython.org
 
 .. toctree::
     :maxdepth: 1
 
+    c_funcs/gaussian_filter
+    c_funcs/gaussian_gradient_magnitude
     c_funcs/make_reference
     c_funcs/update_pixel_map_gs
     c_funcs/update_pixel_map_nm

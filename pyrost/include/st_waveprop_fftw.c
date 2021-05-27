@@ -359,11 +359,11 @@ void fft_convolve_fftw(double *out, const double *inp, const double *krn, size_t
             {fftw_execute(rfftp);}
             #pragma omp barrier
             #pragma omp for
-            for (int i = 0; i < (flen / 2 + 1); i++)
+            for (int j = 0; j < (flen / 2 + 1); j++)
             {
-                double re = (inpft[2 * i] * krnft[2 * i] - inpft[2 * i + 1] * krnft[2 * i + 1]);
-                double im = (inpft[2 * i] * krnft[2 * i + 1] + inpft[2 * i + 1] * krnft[2 * i]);
-                inpft[2 * i] = re; inpft[2 * i + 1] = im;
+                double re = (inpft[2 * j] * krnft[2 * j] - inpft[2 * j + 1] * krnft[2 * j + 1]);
+                double im = (inpft[2 * j] * krnft[2 * j + 1] + inpft[2 * j + 1] * krnft[2 * j]);
+                inpft[2 * j] = re; inpft[2 * j + 1] = im;
             }
             #pragma omp master
             {fftw_execute(irfftp);}

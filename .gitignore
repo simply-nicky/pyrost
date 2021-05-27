@@ -15,9 +15,8 @@ __pycache__/
 # Libraries and Cython generated C extensions
 *.so
 *.html
-pyrost/bin/beam_calc.c
-pyrost/bin/st_utils.c
-dev.c
+pyrost/bin/*.c
+/*.c
 .pyxbld/
 
 # Distribution / packaging
