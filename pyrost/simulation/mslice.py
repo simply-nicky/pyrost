@@ -362,13 +362,13 @@ class MLL(DataContainer):
         ----------
         """
         n_arr = np.arange(params.n_min, params.n_max)
-        z_coords = params.z_step * np.arange(params.thickness // params.z_step)
-        layers = np.sqrt(n_arr * params.focus * params.wavelength + \
-                              n_arr**2 * params.wavelength**2 / 4)
+        z_coords = params.z_step * np.arange(params.mll_depth // params.z_step)
+        layers = np.sqrt(n_arr * params.focus * params.mll_wl + \
+                              n_arr**2 * params.mll_wl**2 / 4)
         layers = layers * (1 - z_coords[:, None] / (2 * params.focus))
-        mat1_r = params.get_mat1_r(cls.en_to_wl / params.wavelength)
-        mat2_r = params.get_mat2_r(cls.en_to_wl / params.wavelength)
-        sigma = params.sigma
+        mat1_r = params.get_mat1_r(cls.en_to_wl / params.wl)
+        mat2_r = params.get_mat2_r(cls.en_to_wl / params.wl)
+        sigma = params.mll_sigma
         return cls(mat1_r=mat1_r, mat2_r=mat2_r, sigma=sigma,
                    layers=layers, z_coords=z_coords)
 
@@ -395,10 +395,11 @@ class MLL(DataContainer):
         slices : iterable
             The generator, which yields lens' transmission profiles.
         """
-        for layer, smp_slice in zip(self.layers, profile):
-            smp_slice = mll_profile(x_arr=x_arr, layers=layer, mt0=self.mat1_r, mt1=self.mat2_r,
-                                    sigma=self.sigma, num_threads=num_threads)
-            yield smp_slice
+        for idx, layer in enumerate(self.layers):
+            profile[idx, :] = mll_profile(x_arr=x_arr, layers=layer, mt0=self.mat1_r,
+                                          mt1=self.mat2_r, sigma=self.sigma,
+                                          num_threads=num_threads)
+            yield profile[idx]
 
     @dict_to_object
     def update_interdiffusion(self, sigma):
@@ -476,10 +477,10 @@ class MSPropagator(DataContainer):
     * kernel : Diffraction kernel.
     * smp_profile : Sample's transmission profile at each slice.
     * x_arr : Coordinates array [um].
-    * wfx_inc : Wavefront at the entry surface.
+    * wf_inc : Wavefront at the entry surface.
     """
-    attr_dict = {'num_threads', 'params', 'sample'}
-    init_dict = {'beam_profile', 'fx_arr', 'kernel', 'smp_profile', 'x_arr', 'wfx_inc'}
+    attr_set = {'num_threads', 'params', 'sample'}
+    init_set = {'beam_profile', 'fx_arr', 'kernel', 'smp_profile', 'x_arr', 'wf_inc'}
 
     def __init__(self, params, sample, num_threads=None, **kwargs):
         if num_threads is None:

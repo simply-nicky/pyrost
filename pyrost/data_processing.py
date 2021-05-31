@@ -395,9 +395,20 @@ class STData(DataContainer):
         dev_fs -= dev_fs.mean()
         self.pixel_aberrations = np.zeros(self.pixel_map.shape)
         self.pixel_aberrations[:, self.roi[0]:self.roi[1], self.roi[2]:self.roi[3]] = np.stack((dev_ss, dev_fs))
-        phase = ct_integrate(self.y_pixel_size**2 * dev_ss * np.abs(self.defocus_ss / self.wavelength),
-                                self.x_pixel_size**2 * dev_fs * np.abs(self.defocus_fs / self.wavelength)) \
-                * 2 * np.pi / self.distance**2
+
+        # Calculate magnification for fast and slow axes
+        mag_ss = np.abs((self.distance + self.defocus_ss) / self.defocus_ss)
+        mag_fs = np.abs((self.distance + self.defocus_fs) / self.defocus_fs)
+
+        # Calculate the distance between the reference and the detector plane
+        dist_ss = self.distance * (1 - mag_ss**-1)
+        dist_fs = self.distance * (1 - mag_fs**-1)
+
+        # dTheta = delta_pix / distance / magnification * du
+        # Phase = 2 * pi / wavelength * Integrate[dTheta, delta_pix]
+        phase = ct_integrate(self.y_pixel_size**2 / dist_ss / mag_ss * dev_ss,
+                             self.x_pixel_size**2 / dist_fs / mag_fs * dev_fs)
+        phase *= 2 * np.pi / self.wavelength
         self.phase = np.zeros(self.whitefield.shape)
         self.phase[self.roi[0]:self.roi[1], self.roi[2]:self.roi[3]] = phase
         self.error_frame = np.zeros(self.whitefield.shape)

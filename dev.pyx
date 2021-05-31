@@ -9,6 +9,7 @@ from cython.parallel import prange, parallel
 from libc.stdlib cimport abort, malloc, free
 cimport openmp
 from scipy.ndimage import gaussian_gradient_magnitude as ggm, gaussian_filter as gf
+from libc.math cimport sqrt, erf, sin, cos, exp, fabs
 # import speckle_tracking as st
 
 ctypedef fused float_t:
@@ -17,6 +18,7 @@ ctypedef fused float_t:
 
 ctypedef np.uint64_t uint_t
 ctypedef np.complex128_t complex_t
+ctypedef np.float64_t double_t
 
 DEF FLOAT_MAX = 1.7976931348623157e+308
 DEF NO_VAR = -1.0
@@ -24,6 +26,54 @@ DEF NO_VAR = -1.0
 # Numpy must be initialized. When using numpy from C or Cython you must
 # *ALWAYS* do that, or you will have segfaults
 np.import_array()
+
+cdef int binary_search_float(double *values, int l, int r, double x) nogil:
+    cdef int m = l + (r - l) // 2
+    if l <= r:
+        if x == values[m]:
+            return m
+        elif x > values[m] and x <= values[m + 1]:
+            return m + 1
+        elif x < values[m]:
+            return binary_search_float(values, l, m, x)
+        else:
+            return binary_search_float(values, m + 1, r, x)
+
+cdef int searchsorted(double *values, double x, int r) nogil:
+    if x < values[0]:
+        return 0
+    elif x > values[r - 1]:
+        return r
+    else:
+        return binary_search_float(values, 0, r, x)
+
+cdef complex mll_c(double *layers, int a, complex mt1, complex mt2, double x, double sgm) nogil:
+    cdef:
+        int b = 2 * (a // 2), j0
+        double x0, x1
+        complex tr
+    j0 = searchsorted(layers, x, a) # even '-', odd '+'
+    tr = 0
+    if j0 > 0 and j0 < b:
+        x0 = (x - layers[j0 - 1]) / sqrt(2) / sgm
+        x1 = (x - layers[j0]) / sqrt(2) / sgm
+        tr += (mt1 - mt2) / 2 * (j0 % 2 - 0.5) * (erf(x0) - erf(x1))
+        tr -= (mt1 - mt2) / 4 * erf((x - layers[0]) / sqrt(2) / sgm)
+        tr += (mt1 - mt2) / 4 * erf((x - layers[b - 1]) / sqrt(2) / sgm)
+    tr += mt1 / 2 * erf((x - layers[0]) / sqrt(2) / sgm)
+    tr -= mt1 / 2 * erf((x - layers[b - 1]) / sqrt(2) / sgm)
+    return tr
+
+def make_mll_slice(np.ndarray[double_t, ndim=1] x_arr, np.ndarray[double_t, ndim=1] layers, complex_t mt1, complex_t mt2, double sgm, double kdz):
+    cdef:
+        np.npy_intp a = np.PyArray_DIM(x_arr, 0), b = np.PyArray_DIM(layers, 0), i
+        complex_t rf
+        np.ndarray[complex_t, ndim=1] slc = np.empty(a, dtype=np.complex128)
+        double_t *_layers = <double_t *>np.PyArray_DATA(layers)
+    for i in prange(a, schedule='guided', nogil=True):
+        rf = mll_c(_layers, b, mt1, mt2, x_arr[i], sgm)
+        slc[i] = (cos(kdz * rf.real) + 1j * sin(kdz * rf.real)) * exp(-kdz * rf.imag)
+    return slc
 
 # def st_update(I_n, dij, basis, x_ps, y_ps, z, df, search_window, n_iter=5,
 #               filter=None, update_translations=False, verbose=False):

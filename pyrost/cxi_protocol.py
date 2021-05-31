@@ -4,7 +4,7 @@ Examples
 Generate the default CXI protocol.
 
 >>> import pyrost as rst
->>> rst.CXIProtocol.import_ini()
+>>> rst.CXIProtocol()
 {'config': {'float_precision': 'float64'}, 'datatypes': {'basis_vectors':
 'float', 'data': 'float', 'defocus': 'float', '...': '...'}, 'default_paths':
 {'basis_vectors': '/entry_1/instrument_1/detector_1/basis_vectors',
@@ -12,7 +12,7 @@ Generate the default CXI protocol.
 
 Or generate the default CXI loader.
 
->>> rst.CXILoader.import_ini()
+>>> rst.CXILoader()
 {'config': {'float_precision': 'float64'}, 'datatypes': {'basis_vectors':
 'float', 'data': 'float', 'defocus': 'float', '...': '...'}, 'default_paths':
 {'basis_vectors': '/entry_1/instrument_1/detector_1/basis_vectors', 'data':
@@ -95,7 +95,7 @@ class CXIProtocol(INIParser):
         ----------
         datatypes : dict, optional
             Dictionary with attributes' datatypes. 'float', 'int', or 'bool'
-            are allowed. 
+            are allowed.
         default_paths : dict, optional
             Dictionary with attributes path in the CXI file.
         float_precision : {'float32', 'float64'}, optional
@@ -136,7 +136,7 @@ class CXIProtocol(INIParser):
         CXIProtocol
             A :class:`CXIProtocol` object with all the attributes imported
             from the ini file.
-        
+
         See Also
         --------
         cxi_protocol : more details about the default CXI protocol.

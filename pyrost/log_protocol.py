@@ -35,21 +35,46 @@ class LogProtocol(INIParser):
 
     def __init__(self, log_keys=None, datatypes=None):
         if log_keys is None:
-            log_keys = {}
+            log_keys = self._import_ini(LOG_PROTOCOL)['log_keys']
         if datatypes is None:
-            datatypes = {}
+            datatypes = self._import_ini(LOG_PROTOCOL)['datatypes']
         log_keys = {attr: val for attr, val in log_keys.items() if attr in datatypes}
         datatypes = {attr: val for attr, val in datatypes.items() if attr in log_keys}
         super(LogProtocol, self).__init__(log_keys=log_keys, datatypes=datatypes)
 
     @classmethod
-    def import_ini(cls, ini_file=None, datatypes=None, log_keys=None):
+    def import_default(cls, datatypes=None, log_keys=None):
+        """Return the default :class:`LogProtocol` object. Extra arguments
+        override the default values if provided.
+
+        Parameters
+        ----------
+        datatypes : dict, optional
+            Dictionary with attributes' datatypes. 'float', 'int', or 'bool'
+            are allowed. Initialized with `ini_file` if None.
+        log_keys : dict, optional
+            Dictionary with attributes' log file keys. Initialized with
+            `ini_file` if None.
+
+        Returns
+        -------
+        LogProtocol
+            A :class:`LogProtocol` object with the default parameters.
+
+        See Also
+        --------
+        log_protocol : more details about the default CXI protocol.
+        """
+        return cls.import_ini(LOG_PROTOCOL, datatypes, log_keys)
+
+    @classmethod
+    def import_ini(cls, ini_file, datatypes=None, log_keys=None):
         """Initialize a :class:`LogProtocol` object class with an
         ini file.
 
         Parameters
         ----------
-        ini_file : str, optional
+        ini_file : str
             Path to the ini file. Load the default log protocol if None.
         datatypes : dict, optional
             Dictionary with attributes' datatypes. 'float', 'int', or 'bool'
@@ -64,8 +89,6 @@ class LogProtocol(INIParser):
             A :class:`LogProtocol` object with all the attributes imported
             from the ini file.
         """
-        if ini_file is None:
-            ini_file = LOG_PROTOCOL
         kwargs = cls._import_ini(ini_file)
         if not datatypes is None:
             kwargs['datatypes'].update(**datatypes)
@@ -127,7 +150,36 @@ class LogProtocol(INIParser):
 
         Returns
         -------
-        data : np.ndarray
-            Data array retrieved from the log file.
+        data : dict
+            Dictionary with data fields and their names retrieved
+            from the log file.
         """
-        return np.loadtxt(path, usecols=2, delimiter=';')
+        with open(path, 'r') as log_file:
+            for line in log_file:
+                if line.startswith('# '):
+                    keys_line = line.strip('# ')
+                else:
+                    data_line = line
+                    break
+
+        keys = keys_line.strip('\n').split(';')
+        data_strings = data_line.strip('\n').split(';')
+
+        dtypes = {'names': [], 'formats': []}
+        converters = {}
+        for idx, (key, part) in enumerate(zip(keys, data_strings)):
+            dtypes['names'].append(key)
+            if 'str' in key:
+                dtypes['formats'].append('<S' + str(len(part)))
+            elif 'int' in key:
+                dtypes['formats'].append(np.int)
+            elif 'Array' in key:
+                dtypes['formats'].append(np.ndarray)
+                converters[idx] = lambda item: np.array([float(part)
+                    for part in item.strip(b'[]').split(b',')])
+            else:
+                dtypes['formats'].append(np.float)
+
+        return dict(zip(keys, np.loadtxt(path, delimiter=';',
+                                         converters=converters,
+                                         dtype=dtypes, unpack=True)))

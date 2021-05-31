@@ -45,9 +45,8 @@ cdef extern from "st_utils.h":
     void ml_profile(complex *out, double *inp, double *layers, unsigned long isize, unsigned long lsize,
                     unsigned long nlyr, complex mt0, complex mt1, complex mt2, double sgm, unsigned threads) nogil
 
-    void frames(double *out, double *pfx, double *pfy, double *wfx, double *wfy, double dx,
-                double dy, unsigned long xpts, unsigned long ypts, unsigned long nframes,
-                unsigned long ss_size, unsigned long fs_size, long seed, unsigned threads) nogil
+    void frames(double *out, double *pfx, double *pfy, double dx, double dy, unsigned long *ishape,
+                unsigned long *oshape, long seed, unsigned threads) nogil
 
     void whitefield(void *out, void *data, unsigned char *mask, unsigned long isize, unsigned long npts,
                     unsigned long istride, unsigned long size, int (*compar)(const void*, const void*),

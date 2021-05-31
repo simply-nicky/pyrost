@@ -686,9 +686,8 @@ def fft_convolve(array: np.ndarray, kernel: np.ndarray, axis: cython.int=-1,
             raise ValueError('{:s} is invalid backend'.format(backend))
     return out
 
-def make_frames(pfx: np.ndarray, pfy: np.ndarray, wfx: np.ndarray, wfy: np.ndarray,
-                dx: cython.double, dy: cython.double, seed: cython.long,
-                num_threads: cython.uint) -> np.ndarray:
+def make_frames(pfx: np.ndarray, pfy: np.ndarray, dx: cython.double, dy: cython.double,
+                shape: tuple, seed: cython.long, num_threads: cython.uint) -> np.ndarray:
     """Generate intensity frames from one-dimensional intensity profiles (`pfx`,
     `pfy`) and whitefield profiles (`wfx`, `wfy`). Intensity profiles resized into
     the shape of a frame. Poisson noise is applied if `seed` is non-negative.
@@ -699,14 +698,12 @@ def make_frames(pfx: np.ndarray, pfy: np.ndarray, wfx: np.ndarray, wfy: np.ndarr
         Intensity profile along the x axis.
     pfy : numpy.ndarray
         Intensity profile along the y axis.
-    wfx : numpy.ndarray
-        Whitefield profile along the x axis.
-    wfy : numpy.ndarray
-        Whitefield profile along the y axis.
     dx : float
         Sampling interval along the x axis [um].
     dy : float
         Sampling interval along the y axis [um].
+    shape : tuple
+        Shape of the detector array.
     seed : int, optional
         Seed for pseudo-random number generation.
     num_threads : int, optional
@@ -721,24 +718,17 @@ def make_frames(pfx: np.ndarray, pfy: np.ndarray, wfx: np.ndarray, wfy: np.ndarr
     pfx = np.PyArray_Cast(pfx, np.NPY_FLOAT64)
     pfy = np.PyArray_GETCONTIGUOUS(pfy)
     pfy = np.PyArray_Cast(pfy, np.NPY_FLOAT64)
-    wfx = np.PyArray_GETCONTIGUOUS(wfx)
-    wfx = np.PyArray_Cast(wfx, np.NPY_FLOAT64)
-    wfy = np.PyArray_GETCONTIGUOUS(wfy)
-    wfy = np.PyArray_Cast(wfy, np.NPY_FLOAT64)
 
-    cdef np.npy_intp *xdim = pfx.shape
-    cdef np.npy_intp ypts = np.PyArray_SIZE(pfy)
-    cdef np.npy_intp fs_size = np.PyArray_SIZE(wfx)
-    cdef np.npy_intp ss_size = np.PyArray_SIZE(wfy)
-    cdef np.npy_intp *dim = [xdim[0], ss_size, fs_size]
-    cdef np.ndarray out = <np.ndarray>np.PyArray_SimpleNew(3, dim, np.NPY_FLOAT64)
+    cdef np.npy_intp *oshape = [pfx.shape[0], <np.npy_intp>(shape[0]), <np.npy_intp>(shape[1])]
+    cdef np.ndarray out = <np.ndarray>np.PyArray_SimpleNew(3, oshape, np.NPY_FLOAT64)
+    cdef unsigned long *_ishape = [<unsigned long>(pfx.shape[0]), <unsigned long>(pfy.shape[0]),
+                                   <unsigned long>(pfx.shape[1])]
+    cdef unsigned long *_oshape = [<unsigned long>(oshape[0]), <unsigned long>(oshape[1]), <unsigned long>(oshape[2])]
     cdef double *_out = <double *>np.PyArray_DATA(out)
     cdef double *_pfx = <double *>np.PyArray_DATA(pfx)
     cdef double *_pfy = <double *>np.PyArray_DATA(pfy)
-    cdef double *_wfx = <double *>np.PyArray_DATA(wfx)
-    cdef double *_wfy = <double *>np.PyArray_DATA(wfy)
     with nogil:
-        frames(_out, _pfx, _pfy, _wfx, _wfy, dx, dy, xdim[1], ypts, dim[0], dim[1], dim[2], seed, num_threads)
+        frames(_out, _pfx, _pfy, dx, dy, _ishape, _oshape, seed, num_threads)
     return out
 
 def make_whitefield(data: np.ndarray, mask: np.ndarray, axis: cython.int=0,

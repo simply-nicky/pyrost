@@ -135,20 +135,21 @@ class AberrationsFit(DataContainer):
         The Speckle tracking data container, from which the object
         is derived.
     **kwargs : dict
-        Dictionary of the attributes' data specified in `attr_set`
-        and `init_set`.
+        Necessary and optional attributes specified in :ref:`_notes`.
 
     Attributes
     ----------
-    attr_set : set
-        Set of attributes in the container which are necessary
-        to initialize in the constructor.
+    **kwargs : dict
+        Necessary and optional attributes specified in :ref:`_notes`.
+    pix_ap : float
+        Aperture angle of a single pixel.
 
     Raises
     ------
     ValueError
-        If an attribute specified in `attr_set` has not been
-        provided.
+        If any of the necessary attributes has not been provided.
+
+    .. _notes:
 
     Notes
     -----
@@ -178,19 +179,20 @@ class AberrationsFit(DataContainer):
     fs_lookup = {'defocus': 'defocus_fs', 'pixel_size': 'x_pixel_size'}
     ss_lookup = {'defocus': 'defocus_ss', 'pixel_size': 'y_pixel_size'}
 
-    def __init__(self, st_data, **kwargs):
+    def __init__(self, st_data=None, **kwargs):
         self.__dict__['_reference'] = st_data
         super(AberrationsFit, self).__init__(**kwargs)
-        self.pix_ap = self.pixel_size / self.distance
+        self.pix_ap = np.abs(self.pixel_size * self.defocus / self.distance**2)
         if self.roi is None:
             self.roi = np.array([0, self.pixels.size])
         if self.theta_aberrations is None:
             self.theta_aberrations = self.pixel_aberrations * self.pix_ap
         if self.phase is None:
-            self.phase = np.cumsum(self.pixel_aberrations)
-            self.phase *= 2 * np.pi * np.abs(self.defocus / self.wavelength) * self.pix_ap**2
+            self.phase = np.cumsum(self.theta_aberrations * self.pixel_size)
+            self.phase *= 2 * np.pi / self.wavelength
             self.phase -= self.phase.mean()
-        self._reference._ab_fits.append(self)
+        if not self._reference is None:
+            self._reference._ab_fits.append(self)
 
     @classmethod
     def import_data(cls, st_data, center=0, axis=1):
@@ -215,17 +217,21 @@ class AberrationsFit(DataContainer):
         """
         data_dict = {attr: st_data.get(attr) for attr in cls.attr_set}
         if axis == 0:
-            data_dict.update({attr: st_data.get(data_attr) for attr, data_attr in cls.ss_lookup.items()})
+            data_dict.update({attr: st_data.get(data_attr)
+                              for attr, data_attr in cls.ss_lookup.items()})
         elif axis == 1:
-            data_dict.update({attr: st_data.get(data_attr) for attr, data_attr in cls.fs_lookup.items()})
+            data_dict.update({attr: st_data.get(data_attr)
+                              for attr, data_attr in cls.fs_lookup.items()})
         else:
             raise ValueError('invalid axis value: {:d}'.format(axis))
         data_dict['defocus'] = np.abs(data_dict['defocus'])
         if center <= st_data.roi[2 * axis]:
-            data_dict['pixels'] = np.arange(st_data.roi[2 * axis], st_data.roi[2 * axis + 1]) - center
+            data_dict['pixels'] = np.arange(st_data.roi[2 * axis],
+                                            st_data.roi[2 * axis + 1]) - center
             data_dict['pixel_aberrations'] = data_dict['pixel_aberrations'][axis].mean(axis=1 - axis)
         elif center >= st_data.roi[2 * axis - 1] - 1:
-            data_dict['pixels'] = center - np.arange(st_data.roi[2 * axis], st_data.roi[2 * axis + 1])
+            data_dict['pixels'] = center - np.arange(st_data.roi[2 * axis],
+                                                     st_data.roi[2 * axis + 1])
             idxs = np.argsort(data_dict['pixels'])
             data_dict['pixel_aberrations'] = -data_dict['pixel_aberrations'][axis].mean(axis=1 - axis)[idxs]
             data_dict['pixels'] = data_dict['pixels'][idxs]
@@ -264,7 +270,7 @@ class AberrationsFit(DataContainer):
         pixel_aberrations -= np.gradient(pixel_aberrations).mean() * np.arange(self.pixels.size)
         pixel_aberrations -= pixel_aberrations.mean()
         return {'st_data': self._reference, 'pixel_aberrations': pixel_aberrations,
-                'phase': None}
+                'theta_aberrations': None, 'phase': None}
 
     @dict_to_object
     def update_center(self, center):
@@ -363,7 +369,7 @@ class AberrationsFit(DataContainer):
             Lens` phase aberrations fit coefficients.
         """
         nfit = np.zeros(fit.size + 1)
-        nfit[:-1] = 2 * np.pi * fit * self.pix_ap**2 * self.defocus / self.wavelength
+        nfit[:-1] = 2 * np.pi / self.wavelength * fit * self.pix_ap * self.pixel_size
         nfit[:-1] /= np.arange(1, fit.size + 1)[::-1]
         nfit[-1] = -self.model(nfit).mean()
         return nfit
@@ -382,7 +388,7 @@ class AberrationsFit(DataContainer):
         numpy.ndarray
             Lens' pixel aberrations fit coefficients.
         """
-        fit = self.wavelength * ph_fit[:-1] / (2 * np.pi * self.pix_ap**2 * self.defocus)
+        fit = ph_fit[:-1] * self.wavelength / (2 * np.pi * self.pix_ap * self.pixel_size)
         fit *= np.arange(1, ph_fit.size)[::-1]
         return fit
 
@@ -439,8 +445,11 @@ class AberrationsFit(DataContainer):
                                           roi=self.roi, max_order=max_order,
                                           xtol=xtol, ftol=ftol, loss=loss)
         ph_fit = self.pix_to_phase(fit)
-        c_3 = ph_fit[-4] / self.pix_ap**3 * 1e-9 if ph_fit.size >= 4 else 0.
-        c_4 = ph_fit[-5] / self.pix_ap**4 * 1e-12 if ph_fit.size >= 5 else 0.
+        c_3, c_4 = 0., 0.
+        if ph_fit.size >= 4:
+            c_3 = ph_fit[-4] * (self.distance / self.pixel_size)**3 * 1e-9
+        if ph_fit.size >= 5:
+            c_4 = ph_fit[-5] * (self.distance / self.pixel_size)**4 * 1e-12
         return {'c_3': c_3, 'c_4': c_4, 'fit': fit, 'ph_fit': ph_fit,
                 'rel_err': np.abs(err / fit), 'r_sq': r_sq}
 
@@ -494,9 +503,13 @@ class AberrationsFit(DataContainer):
             algorithm description.
         """
         ph_fit, err, r_sq = LeastSquares.fit(x=self.pixels, y=self.phase, roi=self.roi,
-                                             max_order=max_order, xtol=xtol, ftol=ftol, loss=loss)
+                                             max_order=max_order, xtol=xtol, ftol=ftol,
+                                             loss=loss)
         fit = self.phase_to_pix(ph_fit)
-        c_3 = ph_fit[-4] / self.pix_ap**3 * 1e-9 if ph_fit.size >= 4 else 0.
-        c_4 = ph_fit[-5] / self.pix_ap**4 * 1e-12 if ph_fit.size >= 5 else 0.
+        c_3, c_4 = 0., 0.
+        if ph_fit.size >= 4:
+            c_3 = ph_fit[-4] * (self.distance / self.pixel_size)**3 * 1e-9
+        if ph_fit.size >= 5:
+            c_4 = ph_fit[-5] * (self.distance / self.pixel_size)**4 * 1e-12
         return {'c_3': c_3, 'c_4': c_4, 'fit': fit, 'ph_fit': ph_fit,
                 'rel_err': np.abs(err / ph_fit)[:-1], 'r_sq': r_sq}

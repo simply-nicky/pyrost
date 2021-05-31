@@ -33,8 +33,8 @@ void barcode_bars(double *bars, size_t size, double x0, double b_dx, double rd, 
 void ml_profile(double complex *out, const double *inp, const double *layers, size_t isize, size_t lsize, 
     size_t nlyr, double complex mt0, double complex mt1, double complex mt2, double sgm, unsigned threads);
 
-void frames(double *out, const double *pfx, const double *pfy, const double *wfx, const double *wfy,
-    double dx, double dy, size_t xpts, size_t ypts, size_t nframes, size_t ss_size, size_t fs_size, long seed, unsigned threads);
+void frames(double *out, const double *pfx, const double *pfy, double dx, double dy, size_t *ishape, size_t *oshape,
+    long seed, unsigned threads);
 
 void whitefield(void *out, const void *data, const unsigned char *mask, size_t isize,
     size_t npts, size_t istride, size_t size, int (*compar)(const void*, const void*), unsigned threads);

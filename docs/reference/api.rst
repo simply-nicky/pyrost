@@ -2,9 +2,10 @@ API Reference
 =============
 
 .. toctree::
-    :maxdepth: 2
+    :maxdepth: 3
     :caption: Core classes and functions
 
+    log_ref
     cxi_ref
     rst_ref
     ab_fit_ref

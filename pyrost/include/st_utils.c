@@ -199,17 +199,18 @@ void ml_profile(double complex *out, const double *inp, const double *layers, si
     }
 }
 
-static void resize_array(double *out, const double *inp, int osize, int isize, unsigned threads)
+static void rebin_line_double(double *out, const double *inp, size_t osize, size_t isize, unsigned threads)
 {
     double ratio = (double) isize / osize;
+    threads = (threads > (unsigned) osize) ? (unsigned) osize : threads;
     #pragma omp parallel for num_threads(threads)
-    for (int i = 0; i < osize; i++)
+    for (int i = 0; i < (int) osize; i++)
     {
         double lb, ub;
         out[i] = 0;
-        int j0 = (i * isize) / osize;
-        int j1 = ((i + 1) * isize) / osize;
-        for (int j = j0; (j <= j1) && (j < isize); j++)
+        int j0 = (int)(i * ratio);
+        int j1 = (int)((i + 1) * ratio);
+        for (int j = j0; (j <= j1) && (j < (int) isize); j++)
         {
             lb = ((double) j) > (i * ratio) ? j : i * ratio;
             ub = ((double) j + 1) < ((i + 1) * ratio) ? j + 1 : (i + 1) * ratio;
@@ -218,15 +219,17 @@ static void resize_array(double *out, const double *inp, int osize, int isize, u
     }
 }
 
-void frames(double *out, const double *pfx, const double *pfy, const double *wfx, const double *wfy,
-    double dx, double dy, size_t xpts, size_t ypts, size_t nframes, size_t ss_size, size_t fs_size, long seed, unsigned threads)
+void frames(double *out, const double *pfx, const double *pfy, double dx, double dy, size_t *ishape, size_t *oshape,
+    long seed, unsigned threads)
 {
+    size_t nframes = ishape[0], ypts = ishape[1], xpts = ishape[2];
+    size_t ss_size = oshape[1], fs_size = oshape[2];
     double *pfyss = (double *)malloc(ss_size * sizeof(double));
     double *pfxss = (double *)malloc(fs_size * sizeof(double));
-    resize_array(pfyss, pfy, ss_size, ypts, threads);
+    rebin_line_double(pfyss, pfy, ss_size, ypts, threads);
     for (int n = 0; n < (int) nframes; n++)
     {
-        resize_array(pfxss, pfx, fs_size, xpts, threads);
+        rebin_line_double(pfxss, pfx, fs_size, xpts, threads);
         if (seed >= 0)
         {
             #pragma omp parallel num_threads(threads)
@@ -236,7 +239,7 @@ void frames(double *out, const double *pfx, const double *pfy, const double *wfx
                 #pragma omp for
                 for (int i = 0; i < (int) (fs_size * ss_size); i++)
                 {
-                    double val = wfx[i % fs_size] * wfy[i / fs_size] * pfxss[i % fs_size] * pfyss[i / fs_size] * dx * dy;
+                    double val = pfxss[i % fs_size] * pfyss[i / fs_size] * dx * dy;
                     out[i] = gsl_ran_poisson(r, val);
                 }
                 gsl_rng_free(r);
@@ -247,7 +250,7 @@ void frames(double *out, const double *pfx, const double *pfy, const double *wfx
             #pragma omp parallel for num_threads(threads)
             for (int i = 0; i < (int) (fs_size * ss_size); i++)
             {
-                out[i] = wfx[i % fs_size] * wfy[i / fs_size] * pfxss[i % fs_size] * pfyss[i / fs_size] * dx * dy;
+                out[i] = pfxss[i % fs_size] * pfyss[i / fs_size] * dx * dy;
             }
         }
         out += fs_size * ss_size; pfx += xpts;

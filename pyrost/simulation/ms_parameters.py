@@ -157,7 +157,7 @@ class MSParams(INIParser):
             mll_mat1 = Material(**attr_dict['material1'])
         if mll_mat2 is None:
             mll_mat2 = Material(**attr_dict['material2'])
-        for option, section in cls._lookup_dict.items():
+        for option, section in cls._lookup_dict().items():
             if option in kwargs:
                 attr_dict[section][option] = kwargs[option]
         return cls(multislice=attr_dict['multislice'], mll_mat1=mll_mat1,
@@ -250,6 +250,6 @@ class MSParams(INIParser):
         where $\Delta z$ --- slice thickness, $f_x, f_y$ ---
         spatial frequencies, and $\lambda$ --- wavelength.
         """
-        kernel = np.exp(2j * np.pi / self.wl * self.z_step * \
+        kernel = np.exp(-2j * np.pi / self.wl * self.z_step * \
                         np.sqrt(1 - self.wl**2 * fx_arr.astype(complex)**2))
         return kernel

@@ -1,16 +1,16 @@
-Working With CXI Files
+Working with CXI Files
 ======================
 
 CXIProtocol
 -----------
 
-CXI protocol (:class:`pyrost.CXIProtocol`) is helper class for a :class:`pyrost.STData`
+CXI protocol (:class:`pyrost.CXIProtocol`) is a helper class for a :class:`pyrost.STData`
 data container, which tells it where to look for the necessary data fields in a CXI
 file. The class is fully customizable so you can tailor it to your particular data
 structure of CXI file. The protocol consists of the following attributes for each
 data field (`data`, `whitefield`, etc.):
 
-* `datatypes` : data type (`float`, `int`, or `bool`).
+* `datatypes` : Data type (`float`, `int`, or `bool`).
 * `default_paths` : CXI file path.
 
 .. note::
@@ -84,9 +84,9 @@ automatically load all the necessary data fields from a CXI file. Other than
 the information provided by a protocol, a loader class requires the following
 attributes:
 
-* `policy` : loading policy for each attribute enlisted in protocol. If it's
+* `policy` : Loading policy for each attribute enlisted in protocol. If it's
   True, the corresponding attribute will be loaded.
-* `load_paths` : list of extra CXI file paths, where the loader will look for
+* `load_paths` : List of extra CXI file paths, where the loader will look for
   the data field.
 
 .. note::

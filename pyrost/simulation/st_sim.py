@@ -269,20 +269,16 @@ class STSim(DataContainer):
         numpy.ndarray
             Intensity frames.
         """
-        if wfieldx is None:
-            wfieldx = np.ones(self.params.fs_size)
-        else:
-            wfieldx /= wfieldx.mean()
-        if wfieldy is None:
-            wfieldy = np.ones(self.params.ss_size)
-        else:
-            wfieldy /= wfieldy.mean()
         dx = self.params.fs_size * self.params.pix_size / self.x_size
         dy = self.params.ss_size * self.params.pix_size / self.y_size
         seed = self.params.seed if apply_noise else -1
-        frames = make_frames(pfx=self.det_ix, pfy=self.det_iy, wfx=wfieldx,
-                             wfy=wfieldy, dx=dx, dy=dy, seed=seed,
-                             num_threads=self.num_threads)
+        frames = make_frames(pfx=self.det_ix, pfy=self.det_iy, dx=dx, dy=dy,
+                             shape=(self.params.ss_size, self.params.fs_size),
+                             seed=seed, num_threads=self.num_threads)
+        if not wfieldx is None:
+            frames *= (wfieldx / wfieldx.mean())
+        if not wfieldy is None:
+            frames *= (wfieldy / wfieldy.mean())[:, None]
         return frames
 
     def ptychograph(self, wfieldx=None, wfieldy=None, apply_noise=True):
