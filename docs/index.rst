@@ -21,23 +21,29 @@ data processing routines, such as bad pixel masking, defocus sweep scan, wavefro
 reconstruction, phase model fitting, etc. All of them are listed in
 :class:`pyrost.STData`.
 
-pyrost includes a framework to work with CXI files, see `pyrost.cxi_ref` for
+pyrost includes a framework to work with CXI files, see :doc:`reference/cxi_ref` for
 more information.
 
-Speckle Tracking simulation (st_sim)
-====================================
+pyrost.simulation
+=================
 
-The library also contains the Speckle Tracking Simulation (**st_sim**) package.
+This library also contains a set of tools to simulate the light propagation
+through various media. pyrost.simulation is comprised of two simulation
+frameworks:
+
+Speckle tracking scan simulation (st_sim)
+-----------------------------------------
+
 st_sim is capable to simulate one-dimensional speckle tracking scans. st_sim
 employs Rayleigh-Sommerfeld convolution and Fraunhofer diffraction to propagate
 the wavefronts. The back-end is written in C to yield the best performance.
 
 Multislice simulation (ms_sim)
-==============================
+------------------------------
 
 The multislice simulation package (**ms_sim**) is capable to propagate the wavefront
-through a bulky sample by the dint of multislice beam propagation algorithm. The back-end
-is based on FFTW library.
+through a bulky sample by the dint of multislice beam propagation algorithm.
+The back-end is based on FFTW library.
 
 
 Python Reference
@@ -46,6 +52,7 @@ Python Reference
 .. toctree::
    :maxdepth: 4
    :caption: Contents:
+
 
    install
    tutorials/tutorials

@@ -7,7 +7,7 @@ parameters, which could be later parsed to
 :class:`pyrost.simulation.MSPropagator` in order to perform the simulation.
 
 >>> import pyrost.simulation as sim
->>> ms_params = sim.MSParams.import_ini()
+>>> ms_params = sim.MSParams()
 >>> print(ms_params)
 {'multislice': {'x_max': 30.0, 'x_min': 0.0, '...': '...'},
 'mll_mat1': {'formula': 'W', 'density': 21.0}, 'mll_mat2': {'formula': 'SiC', 'density': 3.21},

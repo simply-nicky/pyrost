@@ -135,12 +135,14 @@ class AberrationsFit(DataContainer):
         The Speckle tracking data container, from which the object
         is derived.
     **kwargs : dict
-        Necessary and optional attributes specified in :ref:`_notes`.
+        Necessary and optional attributes specified in the notes
+        section.
 
     Attributes
     ----------
     **kwargs : dict
-        Necessary and optional attributes specified in :ref:`_notes`.
+        Necessary and optional attributes specified in the notes
+        section.
     pix_ap : float
         Aperture angle of a single pixel.
 
@@ -148,8 +150,6 @@ class AberrationsFit(DataContainer):
     ------
     ValueError
         If any of the necessary attributes has not been provided.
-
-    .. _notes:
 
     Notes
     -----

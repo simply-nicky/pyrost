@@ -1,6 +1,11 @@
 ms_sim Parameters
 =================
 
+.. raw:: html
+    :file:  ../figures/ms_sim_exp_geom.svg
+
+|
+
 Experimental parameters class(:class:`pyrost.simulation.MSParams`) for the
 multislice beam propagation stores all the experimental parameters
 and provides additional methods necessary to perform the propagation. 

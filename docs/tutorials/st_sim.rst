@@ -1,5 +1,5 @@
-Speckle Tracking Simulation
-===========================
+Simulating a 1D Speckle Tracking Scan
+=====================================
 
 You can simulate an one-dimensional Speckle Tracking scan either using
 Python interface or Terminal.
@@ -10,8 +10,10 @@ Python interface
 Experimental parameters
 ^^^^^^^^^^^^^^^^^^^^^^^
 
-Before performing the simulation, you need to choose experimental
-parameters. You can do it with :class:`pyrost.simulation.STParams`.
+Before performing the simulation, you need to choose the experimental
+parameters. You can do it with :class:`pyrost.simulation.STParams`. The
+st_sim library has built-in default parameters, which can be accessed
+with :func:`pyrost.simulation.STParams.import_default`.
 
 .. note:: Full list of experimental parameters is written in
     :doc:`../reference/st_params_ref`. All the spatial parameters are

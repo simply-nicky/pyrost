@@ -8,7 +8,7 @@ Log protocol (:class:`pyrost.LogProtocol`) is a helper class to
 retrieve the data from the log files, which contain the readouts
 from the motors and other instruments during the speckle tracking
 scan. In the most cases, the data extracted from the log files is
-used to generate the CXI files (look :doc:`cxi_ref.rst`). The protocol
+used to generate the CXI files (look :doc:`cxi_ref`). The protocol
 consists of the log keys of the attributes that are requisite to
 extract from the header part of a log file and their corresponding
 data types:
@@ -25,7 +25,7 @@ data types:
 The default protocol can be accessed with :func:`pyrost.LogProtocol.import_default`.
 The protocol is given by:
 
-..code-block:: ini
+.. code-block:: ini
 
     [datatypes]
     det_dist = float
@@ -50,7 +50,7 @@ The protocol is given by:
 Contents
 --------
 
-..toctree::
-    :maxdepth: 1
+.. toctree::
+    :maxdepth: 2
 
     classes/log_protocol

@@ -136,7 +136,7 @@ Contents
 --------
 
 .. toctree::
-    :maxdepth: 1
+    :maxdepth: 2
 
     classes/cxi_protocol
     classes/cxi_loader

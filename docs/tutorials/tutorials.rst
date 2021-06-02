@@ -7,3 +7,4 @@ Tutorials
     diatom
     1d_sim
     st_sim
+    ms_sim

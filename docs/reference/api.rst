@@ -14,3 +14,4 @@ API Reference
     st_sim_ref
     st_sim_c_ref
     ms_params_ref
+    ms_sim_ref

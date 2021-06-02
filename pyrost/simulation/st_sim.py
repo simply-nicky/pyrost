@@ -10,11 +10,11 @@ and experimental parameters to the same folder.
 Examples
 --------
 
-Perform the simulation for a given :class:`pyrost.simulation.STParams` object.
+Perform the simulation for a given :class:`pyrost.simulation.STParams` object
+`params`:
 
->>> import pyrost.simulation as st_sim
->>> st_params = st_sim.STParams.import_ini()
->>> sim_obj = st_sim.STSim(st_params)
+>>> import pyrost.simulation as sim
+>>> sim_obj = sim.STSim(params)
 
 Return an array of intensity frames at the detector plane.
 
@@ -23,7 +23,7 @@ Return an array of intensity frames at the detector plane.
 Save the simulated data to a `CXI <https://www.cxidb.org/cxi.html>`_ file using
 the default protocol.
 
->>> st_conv = st_sim.STConverter()
+>>> st_conv = sim.STConverter()
 >>> st_conv.save_sim(data, sim_obj, 'test')
 """
 import os

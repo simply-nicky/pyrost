@@ -1,6 +1,30 @@
-"""Module :mod:`~mslicepy.mslice` defines atomic and material
-properties related to x-ray scattering, diffraction and propagation:
-scattering factors, refractive index, absorption coefficient etc.
+"""Multislice beam propagation simulation. Generate a profile of
+the beam that propagates through a bulky sample.
+:class:`pyrost.simulation.MLL` generates a transmission profile of
+a wedged Multilayer Laue lens (MLL). :class:`pyrost.simulations.MSPropagator`
+calculates the beam propagation and spits out the wavefield profile of
+the propagated beam together with the transmission profile of the sample
+at each slice.
+
+Examples
+--------
+
+Initialize a MLL object with the :class:`pyrost.simulations.MSParams`
+parameters object `params`:
+
+>>> import pyrost.simulation as sim
+>>> mll = sim.MSParams(params)
+
+Initialize a multislice beam propagator with `params` and `mll`:
+
+>>> ms_prgt = sim.MSPropagator(params, mll)
+
+Perform the multislice beam propagation as follows:
+
+>>> ms_prgt.beam_propagate()
+
+All the results are saved into `ms_prgt.beam_profile` and
+`ms_prgt.smp_profile` attributes.
 """
 import os
 from multiprocessing import cpu_count
@@ -377,30 +401,6 @@ class MLL(DataContainer):
         "Total number of slices"
         return self.z_coords.size
 
-    def get_profile(self, x_arr, profile, num_threads=1):
-        """Return a generator, that yields transmission profiles of
-        the lens at each slice and writes to `profile` array.
-
-        Parameters
-        ----------
-        x_arr : numpy.ndarray
-            Coordinates array [um].
-        profile: numpy.ndarray
-            Output array.
-        num_threads : int, optional
-            Number of threads.
-
-        Returns
-        -------
-        slices : iterable
-            The generator, which yields lens' transmission profiles.
-        """
-        for idx, layer in enumerate(self.layers):
-            profile[idx, :] = mll_profile(x_arr=x_arr, layers=layer, mt0=self.mat1_r,
-                                          mt1=self.mat2_r, sigma=self.sigma,
-                                          num_threads=num_threads)
-            yield profile[idx]
-
     @dict_to_object
     def update_interdiffusion(self, sigma):
         """Return a new :class:`MLL` object with the updated `sigma`.
@@ -436,6 +436,33 @@ class MLL(DataContainer):
             New :class:`MLL` object with the updated `mat1_r` and `mat2_r`.
         """
         return {'mat1_r': mat1_r, 'mat2_r': mat2_r}
+
+    def get_span(self):
+        return (self.layers.min(), self.layers.max())
+
+    def get_profile(self, x_arr, output, num_threads=1):
+        """Return a generator, that yields transmission profiles of
+        the lens at each slice and writes to `output` array.
+
+        Parameters
+        ----------
+        x_arr : numpy.ndarray
+            Coordinates array [um].
+        output: numpy.ndarray
+            Output array.
+        num_threads : int, optional
+            Number of threads.
+
+        Returns
+        -------
+        slices : iterable
+            The generator, which yields lens' transmission profiles.
+        """
+        for idx, layer in enumerate(self.layers):
+            output[idx, :] = mll_profile(x_arr=x_arr, layers=layer, mt0=self.mat1_r,
+                                         mt1=self.mat2_r, sigma=self.sigma,
+                                         num_threads=num_threads)
+            yield output[idx]
 
 class MSPropagator(DataContainer):
     """One-dimensional Multislice beam propagation class.
@@ -499,6 +526,8 @@ class MSPropagator(DataContainer):
 
         if self.wf_inc is None:
             self.wf_inc = np.ones(self.x_arr.shape, dtype=np.complex128)
+            x_min, x_max = self.sample.get_span()
+            self.wf_inc[(self.x_arr < x_min) | (self.x_arr > x_max)] = 0.
 
     @property
     def size(self):
@@ -525,53 +554,72 @@ class MSPropagator(DataContainer):
             raise ValueError("Wavefront datatype must be 'complex128'")
         return {'beam_profile': None, 'wf_inc': wf_inc}
 
-    @dict_to_object
-    def beam_propagate(self, verbose=True):
-        """Perform the multislice beam propagation and return a new :class:`MSPropagator`
-        object with the new generated beam and sample profiles.
+    def generate_sample(self, verbose=True):
+        """Generate the transmission profile of the sample. The results are
+        written to `smp_profile` attribute.
 
         Parameters
         ----------
         verbose : bool, optional
             Set verbosity of the computation process.
-
-        Returns
-        -------
-        MSPropagator
-            A new :class:`MSPropagator` object with the updated `smp_profile`
-            and `beam_profile`.
         """
-        beam_profile = empty_aligned((self.sample.n_slices + 1, self.x_arr.size),
-                                     dtype='complex128')
-        smp_profile = empty_aligned((self.sample.n_slices, self.x_arr.size),
-                                    dtype='complex128')
+        self.smp_profile = empty_aligned((self.sample.n_slices, self.x_arr.size),
+                                         dtype='complex128')
+        itor = self.sample.get_profile(x_arr=self.x_arr, output=self.smp_profile,
+                                       num_threads=self.num_threads)
+        
+        if verbose:
+            itor = tqdm(enumerate(itor), total=self.sample.n_slices,
+                        bar_format='{desc} {percentage:3.0f}% {bar} Slice {n_fmt} / {total_fmt} '\
+                                '[{elapsed}<{remaining}, {rate_fmt}{postfix}]')
+        for idx, _ in itor:
+            if verbose:
+                itor.set_description(f"z = {self.sample.z_coords[idx]:.2f} um")
+
+    def beam_propagate(self, verbose=True):
+        """Perform the multislice beam propagation. The results are
+        written to `beam_profile` attribute. Generates `smp_profile`
+        attribute if it wasn't initialized before.
+
+        Parameters
+        ----------
+        verbose : bool, optional
+            Set verbosity of the computation process.
+        """
+        self.beam_profile = empty_aligned((self.sample.n_slices + 1, self.x_arr.size),
+                                          dtype='complex128')
         current_slice = empty_aligned(self.x_arr.size, dtype='complex128')
-        beam_profile[0] = self.wf_inc
-        current_slice[:] = beam_profile[0]
+        self.beam_profile[0] = self.wf_inc
+        current_slice[:] = self.wf_inc
 
         fft_obj = FFTW(current_slice, current_slice, flags=('FFTW_ESTIMATE',),
                        threads=self.num_threads)
-        ifft_obj = FFTW(current_slice, beam_profile[1], direction='FFTW_BACKWARD',
+        ifft_obj = FFTW(current_slice, self.beam_profile[1], direction='FFTW_BACKWARD',
                         flags=('FFTW_ESTIMATE',), threads=self.num_threads)
 
-        itor = enumerate(self.sample.get_profile(self.x_arr, smp_profile,
-                                               num_threads=self.num_threads))
+        if self.smp_profile is None:
+            self.smp_profile = empty_aligned((self.sample.n_slices, self.x_arr.size),
+                                             dtype='complex128')
+            itor = self.sample.get_profile(x_arr=self.x_arr, output=self.smp_profile,
+                                           num_threads=self.num_threads)
+        else:
+            itor = (layer for layer in self.smp_profile)
+
         if verbose:
             itor = tqdm(itor, total=self.sample.n_slices,
                         bar_format='{desc} {percentage:3.0f}% {bar} Slice {n_fmt} / {total_fmt} '\
                                    '[{elapsed}<{remaining}, {rate_fmt}{postfix}]')
-        for idx, layer in itor:
+        for idx, layer in enumerate(itor):
             if verbose:
                 itor.set_description(f"z = {self.sample.z_coords[idx]:.2f} um")
             current_slice *= layer
             fft_obj.execute()
             current_slice *= self.kernel
-            ifft_obj.update_arrays(current_slice, beam_profile[idx + 1])
+            ifft_obj.update_arrays(current_slice, self.beam_profile[idx + 1])
             ifft_obj.execute()
             current_slice[:] = ifft_obj.output_array
-        return {'smp_profile': smp_profile, 'beam_profile': beam_profile}
 
-    def beam_downstream(self, z_arr, step=None, verbose=True):
+    def beam_downstream(self, z_arr, step=None, return_coords=True, verbose=True):
         """Return the wavefront at distance `z_arr` downstream from
         the exit surface using Rayleigh-Sommerfeld convolution.
 
@@ -583,6 +631,8 @@ class MSPropagator(DataContainer):
             Sampling interval of the downstream coordinate array [um].
             Equals to the sampling interval at the exit surface if it's
             None.
+        return_coords : bool, optional
+            Return the coordinates array of the downstream plane.
         verbose : bool, optional
             Set verbosity of the computation process.
 
@@ -591,6 +641,9 @@ class MSPropagator(DataContainer):
         wavefronts : numpy.ndarray
             Set of wavefronts calculated at the distance `z_arr`
             downstream from the exit surface.
+        x_arr : numpy.ndarray
+            Array of coordinates at the plane downstream [um].
+            Only if `return_coords` is True.
 
         Raises
         ------
@@ -602,8 +655,8 @@ class MSPropagator(DataContainer):
             raise AttributeError('The beam profile has not been generated')
         if step is None:
             step = self.params.x_step
-        size = self.x_arr.size**2 * max(self.params.x_step, step) * (step + self.params.x_step) \
-               / self.params.wl / z_arr.min()
+        size = int(self.x_arr.size**2 * max(self.params.x_step, step) * \
+                   (step + self.params.x_step) / self.params.wl / z_arr.min())
         wf0 = self.beam_profile[-1]
         if size > self.x_arr.size:
             wf0 = np.pad(wf0, ((size - self.x_arr.size) // 2, (size - self.x_arr.size) // 2))
@@ -619,4 +672,7 @@ class MSPropagator(DataContainer):
             wavefronts.append(rsc_wp(wft=wf0, dx0=self.params.x_step, dx=step,
                                      z=dist, wl=self.params.wl, backend='fftw',
                                      num_threads=self.num_threads))
-        return np.stack(wavefronts)
+        if return_coords:
+            x_arr = step * np.arange(self.size) + np.mean(self.x_arr)
+            return np.stack(wavefronts, axis=1), x_arr
+        return np.stack(wavefronts, axis=1)

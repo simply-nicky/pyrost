@@ -1,5 +1,5 @@
-1D Speckle Tracking Scan
-========================
+Speckle Tracking of a 1D scan
+=============================
 
 Speckle Tracking update procedure of one-dimensional scan doesn't differ much
 from the case of two-dimensional scan. See :doc:`diatom` for an example.

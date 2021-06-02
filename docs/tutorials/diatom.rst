@@ -1,8 +1,8 @@
-Diatom
-======
+Speckle Tracking of the Diatom Dataset
+======================================
 
-Diatom CXI File
----------------
+Diatom dataset CXI File
+-----------------------
 First download the `diatom.cxi <https://www.cxidb.org/data/134/diatom.cxi>`_
 file from the `CXIDB <https://www.cxidb.org/>`_. The file has the following
 structure:
