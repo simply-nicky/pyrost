@@ -32,6 +32,7 @@ class LogProtocol(INIParser):
     """
     attr_dict = {'log_keys': ('ALL',), 'datatypes': ('ALL',)}
     fmt_dict = {'log_keys': 'str', 'datatypes': 'str'}
+    unit_dict = {'mm': 1e-3, 'µm': 1e-6, 'nm': 1e-9, 'pm': 1e-12}
 
     def __init__(self, log_keys=None, datatypes=None):
         if log_keys is None:
@@ -96,6 +97,14 @@ class LogProtocol(INIParser):
             kwargs['log_keys'].update(**log_keys)
         return cls(datatypes=kwargs['datatypes'], log_keys=kwargs['log_keys'])
 
+    @classmethod
+    def _get_unit(cls, key):
+        if '[Position]' in key:
+            for unit_key in cls.unit_dict:
+                if unit_key in key:
+                    return cls.unit_dict[unit_key]
+        return 1.
+
     def load_attributes(self, path):
         """Return attributes' values from a log file at
         the given `path`.
@@ -134,10 +143,12 @@ class LogProtocol(INIParser):
         attr_dict = {}
         for attr, [log_type, log_key] in self.log_keys.items():
             part = parts[parts.index(log_type) + 1]
-            val_str = re.search(log_key + r'.*\n', part)[0].split(': ')[-1][:-1]
+            key, val_str = re.search(log_key + r'.*\n', part)[0].strip('\n').split(': ')
             val_m = re.search(r'\d+[.]*\d*', val_str)
             dtype = self.known_types[self.datatypes[attr]]
             attr_dict[attr] = dtype(val_m[0] if val_m else val_str)
+            if dtype is float:
+                attr_dict[attr] *= self._get_unit(key)
         return attr_dict
 
     def load_data(self, path):

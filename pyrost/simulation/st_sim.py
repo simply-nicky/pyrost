@@ -350,7 +350,7 @@ class STConverter:
     unit_vector_fs = np.array([1, 0, 0])
     unit_vector_ss = np.array([0, -1, 0])
     templates_dir = os.path.join(ROOT_PATH, 'ini_templates')
-    e_to_wl = 1.2398419843320026e-06
+    e_to_wl = 1.2398419843320026e-06 # [eV * m]
 
     write_attrs = {'basis_vectors', 'data', 'defocus', 'distance',
                    'energy', 'good_frames', 'mask', 'roi', 'translations',
