@@ -1,7 +1,20 @@
+"""Examples
+--------
+Generate the default built-in log protocol:
+
+>>> import pyrost as rst
+>>> rst.LogProtocol()
+{'log_keys': {'det_dist': ['Session logged attributes', 'Z-LENSE-DOWN_det_dist'],
+'exposure': ['Type: Method', 'Exposure'], 'n_steps': ['Type: Scan', 'Points count'],
+'...': '...'}, 'datatypes': {'det_dist': 'float', 'exposure': 'float', 'n_steps':
+'int', '...': '...'}}
+"""
 import os
 import re
 import numpy as np
 from .ini_parser import ROOT_PATH, INIParser
+from .cxi_protocol import CXIProtocol, CXILoader
+from .data_processing import STData
 
 LOG_PROTOCOL = os.path.join(ROOT_PATH, 'config/log_protocol.ini')
 
@@ -99,10 +112,9 @@ class LogProtocol(INIParser):
 
     @classmethod
     def _get_unit(cls, key):
-        if '[Position]' in key:
-            for unit_key in cls.unit_dict:
-                if unit_key in key:
-                    return cls.unit_dict[unit_key]
+        for unit_key in cls.unit_dict:
+            if unit_key in key:
+                return cls.unit_dict[unit_key]
         return 1.
 
     def load_attributes(self, path):
@@ -120,6 +132,8 @@ class LogProtocol(INIParser):
             Dictionary with the attributes retrieved from
             the log file.
         """
+        if not isinstance(path, str):
+            raise ValueError('path must be a string')
         with open(path, 'r') as log_file:
             log_str = ''
             for line in log_file:
@@ -127,28 +141,44 @@ class LogProtocol(INIParser):
                     log_str += line.strip('# ')
 
         # Divide log into sectors
-        parts = [part for part in re.split('(' + \
-                 '|'.join([key[0] for key in self.log_keys.values()]) + \
-                 '|--------------------------------)\n*', log_str) if part]
+        parts_list = [part for part in re.split('(' + \
+                     '|'.join([key[0] for key in self.log_keys.values()]) + \
+                     '|--------------------------------)\n*', log_str) if part]
 
-        # Rearrange logged attributes sector
-        if 'Session logged attributes' in parts:
-            idx = parts.index('Session logged attributes') + 1
-            attr_keys, attr_vals = parts[idx].strip('\n').split('\n')
-            parts[idx] = ''
-            for key, val in zip(attr_keys.split(';'), attr_vals.split(';')):
-                parts[idx] += key + ': ' + val + '\n'
+        # List all the sector names
+        part_keys = [part_key for part_key, _ in self.log_keys.values()]
+
+        # Rearange sectors into a dictionary
+        parts = {}
+        for idx, part in enumerate(parts_list):
+            if part in part_keys:
+                if part == 'Session logged attributes':
+                    attr_keys, attr_vals = parts_list[idx + 1].strip('\n').split('\n')
+                    parts['Session logged attributes'] = ''
+                    for key, val in zip(attr_keys.split(';'), attr_vals.split(';')):
+                        parts['Session logged attributes'] += key + ': ' + val + '\n'
+                else:
+                    val = parts_list[idx + 1]
+                    match = re.search(r'Device:.*\n', val)
+                    if match:
+                        name = match[0].split(': ')[-1][:-1]
+                        parts[part + ', ' + name] = val
 
         # Populate attributes dictionary
-        attr_dict = {}
-        for attr, [log_type, log_key] in self.log_keys.items():
-            part = parts[parts.index(log_type) + 1]
-            key, val_str = re.search(log_key + r'.*\n', part)[0].strip('\n').split(': ')
-            val_m = re.search(r'\d+[.]*\d*', val_str)
-            dtype = self.known_types[self.datatypes[attr]]
-            attr_dict[attr] = dtype(val_m[0] if val_m else val_str)
-            if dtype is float:
-                attr_dict[attr] *= self._get_unit(key)
+        attr_dict = {part_name: {} for part_name in parts}
+        for part_name, part in parts.items():
+            for attr, [part_key, log_key] in self.log_keys.items():
+                if part_key in part_name:
+                    # Find the attribute's mention and divide it into a key and value pair
+                    raw_str = re.search(log_key + r'.*\n', part)[0]
+                    raw_val = raw_str.strip('\n').split(': ')[1]
+                    # Extract a number string
+                    val_num = re.search(r'\d+[.]*\d*', raw_val)
+                    dtype = self.known_types[self.datatypes[attr]]
+                    attr_dict[part_name][attr] = dtype(val_num[0] if val_num else raw_val)
+                    # Apply unit conversion if needed
+                    if np.issubdtype(dtype, np.floating):
+                        attr_dict[part_name][attr] *= self._get_unit(raw_str)
         return attr_dict
 
     def load_data(self, path):
@@ -178,19 +208,91 @@ class LogProtocol(INIParser):
 
         dtypes = {'names': [], 'formats': []}
         converters = {}
-        for idx, (key, part) in enumerate(zip(keys, data_strings)):
+        for idx, (key, val) in enumerate(zip(keys, data_strings)):
             dtypes['names'].append(key)
-            if 'str' in key:
-                dtypes['formats'].append('<S' + str(len(part)))
+            if 'float' in key:
+                dtypes['formats'].append(np.float)
+                if any(unit_key in key for unit_key in self.unit_dict):
+                    converters[idx] = lambda item, key=key: self._get_unit(key) * float(item)
             elif 'int' in key:
-                dtypes['formats'].append(np.int)
+                if any(unit_key in key for unit_key in self.unit_dict):
+                    converters[idx] = lambda item, key=key: self._get_unit(key) * float(item)
+                    dtypes['formats'].append(np.float)
+                else:
+                    dtypes['formats'].append(np.int)
             elif 'Array' in key:
                 dtypes['formats'].append(np.ndarray)
-                converters[idx] = lambda item: np.array([float(part)
-                    for part in item.strip(b'[]').split(b',')])
+                if any(unit_key in key for unit_key in self.unit_dict):
+                    converters[idx] = lambda item, key=key: np.array([float(part) * self._get_unit(key)
+                                                                      for part in item.strip(b'[]').split(b',')])
+                converters[idx] = lambda item: np.array([float(part) for part in item.strip(b'[]').split(b',')])
             else:
-                dtypes['formats'].append(np.float)
+                dtypes['formats'].append('<S' + str(len(val)))
 
         return dict(zip(keys, np.loadtxt(path, delimiter=';',
                                          converters=converters,
                                          dtype=dtypes, unpack=True)))
+
+def cxi_converter_sigray(scan_num, target='Mo', distance=2.):
+    """Convert measured frames and log files from the
+    Sigray laboratory to a :class:`pyrost.STData` data
+    container.
+
+    Parameters
+    ----------
+    scan_num : int
+        Scan number.
+    target : {'Mo', 'Cu', 'Rh'}, optional
+        Sigray X-ray source target used.
+    distance : float, optional
+        Detector distance in meters.
+
+    Returns
+    -------
+    STData
+        Data container with the extracted data.
+    """
+    wl_dict = {'Mo': 7.092917530503447e-11, 'Cu': 1.5498024804150033e-10,
+               'Rh': 6.137831605603974e-11}
+
+    h5_prt = CXIProtocol(default_paths={'data': 'entry/instrument/detector/data',
+                                        'x_pixel_size': 'entry/instrument/detector/x_pixel_size',
+                                        'y_pixel_size': 'entry/instrument/detector/y_pixel_size'},
+                         datatypes={'data': 'float', 'x_pixel_size': 'float',
+                                    'y_pixel_size': 'float'})
+    cxi_prt = CXIProtocol()
+    log_prt = LogProtocol()
+    cxi_loader = CXILoader(h5_prt)
+
+    fs_vec = np.array([0., -1., 0.])
+    ss_vec = np.array([1., 0., 0.])
+
+    log_path = f'/gpfs/cfel/cxi/labs/MLL-Sigray/scan-logs/Scan_{scan_num:d}.log'
+    dir_path = f'/gpfs/cfel/cxi/labs/MLL-Sigray/scan-frames/Scan_{scan_num:d}'
+    h5_files = [os.path.join(dir_path, path) for path in os.listdir(dir_path)
+                if path.endswith('Lambda.nxs')]
+
+    data = np.concatenate(list(cxi_loader.load_data(h5_files).values()), axis=-3)
+    attrs = cxi_loader.load_attributes(h5_files[0])
+    log_attrs = log_prt.load_attributes(log_path)
+    log_data = log_prt.load_data(log_path)
+
+    n_steps = np.prod([attrs['n_steps'] for key, attrs in log_attrs.items() if 'Type: Scan' in key])
+    pix_vec = np.tile(np.array([[attrs['x_pixel_size'], attrs['y_pixel_size'], 0]]),
+                      (n_steps, 1)) * 1e-6
+    basis_vectors = np.stack([pix_vec * ss_vec, pix_vec * fs_vec], axis=1)
+
+    translations = np.tile([[log_attrs['Session logged attributes']['x_sample'],
+                            log_attrs['Session logged attributes']['y_sample'],
+                            log_attrs['Session logged attributes']['z_sample']]],
+                        (n_steps, 1))
+    for data_key in log_data:
+        if 'X-SAM' in data_key:
+            translations[:, 0] = log_data[data_key]
+        if 'Y-SAM' in data_key:
+            translations[:, 1] = log_data[data_key]
+
+    return STData(basis_vectors=basis_vectors, data=data, distance=distance,
+                  translations=translations, wavelength=wl_dict[target],
+                  x_pixel_size=attrs['x_pixel_size'] * 1e-6,
+                  y_pixel_size=attrs['y_pixel_size'] * 1e-6, protocol=cxi_prt)

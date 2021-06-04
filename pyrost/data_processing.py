@@ -202,7 +202,7 @@ class STData(DataContainer):
         return {'roi': np.asarray(roi, dtype=int)}
 
     @dict_to_object
-    def integrate_data(self, axis=1):
+    def integrate_data(self, axis=0):
         """Return a new :class:`STData` object with the `data` summed
         over the `axis`.
 
@@ -218,9 +218,9 @@ class STData(DataContainer):
             `whitefield`, `mask`, and `roi`.
         """
         roi = self.roi.copy()
-        roi[2 * (axis - 1):2 * axis] = np.arange(2)
-        return {'data': np.sum(self.data, axis=axis, keepdims=True), 'whitefield': None,
-                'mask': None, 'roi': roi}
+        roi[2 * axis:2 * (axis + 1)] = np.arange(2)
+        return {'data': np.sum(self.data, axis=axis + 1, keepdims=True),
+                'whitefield': None, 'mask': None, 'roi': roi}
 
     @dict_to_object
     def mask_frames(self, good_frames):

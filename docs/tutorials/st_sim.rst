@@ -48,7 +48,7 @@ saves the results to a CXI file using the provided CXI protocol.
     >>> ax.tick_params(labelsize=15) # doctest: +SKIP
     >>> plt.show() # doctest: +SKIP
 
-.. image:: ../figures/ptychograph.png
+.. image:: ../figures/sim_ptychograph.png
     :width: 100 %
     :alt: Ptychograph.
 

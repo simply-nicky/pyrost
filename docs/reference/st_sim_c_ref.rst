@@ -10,10 +10,10 @@ the wavefronts. All the functions are written in C.
     :maxdepth: 1
     :caption: Contents
 
-    c_funcs/rsc_wp
-    c_funcs/fraunhofer_wp
-    c_funcs/bar_positions
-    c_funcs/barcode_profile
-    c_funcs/fft_convolve
-    c_funcs/make_frames
-    c_funcs/make_whitefield
+    funcs/rsc_wp
+    funcs/fraunhofer_wp
+    funcs/bar_positions
+    funcs/barcode_profile
+    funcs/fft_convolve
+    funcs/make_frames
+    funcs/make_whitefield

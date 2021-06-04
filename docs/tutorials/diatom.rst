@@ -81,15 +81,15 @@ OR
 
 It worked! But still we can not perform the Speckle Tracking update procedure without the
 estimates of the defocus distance. You can estimate it with :func:`pyrost.STData.defocus_sweep`.
-It generates sample profiles for the set of defocus distances and yields an average value
-of gradient magnitude squared (:math:`\left| \nabla I_{ref} \right|^2`), which characterizes
+It generates sample profiles for a set of defocus distances and yields average values
+of the gradient magnitude squared (:math:`\left| \nabla I_{ref} \right|^2`), which characterizes
 reference image's contrast (the higher the value the better the estimate of defocus distance
-is).
+is). Also, it returns the set of sample profiles if `return_sweep` argument is True.
 
 .. doctest::
 
     >>> defoci = np.linspace(2e-3, 3e-3, 50) # doctest: +SKIP
-    >>> sweep_scan = data.defocus_sweep(defoci, ls_ri=0.7)
+    >>> sweep_scan = data.defocus_sweep(defoci, ls_ri=0.7, return_sweep=True)
     >>> defocus = defoci[np.argmax(sweep_scan)] # doctest: +SKIP
     >>> print(defocus) # doctest: +SKIP
     0.002204081632653061
@@ -115,13 +115,28 @@ Speckle Tracking update
 -----------------------
 Now we're ready to generate a :class:`pyrost.SpeckleTracking` object, which does the heavy
 lifting of calculating the pixel mapping between reference plane and detector plane,
-and generating the unabberated profile of the sample.
+and generating the unabberated profile of the sample following the ptychographic speckle
+tracking algorithm [ST]_.
 
-.. note:: You should pay outmost attention to choose the right length scales of reference
-    image and pixel mapping (`ls_ri`, `ls_pm`). Essentually they stand for high frequency
-    cut-off of the measured data, it helps to supress Poisson noise. If the values are too
-    high you'll lose useful information. If the values are too low in presence of high noise,
-    you won't get accurate results.
+For the speckle tracking update you've got two options to choose from:
+
+    * :func:`pyrost.SpeckleTracking.iter_update` : performs the iterative reference image
+      and pixel mapping updates with the constant kernel bandwidths for the reference image
+      (`ls_ri`) and pixel mapping update (`ls_pm`).
+
+    * :func:`pyrost.SpeckleTracking.iter_update_gd` : does ditto, but updates the bandwidth
+    value for the reference image update at each iteration by the help of gradeint descent to
+    attain the minimal mean-squared-error value.
+
+.. note:: You should pay outmost attention to choose the right kernel bandwidth used for
+    reference image and pixel mapping updates (`ls_ri`, `ls_pm`). Essentially they stand for
+    the high frequency cut-off imposed during the update, it helps to supress Poisson noise.
+    If the values are too high you'll lose useful information. If the values are too low in
+    presence of high noise, you won't get accurate results. Moreover, you can change the
+    pixel mapping post-update blurring (`blur`), which helps to prevent the noise amplification
+    when you perform multiple number of iterations. As a rule of thumb, `blur` parameters is
+    usually several times more than `ls_pm`, and many iterations with small step (`sw_ss`,
+    `sw_fs`) are less prone to noise than a few iterations with large steps.
 
 .. note:: Apart from pixel mapping update you may try to perform sample shifts update if you've
     got low precision or credibilily of sample shifts measurements. You can do it with :func:`pyrost.SpeckleTracking.iter_update`
@@ -234,3 +249,9 @@ In the end you can save the results to a CXI file.
     /speckle_tracking/whitefield Dataset {516, 1556}
 
 As you can see all the results have been saved using the same CXI protocol.
+
+References
+----------
+
+.. [ST] `"Ptychographic X-ray speckle tracking", Morgan, A. J., Quiney, H. M., Bajt,
+        S. & Chapman, H. N. (2020). J. Appl. Cryst. 53, 760-780. <https://doi.org/10.1107/S1600576720005567>`_

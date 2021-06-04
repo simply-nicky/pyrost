@@ -13,7 +13,7 @@ from __future__ import absolute_import
 from .data_processing import SpeckleTracking, STData
 from .aberrations_fit import AberrationsFit
 from .cxi_protocol import CXIProtocol, CXILoader
-from .log_protocol import LogProtocol
+from .log_protocol import LogProtocol, cxi_converter_sigray
 from . import bin
 
 del locals()['cxi_protocol']

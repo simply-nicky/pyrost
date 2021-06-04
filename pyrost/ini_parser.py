@@ -1,3 +1,5 @@
+""":class:`INIParser` ini parser implementation.
+"""
 import os
 import configparser
 import re

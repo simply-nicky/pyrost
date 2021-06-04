@@ -1,7 +1,6 @@
-"""
-Examples
+"""Examples
 --------
-Generate the default CXI protocol.
+Generate the default built-in CXI protocol as follows:
 
 >>> import pyrost as rst
 >>> rst.CXIProtocol()
@@ -10,7 +9,7 @@ Generate the default CXI protocol.
 {'basis_vectors': '/entry_1/instrument_1/detector_1/basis_vectors',
 'data': '/entry_1/data_1/data', 'defocus': '/speckle_tracking/defocus', '...': '...'}}
 
-Or generate the default CXI loader.
+Or generate the default CXI loader:
 
 >>> rst.CXILoader()
 {'config': {'float_precision': 'float64'}, 'datatypes': {'basis_vectors':
@@ -253,7 +252,7 @@ class CXIProtocol(INIParser):
         if cxi_path in cxi_file:
             cxi_obj = cxi_file[cxi_path]
             if isinstance(cxi_obj, h5py.Dataset):
-                return [cxi_obj.shape,]
+                return cxi_obj.shape
             elif isinstance(cxi_obj, h5py.Group):
                 return [dset.shape for dset in cxi_obj.values()]
             else:
@@ -579,6 +578,8 @@ class CXILoader(CXIProtocol):
             Dictionary with the attributes retrieved from
             the CXI file.
         """
+        if not isinstance(path, str):
+            raise ValueError('path must be a string')
         attrs = list(self)
         attrs.remove('data')
         attr_dict = {}
@@ -592,7 +593,7 @@ class CXILoader(CXIProtocol):
                         attr_dict[attr] = self.read_cxi(attr, cxi_file, cxi_path=cxi_path)
                 else:
                     attr_dict[attr] = None
-        if not attr_dict['defocus'] is None:
+        if attr_dict.get('defocus'):
             attr_dict['defocus_ss'] = attr_dict['defocus']
             attr_dict['defocus_fs'] = attr_dict['defocus']
         return attr_dict
@@ -610,8 +611,9 @@ class CXILoader(CXIProtocol):
         shapes : dict
             Dictionary of the data shapes for every file in `paths`.
         """
-        if isinstance(paths, str) and isinstance(paths, (str, list)):
-            paths = [paths,]
+        if isinstance(paths, (str, list)):
+            if isinstance(paths, str):
+                paths = [paths,]
         else:
             raise ValueError('paths must be a string or a list of strings')
         shapes = {}
@@ -637,8 +639,9 @@ class CXILoader(CXIProtocol):
         data : dict
             Data arrays retrieved from the CXI files.
         """
-        if isinstance(paths, str) and isinstance(paths, (str, list)):
-            paths = [paths,]
+        if isinstance(paths, (str, list)):
+            if isinstance(paths, str):
+                paths = [paths,]
         else:
             raise ValueError('paths must be a string or a list of strings')
         if idxs is None:

@@ -1,17 +1,17 @@
-Working with Log Files
-======================
+Wroking at the Sigray laboratory
+================================
 
 LogProtocol
 -----------
 
 Log protocol (:class:`pyrost.LogProtocol`) is a helper class to
-retrieve the data from the log files, which contain the readouts
-from the motors and other instruments during the speckle tracking
-scan. In the most cases, the data extracted from the log files is
-used to generate the CXI files (look :doc:`cxi_ref`). The protocol
-consists of the log keys of the attributes that are requisite to
-extract from the header part of a log file and their corresponding
-data types:
+retrieve the data from the log files generated at the Sigray laboratory,
+which contain the readouts from the motors and other instruments
+during the speckle tracking scan. The data extracted from the log
+files is used to generate the CXI files (look :doc:`funcs/cxi_converter_sigray`).
+The protocol consists of the log keys of the attributes that are
+requisite to extract from the header part of a log file and their
+corresponding data types:
 
 * `datatypes` : Data type of the attributes (`float`, `int`, `str`,
   or `bool`).
@@ -54,3 +54,4 @@ Contents
     :maxdepth: 2
 
     classes/log_protocol
+    funcs/cxi_converter_sigray

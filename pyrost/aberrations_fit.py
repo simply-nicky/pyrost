@@ -143,8 +143,10 @@ class AberrationsFit(DataContainer):
     **kwargs : dict
         Necessary and optional attributes specified in the notes
         section.
-    pix_ap : float
-        Aperture angle of a single pixel.
+    det_ap : float
+        Aperture angle of a single pixel in detector plane.
+    ref_ap : float
+        Aperture angle of a single pixel in reference plane.
 
     Raises
     ------
@@ -165,6 +167,7 @@ class AberrationsFit(DataContainer):
     Optional attributes:
 
     * roi : Region of interest.
+    * thetas : Scattering angles [rad].
     * theta_aberrations : angular displacement profile [rad].
     * phase : aberrations phase profile [rad].
 
@@ -175,18 +178,21 @@ class AberrationsFit(DataContainer):
     """
     attr_set = {'defocus', 'distance', 'pixels', 'pixel_aberrations',
                 'pixel_size', 'wavelength'}
-    init_set = {'roi', 'theta_aberrations', 'phase'}
+    init_set = {'roi', 'thetas', 'theta_aberrations', 'phase'}
     fs_lookup = {'defocus': 'defocus_fs', 'pixel_size': 'x_pixel_size'}
     ss_lookup = {'defocus': 'defocus_ss', 'pixel_size': 'y_pixel_size'}
 
     def __init__(self, st_data=None, **kwargs):
         self.__dict__['_reference'] = st_data
         super(AberrationsFit, self).__init__(**kwargs)
-        self.pix_ap = np.abs(self.pixel_size * self.defocus / self.distance**2)
+        self.det_ap = self.pixel_size / self.distance
+        self.ref_ap = np.abs(self.det_ap * self.defocus / self.distance)
         if self.roi is None:
             self.roi = np.array([0, self.pixels.size])
+        if self.thetas is None:
+            self.thetas = self.pixels * self.det_ap
         if self.theta_aberrations is None:
-            self.theta_aberrations = self.pixel_aberrations * self.pix_ap
+            self.theta_aberrations = self.pixel_aberrations * self.ref_ap
         if self.phase is None:
             self.phase = np.cumsum(self.theta_aberrations * self.pixel_size)
             self.phase *= 2 * np.pi / self.wavelength
@@ -256,9 +262,36 @@ class AberrationsFit(DataContainer):
         return {'st_data': self._reference, 'roi': np.asarray(roi, dtype=int)}
 
     @dict_to_object
-    def remove_linear_term(self):
+    def remove_linear_term(self, fit=None, xtol=1e-14, ftol=1e-14, loss='cauchy'):
         """Return a new :class:`AberrationsFit` object with the
-        romved linear term in `pixel_aberrations` profile.
+        linear term removed from `pixel_aberrations` profile.
+
+        Parameters
+        ----------
+        fit : numpy.ndarray
+            Fit coefficients of a first order polynomial. Inferred from
+            `pixel_aberrations` by fitting a line if None.
+        xtol : float, optional
+            Tolerance for termination by the change of the independent
+            variables.
+        ftol : float, optional
+            Tolerance for termination by the change of the cost function.
+        loss : {'linear', 'soft_l1', 'huber', 'cauchy', 'arctan'}, optional
+            Determines the loss function. The following keyword values
+            are allowed:
+
+            * 'linear' : ``rho(z) = z``. Gives a standard
+              least-squares problem.
+            * 'soft_l1' : ``rho(z) = 2 * ((1 + z)**0.5 - 1)``. The smooth
+              approximation of l1 (absolute value) loss. Usually a good
+              choice for robust least squares.
+            * 'huber' : ``rho(z) = z if z <= 1 else 2*z**0.5 - 1``. Works
+              similarly to 'soft_l1'.
+            * 'cauchy' (default) : ``rho(z) = ln(1 + z)``. Severely weakens
+              outliers influence, but may cause difficulties in optimization
+              process.
+            * 'arctan' : ``rho(z) = arctan(z)``. Limits a maximum loss on
+              a single residual, has properties similar to 'cauchy'.
 
         Returns
         -------
@@ -266,9 +299,11 @@ class AberrationsFit(DataContainer):
             New :class:`AberrationsFit` object with the updated
             `pixel_aberrations` and `phase`.
         """
-        pixel_aberrations = np.copy(self.pixel_aberrations)
-        pixel_aberrations -= np.gradient(pixel_aberrations).mean() * np.arange(self.pixels.size)
-        pixel_aberrations -= pixel_aberrations.mean()
+        if fit is None:
+            fit = LeastSquares.fit(x=self.pixels, y=self.pixel_aberrations,
+                                   roi=self.roi, max_order=1, xtol=xtol,
+                                   ftol=ftol, loss=loss)[0]
+        pixel_aberrations = self.pixel_aberrations - self.model(fit)
         return {'st_data': self._reference, 'pixel_aberrations': pixel_aberrations,
                 'theta_aberrations': None, 'phase': None}
 
@@ -295,8 +330,9 @@ class AberrationsFit(DataContainer):
         elif center >= self.pixels[-1]:
             pixels = center - self.pixels
             idxs = np.argsort(self.pixels)
-            return {'st_data': self._reference, 'pixels': pixels[idxs],
-                    'phase': None, 'pixel_aberrations': -self.pixel_aberrations[idxs]}
+            return {'st_data': self._reference, 'pixels': pixels[idxs], 'thetas': None,
+                    'pixel_aberrations': -self.pixel_aberrations[idxs], 'theta_aberrations': None,
+                    'thetas': None}
         else:
             raise ValueError('Origin must be outside of the region of interest')
 
@@ -310,7 +346,8 @@ class AberrationsFit(DataContainer):
         AberrationsFit
             New :class:`AberrationsFit` object with the updated `phase`.
         """
-        return {'st_data': self._reference, 'phase': None}
+        return {'st_data': self._reference, 'theta_aberrations': None,
+                'phase': None}
 
     def get(self, attr, value=None):
         """Return a dataset with `mask` and `roi` applied.
@@ -352,7 +389,7 @@ class AberrationsFit(DataContainer):
         numpy.ndarray
             Array of polynomial function values.
         """
-        return LeastSquares.model(fit, self.pixels, self.roi)
+        return LeastSquares.model(fit, self.pixels, [0, self.pixels.size])
 
     def pix_to_phase(self, fit):
         """Convert fit coefficients from pixel
@@ -369,7 +406,7 @@ class AberrationsFit(DataContainer):
             Lens` phase aberrations fit coefficients.
         """
         nfit = np.zeros(fit.size + 1)
-        nfit[:-1] = 2 * np.pi / self.wavelength * fit * self.pix_ap * self.pixel_size
+        nfit[:-1] = 2 * np.pi / self.wavelength * fit * self.ref_ap * self.pixel_size
         nfit[:-1] /= np.arange(1, fit.size + 1)[::-1]
         nfit[-1] = -self.model(nfit).mean()
         return nfit
@@ -388,7 +425,7 @@ class AberrationsFit(DataContainer):
         numpy.ndarray
             Lens' pixel aberrations fit coefficients.
         """
-        fit = ph_fit[:-1] * self.wavelength / (2 * np.pi * self.pix_ap * self.pixel_size)
+        fit = ph_fit[:-1] * self.wavelength / (2 * np.pi * self.ref_ap * self.pixel_size)
         fit *= np.arange(1, ph_fit.size)[::-1]
         return fit
 
