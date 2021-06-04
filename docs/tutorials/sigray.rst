@@ -1,12 +1,13 @@
 Speckle Tracking at the Sigray Lab
 ==================================
 
-Converting raw data to a CXI file
----------------------------------
-All you need to convert the raw data are a scan number,
-X-ray target used (Molybdenum, Cupper or Rhodium), and
-the distance between a MLL lens and the detector in meters.
-You parse it to the :func:`pyrost.cxi_converter_sigray` function:
+Converting raw data
+-------------------
+All we need to convert the raw experimental data are a scan
+number, X-ray target used during the measurements (Molybdenum,
+Cupper or Rhodium), and the distance between a MLL lens and
+the detector in meters. We parse it to
+:func:`pyrost.cxi_converter_sigray` function as follows:
 
 .. doctest::
 
@@ -14,8 +15,9 @@ You parse it to the :func:`pyrost.cxi_converter_sigray` function:
     >>> data = rst.cxi_converter_sigray(scan_num=2989, target='Mo', distance=2.)
 
 .. note::
-    You amy save a data container to a CXI file at any time with
-    :func:`pyrost.STData.write_cxi` function
+    We may save the data container to a CXI file at any time with
+    :func:`pyrost.STData.write_cxi` function, see the section
+    :ref:`diatom-saving` in the Diatom dataset tutorial.
 
 Working with the data
 ---------------------
@@ -23,7 +25,7 @@ The function returns a :class:`pyrost.STData` data container,
 which has a set of utility routines (see :class:`pyrost.STData`). For
 instance, usually we work with one dimensional scans, so we can integrate
 the measured frames along the slow axis, mirror the data, and crop
-it using a regio of interest as follows:
+it using a region of interest as follows:
 
 .. doctest::
 
@@ -46,9 +48,10 @@ it using a regio of interest as follows:
 Also, prior to conducting the speckle tracking update one needs to know the
 defocus distance. You can estimate it with :func:`pyrost.STData.defocus_sweep`.
 It generates sample profiles for a set of defocus distances and yields average values
-of the gradient magnitude squared (:math:`\left| \nabla I_{ref} \right|^2`), which characterizes
-reference image's contrast (the higher the value the better the estimate of defocus distance
-is). Also, it returns the set of sample profiles if `return_sweep` argument is True.
+of the gradient magnitude squared (:math:`\left| \nabla I_{ref} \right|^2`), which
+characterizes the reference image's contrast (the higher the value the better the
+estimate of defocus distance is). Also, it returns the set of sample profiles if
+`return_sweep` argument is True.
 
 .. doctest::
 
@@ -69,5 +72,77 @@ is). Also, it returns the set of sample profiles if `return_sweep` argument is T
     :width: 100 %
     :alt: Defocus sweep scan.
 
+Let's update the data container with the defocus distance we got. 
+
+    .. doctest::
+    
+        >>> data = data.update_defocus(defocus)
+
 Speckle Tracking update
 -----------------------
+Now we’re ready to generate a pyrost.SpeckleTracking object, which is able to perform the
+speckle tracking procedure with :func:`SpeckleTracking.iter_update_gd` method. For more
+information about the parameters see the section :ref:`diatom-st-update` in the Diatom
+dataset tutorial.
+
+.. doctest::
+
+    >>> st_obj = data.get_st()
+    >>> st_res = st_obj.iter_update_gd(ls_ri=8., ls_pm=1.5, blur=12., sw_fs=5,
+    >>>                                n_iter=150, learning_rate=5e0)
+    >>> data = data.update_phase(st_res)
+
+    >>> fig, axes = plt.subplots(1, 2, figsize=(16, 6)) # doctest: +SKIP
+    >>> axes[0].plot(np.arange(st_res.reference_image.shape[1]) - st_res.m0, # doctest: +SKIP
+    >>>              st_res.reference_image[0]) # doctest: +SKIP
+    >>> axes[0].set_title('Reference image', fontsize=20) # doctest: +SKIP
+    >>> axes[1].plot((st_res.pixel_map - st_obj.pixel_map)[1, 0]) # doctest: +SKIP
+    >>> axes[1].set_title('Pixel mapping', fontsize=20) # doctest: +SKIP
+    >>> for ax in axes: # doctest: +SKIP
+    >>>     ax.tick_params(labelsize=15) # doctest: +SKIP
+    >>>     ax.set_xlabel('Fast axis, pixels', fontsize=15) # doctest: +SKIP
+    >>> plt.show() # doctest: +SKIP
+
+.. image:: ../figures/sigray_res.png
+    :width: 100 %
+    :alt: Speckle tracking update results.
+
+Phase fitting
+-------------
+In the end we want to look at a angular displacement profile of the X-ray beam and
+find the fit to the profile with a polynomial. All of it could be done with 
+:class:`pyrost.AberrationsFit` fitter object, which can be obtained with
+:func:`pyrost.STData.get_fit` method. We may parse the direct beam coordinate
+in pixels to center the scattering angles aroung the direction of the direct beam:
+
+.. doctest::
+
+    >>> fit_obj = data.get_fit(axis=1, center=20)
+    
+Moreover we would like to remove the first order polynomial term from the displacement
+profile with the :func:`pyrost.AberrationsFit.remove_linear_term`, since it
+characterizes the beam's defocus and is of no interest to us:
+
+.. doctest::
+
+    >>> fit_obj = fit_obj.remove_linear_term()
+
+    >>> fig, axes = plt.subplots(1, 2, figsize=(12, 4)) # doctest: +SKIP
+    >>> axes[0].plot(fit_obj.thetas, fit_obj.theta_aberrations * 1e9, 'b') # doctest: +SKIP
+    >>> axes[0].plot(fit_obj.thetas, fit_obj.model(fcf_rst['fit']) * fit_obj.ref_ap * 1e9, # doctest: +SKIP
+    >>>              'b--', label=fr"RST $c_4 = {fcf_rst['c_4']:.4f} rad/mrad^4$") # doctest: +SKIP
+    >>> axes[0].set_title('Angular displacements, nrad', fontsize=20) # doctest: +SKIP
+    >>>  # doctest: +SKIP
+    >>> axes[1].plot(fit_obj.thetas, fit_obj.phase, 'b') # doctest: +SKIP
+    >>> axes[1].plot(fit_obj.thetas, fit_obj.model(fcf_rst['ph_fit']), 'b--', # doctest: +SKIP
+    >>>              label=fr"RST $c_4={fcf_rst['c_4']:.4f} rad/mrad^4$") # doctest: +SKIP
+    >>> axes[1].set_title('Phase, rad', fontsize=20) # doctest: +SKIP
+    >>> for ax in axes: # doctest: +SKIP
+    >>>     ax.legend(fontsize=15) # doctest: +SKIP
+    >>>     ax.tick_params(labelsize=15) # doctest: +SKIP
+    >>>     ax.set_xlabel('Scattering angles, rad', fontsize=15) # doctest: +SKIP
+    >>> plt.show()  # doctest: +SKIP
+
+.. image:: ../figures/sigray_fits.png
+    :width: 100 %
+    :alt: Phase polynomial fit.

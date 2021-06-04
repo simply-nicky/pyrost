@@ -87,7 +87,7 @@ based on gradeint descent with momentum algorithm, which in general gives lower 
 
 .. image:: ../figures/1d_sim_res.png
     :width: 100 %
-    :alt: Speckle Tracking update results
+    :alt: Speckle tracking update results.
 
 Phase reconstruction
 --------------------

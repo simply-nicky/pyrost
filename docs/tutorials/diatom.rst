@@ -111,6 +111,8 @@ Let's update the data container with the defocus distance we got.
 
     >>> data = data.update_defocus(defocus)
 
+.. _diatom-st-update:
+
 Speckle Tracking update
 -----------------------
 Now we're ready to generate a :class:`pyrost.SpeckleTracking` object, which does the heavy
@@ -125,8 +127,8 @@ For the speckle tracking update you've got two options to choose from:
       (`ls_ri`) and pixel mapping update (`ls_pm`).
 
     * :func:`pyrost.SpeckleTracking.iter_update_gd` : does ditto, but updates the bandwidth
-    value for the reference image update at each iteration by the help of gradeint descent to
-    attain the minimal mean-squared-error value.
+      value for the reference image update at each iteration by the help of gradient descent to
+      attain the minimal mean-squared-error value.
 
 .. note:: You should pay outmost attention to choose the right kernel bandwidth used for
     reference image and pixel mapping updates (`ls_ri`, `ls_pm`). Essentially they stand for
@@ -134,21 +136,23 @@ For the speckle tracking update you've got two options to choose from:
     If the values are too high you'll lose useful information. If the values are too low in
     presence of high noise, you won't get accurate results. Moreover, you can change the
     pixel mapping post-update blurring (`blur`), which helps to prevent the noise amplification
-    when you perform multiple number of iterations. As a rule of thumb, `blur` parameters is
-    usually several times more than `ls_pm`, and many iterations with small step (`sw_ss`,
-    `sw_fs`) are less prone to noise than a few iterations with large steps.
+    when you perform multiple number of iterations. **As a rule of thumb, `blur` should be several
+    times larger than `ls_pm`, and many iterations with small steps (`sw_ss`, `sw_fs`) are less
+    prone to noise than a few iterations with large steps**.
 
 .. note:: Apart from pixel mapping update you may try to perform sample shifts update if you've
-    got low precision or credibilily of sample shifts measurements. You can do it with :func:`pyrost.SpeckleTracking.iter_update`
-    if you assign True to `update_translations` argument.
+    got low precision or credibilily of sample shifts measurements. You can do it by setting
+    `update_translations` parameter to True.
 
 .. doctest::
 
     >>> st_obj = data.get_st()
-    >>> st_res, errors = st_obj.iter_update(sw_fs=15, sw_ss=15, ls_pm=1.5, ls_ri=0.7, verbose=True, n_iter=5)
+    >>> st_res = st_obj.iter_update(sw_fs=15, sw_ss=15, ls_pm=1.5,
+    >>>                             ls_ri=0.7, verbose=True, n_iter=5)
 
     >>> fig, ax = plt.subplots(figsize=(10, 10)) # doctest: +SKIP
-    >>> ax.imshow(st_res.reference_image[700:1200, 100:700], vmin=0.7, vmax=1.3, extent=[100, 700, 1200, 700]) # doctest: +SKIP
+    >>> ax.imshow(st_res.reference_image[700:1200, 100:700], vmin=0.7, vmax=1.3,
+    >>>           extent=[100, 700, 1200, 700]) # doctest: +SKIP
     >>> ax.set_title('Reference image', fontsize=20) # doctest: +SKIP
     >>> ax.set_xlabel('fast axis', fontsize=15) # doctest: +SKIP
     >>> ax.set_ylabel('slow axis', fontsize=15) # doctest: +SKIP
@@ -161,9 +165,12 @@ For the speckle tracking update you've got two options to choose from:
 
 Phase reconstruction
 --------------------
-We got the pixel map, which can be easily translated to the deviation angles of the lens
-wavefront. Now we're able to reconstruct the lens' phase profile. Besides, you can fit
-the phase profile with polynomial function using :class:`pyrost.AberrationsFit`.
+We got the pixel map, which can be easily translated to the angular diplacement profile
+of the lens wavefront between reference and detector planes. Following the Hartmann sensor
+principle (look [ST]_ page 762 for more information), we  reconstruct the lens' phase
+profile with :func:`pyrost.STData.update_phase` method. Besides, you can fit the phase
+profile with polynomial function using :class:`pyrost.AberrationsFit` fitter object,
+which can be obtained with :func:`pyrost.STData.get_fit` method.
 
 .. doctest::
 
@@ -205,6 +212,8 @@ the phase profile with polynomial function using :class:`pyrost.AberrationsFit`.
 .. image:: ../figures/phase_fit.png
     :width: 100 %
     :alt: Phase fit.
+
+.. _diatom-saving:
 
 Saving the results
 ------------------
