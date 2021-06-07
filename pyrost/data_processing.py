@@ -492,7 +492,7 @@ class STData(DataContainer):
     def defocus_sweep(self, defoci_fs, defoci_ss=None, size=51, ls_ri=None, return_extra=False):
         r"""Calculate a set of reference images for each defocus in `defoci` and
         return an average R-characteristic of an image (the higher the value the sharper
-        reference image is). Return intermediate results if return_extra is True.
+        reference image is). Return the intermediate results if `return_extra` is True.
 
         Parameters
         ----------
@@ -505,15 +505,14 @@ class STData(DataContainer):
         ls_ri : float, optional
             Reference image kernel bandwidth in pixels.
         return_extra : bool, optional
-            Return a dictionary with intermediate results: reference images and
-            R images.
+            Return a dictionary with the intermediate results if True.
 
         Returns
         -------
         r_vals : numpy.ndarray
             Array of the average values of `reference_image` gradients squared.
         extra : dict
-            Dictionary with intermediate results. Only if `return_sweep` is True.
+            Dictionary with the intermediate results. Only if `return_extra` is True.
             Contains the following data:
 
             * reference_image : The generated set of reference profiles.
