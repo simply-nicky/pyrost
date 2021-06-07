@@ -49,15 +49,14 @@ and crop it using a region of interest as follows:
 Also, prior to conducting the speckle tracking update one needs to know the
 defocus distance. You can estimate it with :func:`pyrost.STData.defocus_sweep`.
 It generates sample profiles for a set of defocus distances and yields average values
-of the gradient magnitude squared (:math:`\left| \nabla I_{ref} \right|^2`), which
-characterizes the reference image's contrast (the higher the value the better the
-estimate of defocus distance is). Also, it returns the set of sample profiles if
-`return_sweep` argument is True.
+of the local variance (:math:`\left< R[i, j] \right>`, see
+:func:`pyrost.STData.defocus_sweep`), which characterizes the reference image's
+contrast (the higher is the value the sharper is the reference profile).
 
 .. doctest::
 
     >>> defoci = np.linspace(5e-5, 3e-4, 50) # doctest: +SKIP
-    >>> sweep_scan = data.defocus_sweep(defoci, return_sweep=True)
+    >>> sweep_scan = data.defocus_sweep(defoci)
     >>> defocus = defoci[np.argmax(sweep_scan)] # doctest: +SKIP
     >>> print(defocus) # doctest: +SKIP
     0.00015204081632653058
