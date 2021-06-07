@@ -512,8 +512,12 @@ class STData(DataContainer):
         -------
         r_vals : numpy.ndarray
             Array of the average values of `reference_image` gradients squared.
-        sweep_img : numpy.ndarray
-            Defocus sweep image. Only if `return_sweep` is True.
+        extra : dict
+            Dictionary with intermediate results. Only if `return_sweep` is True.
+            Contains the following data:
+
+            * reference_image : The generated set of reference profiles.
+            * r_images : The set of local variance images of reference profiles.
 
         Notes
         -----

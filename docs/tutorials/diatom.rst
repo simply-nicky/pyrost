@@ -89,7 +89,7 @@ of the gradient magnitude squared (:math:`\left< R[i, j] \right>`, see
 .. doctest::
 
     >>> defoci = np.linspace(2e-3, 3e-3, 50) # doctest: +SKIP
-    >>> sweep_scan = data.defocus_sweep(defoci, size=5)
+    >>> sweep_scan = data.defocus_sweep(defoci, size=5, ls_ri=1.5)
     >>> defocus = defoci[np.argmax(sweep_scan)] # doctest: +SKIP
     >>> print(defocus) # doctest: +SKIP
     0.002204081632653061
