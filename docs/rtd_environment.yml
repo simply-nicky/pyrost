@@ -8,6 +8,7 @@ dependencies:
   - python=3.7
   - gsl
   - llvm-openmp
+  - fftw
   - h5py
   - numpy
   - scipy
@@ -15,3 +16,4 @@ dependencies:
   - sphinx_rtd_theme
   - mock
   - pillow
+  - tqdm

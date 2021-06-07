@@ -489,7 +489,7 @@ class STData(DataContainer):
         else:
             return None
 
-    def defocus_sweep(self, defoci_fs, defoci_ss=None, size=51, ls_ri=None, return_extra=True):
+    def defocus_sweep(self, defoci_fs, defoci_ss=None, size=51, ls_ri=None, return_extra=False):
         r"""Calculate a set of reference images for each defocus in `defoci` and
         return an average R-characteristic of an image (the higher the value the sharper
         reference image is). Return intermediate results if return_extra is True.
@@ -518,16 +518,17 @@ class STData(DataContainer):
         Notes
         -----
         R-characteristic is called a local variance and is given by:
+
         .. math::
+            R[i, j] = \frac{\sum_{i^{\prime} = -N / 2}^{N / 2}
+            \sum_{j^{\prime} = -N / 2}^{N / 2} (I[i - i^{\prime}, j - j^{\prime}]
+            - \bar{I}[i, j])^2}{\bar{I}^2[i, j]}
 
-            R[i, j] = \frac{\sum_{i^{\prime} = N / 2}^{i^{\prime} = N / 2}
-                            (I[i - i^{\prime}, j - j^{\prime}] - \bar{I}[i, j])^2}
-                           {\bar{I}^2[i, j]}
-        where $\bar{I}[i, j]$ is a local mean and defined as follows:
-        ..math::
+        where :math:`\bar{I}[i, j]` is a local mean and defined as follows:
 
-            \bar{I}[i, j] = \frac{1}{N^2} \sum_{i^{\prime} = N / 2}^{i^{\prime} = N / 2}
-                            I[i - i^{\prime}, j - j^{\prime}]$ i
+        .. math::
+            \bar{I}[i, j] = \frac{1}{N^2} \sum_{i^{\prime} = -N / 2}^{N / 2}
+            \sum_{j^{\prime} = -N / 2}^{N / 2} I[i - i^{\prime}, j - j^{\prime}]
 
         See Also
         --------

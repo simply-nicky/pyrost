@@ -82,14 +82,14 @@ OR
 It worked! But still we can not perform the Speckle Tracking update procedure without the
 estimates of the defocus distance. You can estimate it with :func:`pyrost.STData.defocus_sweep`.
 It generates sample profiles for a set of defocus distances and yields average values
-of the gradient magnitude squared (:math:`\left| \nabla I_{ref} \right|^2`), which characterizes
-reference image's contrast (the higher the value the better the estimate of defocus distance
-is). Also, it returns the set of sample profiles if `return_sweep` argument is True.
+of the gradient magnitude squared (:math:`\left< R[i, j] \right>`, see
+:func:`pyrost.STData.defocus_sweep`), which characterizes reference image's shaprness
+(the higher is the value the sharper is the reference profile).
 
 .. doctest::
 
     >>> defoci = np.linspace(2e-3, 3e-3, 50) # doctest: +SKIP
-    >>> sweep_scan = data.defocus_sweep(defoci, size=5, return_sweep=True)
+    >>> sweep_scan = data.defocus_sweep(defoci, size=5)
     >>> defocus = defoci[np.argmax(sweep_scan)] # doctest: +SKIP
     >>> print(defocus) # doctest: +SKIP
     0.002204081632653061
