@@ -192,7 +192,7 @@ def gaussian_filter(inp: np.ndarray, sigma: object, order: object=0, mode: str='
         The order of the filter along each axis is given as a sequence of integers, or as
         a single number. An order of 0 corresponds to convolution with a Gaussian kernel.
         A positive order corresponds to convolution with that derivative of a Gaussian.
-    mode : {'constant', 'nearest', 'mirror', 'wrap'}, optional
+    mode : {'constant', 'nearest', 'mirror', 'reflect', 'wrap'}, optional
         The mode parameter determines how the input array is extended when the filter
         overlaps a border. Default value is 'reflect'. The valid values and their behavior
         is as follows:
@@ -208,6 +208,8 @@ def gaussian_filter(inp: np.ndarray, sigma: object, order: object=0, mode: str='
         * 'reflect', (d c b a | a b c d | d c b a) : The input is extended by reflecting
           about the edge of the last pixel. This mode is also sometimes referred to as
           half-sample symmetric.
+        * 'wrap', (a b c d | a b c d | a b c d) : The input is extended by wrapping around
+          to the opposite edge.
     cval : float, optional
         Value to fill past edges of input if mode is ‘constant’. Default is 0.0.
     truncate : float, optional
@@ -269,12 +271,12 @@ def gaussian_gradient_magnitude(inp: np.ndarray, sigma: object, mode: str='refle
 
     Parameters
     ----------
-    input : np.ndarray
+    inp : np.ndarray
         The input array.
     sigma : float or list of floats
         The standard deviations of the Gaussian filter are given for each axis as a sequence,
         or as a single number, in which case it is equal for all axes.
-    mode : {'constant', 'nearest', 'mirror', 'wrap'}, optional
+    mode : {'constant', 'nearest', 'mirror', 'reflect', 'wrap'}, optional
         The mode parameter determines how the input array is extended when the filter
         overlaps a border. Default value is 'reflect'. The valid values and their behavior
         is as follows:
@@ -290,6 +292,8 @@ def gaussian_gradient_magnitude(inp: np.ndarray, sigma: object, mode: str='refle
         * 'reflect', (d c b a | a b c d | d c b a) : The input is extended by reflecting
           about the edge of the last pixel. This mode is also sometimes referred to as
           half-sample symmetric.
+        * 'wrap', (a b c d | a b c d | a b c d) : The input is extended by wrapping around
+          to the opposite edge.
     cval : float, optional
         Value to fill past edges of input if mode is ‘constant’. Default is 0.0.
     truncate : float, optional
@@ -380,6 +384,7 @@ def rsc_wp(wft: np.ndarray, dx0: cython.double, dx: cython.double, z: cython.dou
     cdef np.npy_intp isize = np.PyArray_SIZE(wft)
     cdef int ndim = wft.ndim
     axis = axis if axis >= 0 else ndim + axis
+    axis = axis if axis <= ndim - 1 else ndim - 1
     cdef np.npy_intp istride = np.PyArray_STRIDE(wft, axis) / np.PyArray_ITEMSIZE(wft)
     cdef np.npy_intp npts = np.PyArray_DIM(wft, axis)
     cdef np.npy_intp *dims = wft.shape
@@ -453,6 +458,7 @@ def fraunhofer_wp(wft: np.ndarray, dx0: cython.double, dx: cython.double,
     cdef np.npy_intp isize = np.PyArray_SIZE(wft)
     cdef int ndim = wft.ndim
     axis = axis if axis >= 0 else ndim + axis
+    axis = axis if axis <= ndim - 1 else ndim - 1
     cdef np.npy_intp istride = np.PyArray_STRIDE(wft, axis) / np.PyArray_ITEMSIZE(wft)
     cdef np.npy_intp npts = np.PyArray_DIM(wft, axis)
     cdef np.npy_intp *dims = wft.shape
@@ -646,6 +652,26 @@ def fft_convolve(array: np.ndarray, kernel: np.ndarray, axis: cython.int=-1,
         Kernel array.
     axis : int, optional
         Array axis along which convolution is performed.
+    mode : {'constant', 'nearest', 'mirror', 'reflect', 'wrap'}, optional
+        The mode parameter determines how the input array is extended when the filter
+        overlaps a border. Default value is 'constant'. The valid values and their behavior
+        is as follows:
+
+        * 'constant', (k k k k | a b c d | k k k k) : The input is extended by filling all
+          values beyond the edge with the same constant value, defined by the `cval`
+          parameter.
+        * 'nearest', (a a a a | a b c d | d d d d) : The input is extended by replicating
+          the last pixel.
+        * 'mirror', (c d c b | a b c d | c b a b) : The input is extended by reflecting
+          about the center of the last pixel. This mode is also sometimes referred to as
+          whole-sample symmetric.
+        * 'reflect', (d c b a | a b c d | d c b a) : The input is extended by reflecting
+          about the edge of the last pixel. This mode is also sometimes referred to as
+          half-sample symmetric.
+        * 'wrap', (a b c d | a b c d | a b c d) : The input is extended by wrapping around
+          to the opposite edge.
+    cval : float, optional
+        Value to fill past edges of input if mode is ‘constant’. Default is 0.0.
     backend : {'fftw', 'numpy'}, optional
         Choose backend library for the FFT implementation.
     num_threads : int, optional
@@ -665,6 +691,7 @@ def fft_convolve(array: np.ndarray, kernel: np.ndarray, axis: cython.int=-1,
     cdef np.npy_intp isize = np.PyArray_SIZE(array)
     cdef int ndim = array.ndim
     axis = axis if axis >= 0 else ndim + axis
+    axis = axis if axis <= ndim - 1 else ndim - 1
     cdef np.npy_intp npts = np.PyArray_DIM(array, axis)
     cdef np.npy_intp istride = np.PyArray_STRIDE(array, axis) / np.PyArray_ITEMSIZE(array)
     cdef np.npy_intp ksize = np.PyArray_DIM(kernel, 0)
@@ -760,6 +787,7 @@ def make_whitefield(data: np.ndarray, mask: np.ndarray, axis: cython.int=0,
     if memcmp(data.shape, mask.shape, ndim * sizeof(np.npy_intp)):
         raise ValueError('mask and data arrays must have identical shapes')
     axis = axis if axis >= 0 else ndim + axis
+    axis = axis if axis <= ndim - 1 else ndim - 1
     cdef np.npy_intp isize = np.PyArray_SIZE(data)
     cdef np.npy_intp *dims = <np.npy_intp *>malloc((ndim - 1) * sizeof(np.npy_intp))
     if dims is NULL:

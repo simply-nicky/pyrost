@@ -40,7 +40,7 @@ from .aberrations_fit import AberrationsFit
 from .data_container import DataContainer, dict_to_object
 from .bin import make_whitefield, make_reference, update_pixel_map_gs, update_pixel_map_nm
 from .bin import update_translations_gs, mse_frame, mse_total, ct_integrate
-from .bin import gaussian_filter, gaussian_gradient_magnitude
+from .bin import gaussian_filter, fft_convolve
 
 class STData(DataContainer):
     """Speckle Tracking algorithm data container class.
@@ -148,8 +148,10 @@ class STData(DataContainer):
             # Set a pixel translations
             if self.pixel_translations is None:
                 self.pixel_translations = (self.translations[:, None] * self.basis_vectors).sum(axis=-1)
-                defocus = np.array([self.defocus_ss, self.defocus_fs])
-                self.pixel_translations /= (self.basis_vectors**2).sum(axis=-1) * np.abs(defocus / self.distance)
+                mag = np.abs(self.distance / np.array([self.defocus_ss, self.defocus_fs]))
+                self.pixel_translations *= mag / (self.basis_vectors**2).sum(axis=-1)
+                # Remove first element to avoid losing precision of np.mean
+                self.pixel_translations -= self.pixel_translations[0]
                 self.pixel_translations -= self.pixel_translations.mean(axis=0)
 
             # Flip pixel mapping if defocus is negative
@@ -218,8 +220,10 @@ class STData(DataContainer):
             `whitefield`, `mask`, and `roi`.
         """
         roi = self.roi.copy()
+        data = np.zeros(self.data.shape, dtype=self.data.dtype)
+        data[:, roi[0]:roi[1], roi[2]:roi[3]] = self.get('data') * self.get('mask')
         roi[2 * axis:2 * (axis + 1)] = np.arange(2)
-        return {'data': np.sum(self.data, axis=axis + 1, keepdims=True),
+        return {'data': np.sum(data, axis=axis + 1, keepdims=True),
                 'whitefield': None, 'mask': None, 'roi': roi}
 
     @dict_to_object
@@ -272,14 +276,14 @@ class STData(DataContainer):
                 'mask': mask, 'whitefield': whitefield,  'pixel_translations': None}
 
     @dict_to_object
-    def update_mask(self, method='no-bad', pmin=0., pmax=99.99, vmin=0, vmax=65535,
+    def update_mask(self, method='perc-bad', pmin=0., pmax=99.99, vmin=0, vmax=65535,
                     update='reset'):
         """Return a new :class:`STData` object with the updated
         bad pixels mask.
 
         Parameters
         ----------
-        method : {'no-bad', 'eiger-bad', 'perc-bad'}, optional
+        method : {'no-bad', 'range-bad', 'perc-bad'}, optional
             Bad pixels masking methods:
 
             * 'no-bad' (default) : No bad pixels.
@@ -302,20 +306,25 @@ class STData(DataContainer):
         STData
             New :class:`STData` object with the updated `mask`.
         """
+        data = self.get('data')
         if method == 'no-bad':
-            mask = np.ones(self.data.shape)
+            mask = np.ones((self.data.shape[0], self.roi[1] - self.roi[0],
+                            self.roi[3] - self.roi[2]), dtype=bool)
         elif method == 'range-bad':
-            mask = (self.data > vmin) & (self.data < vmax)
+            mask = (data > vmin) & (data < vmax)
         elif method == 'perc-bad':
-            offsets = (self.data - np.median(self.data))
+            offsets = (data - np.median(data))
             mask = (offsets > np.percentile(offsets, pmin)) & \
                    (offsets < np.percentile(offsets, pmax))
         else:
             ValueError('invalid method argument')
+        mask_full = self.mask.copy()
         if update == 'reset':
-            return {'mask': mask, 'whitefield': None}
+            mask_full[:, self.roi[0]:self.roi[1], self.roi[2]:self.roi[3]] = mask
+            return {'mask': mask_full, 'whitefield': None}
         if update == 'multiply':
-            return {'mask': self.mask * mask, 'whitefield': None}
+            mask_full[:, self.roi[0]:self.roi[1], self.roi[2]:self.roi[3]] *= mask
+            return {'mask': mask_full, 'whitefield': None}
 
     @dict_to_object
     def make_whitefield(self):
@@ -480,12 +489,10 @@ class STData(DataContainer):
         else:
             return None
 
-    def defocus_sweep(self, defoci_fs, defoci_ss=None, ls_ri=30, return_sweep=True):
-        """Calculate a set of `reference_image` for each defocus in `defoci` and
-        return a gradient magnitude for each `reference_image` as a figure of
-        merit of it's sharpness (the higher the value the sharper `reference_image`
-        is). `ls_ri` should be large enough in order to supress high frequency noise.
-        Return a sweep image if `return_sweep` is True.
+    def defocus_sweep(self, defoci_fs, defoci_ss=None, size=51, ls_ri=None, return_extra=True):
+        r"""Calculate a set of reference images for each defocus in `defoci` and
+        return an average R-characteristic of an image (the higher the value the sharper
+        reference image is). Return intermediate results if return_extra is True.
 
         Parameters
         ----------
@@ -493,41 +500,72 @@ class STData(DataContainer):
             Array of defocus distances along the fast detector axis [m].
         defoci_ss : numpy.ndarray, optional
             Array of defocus distances along the slow detector axis [m].
+        size : int, optional
+            Local variance filter size in pixels.
         ls_ri : float, optional
-            `reference_image` length scale in pixels.
-        return_sweep : bool, optional
-            Return a sweep image if it's True.
+            Reference image kernel bandwidth in pixels.
+        return_extra : bool, optional
+            Return a dictionary with intermediate results: reference images and
+            R images.
 
         Returns
         -------
-        grad_mag : numpy.ndarray
+        r_vals : numpy.ndarray
             Array of the average values of `reference_image` gradients squared.
         sweep_img : numpy.ndarray
             Defocus sweep image. Only if `return_sweep` is True.
+
+        Notes
+        -----
+        R-characteristic is called a local variance and is given by:
+        .. math::
+
+            R[i, j] = \frac{\sum_{i^{\prime} = N / 2}^{i^{\prime} = N / 2}
+                            (I[i - i^{\prime}, j - j^{\prime}] - \bar{I}[i, j])^2}
+                           {\bar{I}^2[i, j]}
+        where $\bar{I}[i, j]$ is a local mean and defined as follows:
+        ..math::
+
+            \bar{I}[i, j] = \frac{1}{N^2} \sum_{i^{\prime} = N / 2}^{i^{\prime} = N / 2}
+                            I[i - i^{\prime}, j - j^{\prime}]$ i
 
         See Also
         --------
         SpeckleTracking.update_reference : `reference_image` update algorithm.
         """
+        if ls_ri is None:
+            ls_ri = size / 2
         if defoci_ss is None:
             defoci_ss = defoci_fs.copy()
-        grad_mag, sweep_scan = [], []
-        for defocus_fs, defocus_ss in tqdm(zip(defoci_fs.ravel(), defoci_ss.ravel()), total=len(defoci_fs),
+        r_vals = []
+        extra = {'reference_image': [], 'r_image': []}
+        kernel = np.ones(int(size)) / size
+        for defocus_fs, defocus_ss in tqdm(zip(defoci_fs.ravel(), defoci_ss.ravel()),
+                                           total=len(defoci_fs),
                                            desc='Generating defocus sweep'):
             st_data = self.update_defocus(defocus_fs, defocus_ss)
             st_obj = st_data.get_st().update_reference(ls_ri=ls_ri)
-            ri_gm = gaussian_gradient_magnitude(st_obj.reference_image, sigma=ls_ri,
-                                                num_threads=self.num_threads)
-            sweep_scan.append(st_obj.reference_image)
-            grad_mag.append(np.mean(ri_gm**2))
-        grad_mag = np.array(grad_mag).reshape(defoci_fs.shape)
-        if return_sweep:
-            shape = tuple(np.max([ref_img.shape for ref_img in sweep_scan], axis=0))
-            sweep_img = np.zeros((defoci_fs.shape + shape))
-            for idx, ref_img in zip(np.ndindex(defoci_fs.shape), sweep_scan):
-                sweep_img[idx][:ref_img.shape[0], :ref_img.shape[1]] = ref_img
-            return grad_mag, sweep_img
-        return grad_mag
+            extra['reference_image'].append(st_obj.reference_image)
+            mean = st_obj.reference_image.copy()
+            if st_obj.reference_image.shape[0] > 1:
+                mean = fft_convolve(mean, kernel, mode='reflect', axis=0,
+                                    num_threads=self.num_threads)
+            if st_obj.reference_image.shape[1] > 1:
+                mean = fft_convolve(mean, kernel, mode='reflect', axis=1,
+                                    num_threads=self.num_threads)
+            mean_sq = st_obj.reference_image**2
+            if st_obj.reference_image.shape[0] > 1:
+                mean_sq = fft_convolve(mean_sq, kernel, mode='reflect', axis=0,
+                                       num_threads=self.num_threads)
+            if st_obj.reference_image.shape[1] > 1:
+                mean_sq = fft_convolve(mean_sq, kernel, mode='reflect', axis=1,
+                                       num_threads=self.num_threads)
+            r_image = (mean_sq - mean**2) / mean**2
+            extra['r_image'].append(r_image)
+            r_vals.append(np.mean(r_image))
+        if return_extra:
+            return r_vals, extra
+        return r_vals
 
     def get(self, attr, value=None):
         """Return a dataset with `mask` and `roi` applied.

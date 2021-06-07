@@ -23,15 +23,16 @@ Working with the data
 ---------------------
 The function returns a :class:`pyrost.STData` data container,
 which has a set of utility routines (see :class:`pyrost.STData`). For
-instance, usually we work with one dimensional scans, so we can integrate
-the measured frames along the slow axis, mirror the data, and crop
-it using a region of interest as follows:
+instance, usually we work with one dimensional scans, so we can mask the bad
+pixels, integrate the measured frames along the slow axis, mirror the data,
+and crop it using a region of interest as follows:
 
 .. doctest::
 
+    >>> data = data.update_mask(pmax=99.999, update='multiply')
     >>> data = data.integrate_data(axis=0)
-    >>> data = data.mirror_data(axis=0)
     >>> data = data.crop_data(roi=(0, 1, 200, 1240))
+    >>> data = data.mirror_data(axis=0)
 
     >>> fig, ax = plt.subplots(figsize=(14, 6)) # doctest: +SKIP
     >>> ax.imshow(data.get('data')[:, 0]) # doctest: +SKIP

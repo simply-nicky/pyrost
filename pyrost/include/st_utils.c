@@ -261,9 +261,10 @@ void frames(double *out, const double *pfx, const double *pfy, double dx, double
 static void *wirthselect(void *data, size_t k, size_t l, size_t m, size_t size,
     int (*compar)(const void*, const void*))
 {
-    int i, j;
+    int i, j, n_iter = 0;
+    int max_iter = (int)(m - l);
     void *key = malloc(size);
-    while (l < m)
+    while ((l < m) & (n_iter++ < max_iter))
     {
         memcpy(key, data + k * size, size);
         i = l; j = m;
@@ -276,7 +277,7 @@ static void *wirthselect(void *data, size_t k, size_t l, size_t m, size_t size,
                 SWAP_BUF(data + i * size, data + j * size, size);
                 i++; j--;
             }
-        } while(i <= j);
+        } while((i <= j));
         if (j < (int) k) l = i;
         if ((int) k < i) m = j;
     }

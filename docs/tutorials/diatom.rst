@@ -89,7 +89,7 @@ is). Also, it returns the set of sample profiles if `return_sweep` argument is T
 .. doctest::
 
     >>> defoci = np.linspace(2e-3, 3e-3, 50) # doctest: +SKIP
-    >>> sweep_scan = data.defocus_sweep(defoci, ls_ri=0.7, return_sweep=True)
+    >>> sweep_scan = data.defocus_sweep(defoci, size=5, return_sweep=True)
     >>> defocus = defoci[np.argmax(sweep_scan)] # doctest: +SKIP
     >>> print(defocus) # doctest: +SKIP
     0.002204081632653061

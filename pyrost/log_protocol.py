@@ -264,13 +264,13 @@ def cxi_converter_sigray(scan_num, target='Mo', distance=2.):
     log_prt = LogProtocol()
     cxi_loader = CXILoader(h5_prt)
 
-    fs_vec = np.array([0., -1., 0.])
-    ss_vec = np.array([1., 0., 0.])
+    ss_vec = np.array([0., -1., 0.])
+    fs_vec = np.array([-1., 0., 0.])
 
     log_path = f'/gpfs/cfel/cxi/labs/MLL-Sigray/scan-logs/Scan_{scan_num:d}.log'
     dir_path = f'/gpfs/cfel/cxi/labs/MLL-Sigray/scan-frames/Scan_{scan_num:d}'
-    h5_files = [os.path.join(dir_path, path) for path in os.listdir(dir_path)
-                if path.endswith('Lambda.nxs')]
+    h5_files = sorted([os.path.join(dir_path, path) for path in os.listdir(dir_path)
+                       if path.endswith('Lambda.nxs')])
 
     data = np.concatenate(list(cxi_loader.load_data(h5_files).values()), axis=-3)
     attrs = cxi_loader.load_attributes(h5_files[0])
@@ -281,6 +281,9 @@ def cxi_converter_sigray(scan_num, target='Mo', distance=2.):
     pix_vec = np.tile(np.array([[attrs['x_pixel_size'], attrs['y_pixel_size'], 0]]),
                       (n_steps, 1)) * 1e-6
     basis_vectors = np.stack([pix_vec * ss_vec, pix_vec * fs_vec], axis=1)
+
+    with np.load(os.path.join(ROOT_PATH, 'data/sigray_mask.npz')) as mask_file:
+        mask = np.tile(mask_file['mask'][None], (n_steps, 1, 1))
 
     translations = np.tile([[log_attrs['Session logged attributes']['x_sample'],
                             log_attrs['Session logged attributes']['y_sample'],
@@ -293,6 +296,6 @@ def cxi_converter_sigray(scan_num, target='Mo', distance=2.):
             translations[:, 1] = log_data[data_key]
 
     return STData(basis_vectors=basis_vectors, data=data, distance=distance,
-                  translations=translations, wavelength=wl_dict[target],
+                  mask=mask, translations=translations, wavelength=wl_dict[target],
                   x_pixel_size=attrs['x_pixel_size'] * 1e-6,
                   y_pixel_size=attrs['y_pixel_size'] * 1e-6, protocol=cxi_prt)
