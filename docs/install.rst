@@ -10,14 +10,14 @@ pyrost has the following **mandatory** runtime dependencies:
 * `FFTW library <http://www.fftw.org/#documentation>`_ 3.3.8 or later,
   which is used for fast fourier transform computations.
 * `GNU Scientific Library <https://www.gnu.org/software/gsl/>`_ 2.4
-  or later, which is used for numerical integration and pseudo-random
-  number generation.
+  or later, which is used for pseudo-random number generation.
 * `LLVM's OpenMP library <http://openmp.llvm.org>`_ 10.0.0 or later, which
   is used for parallelization.
 * `h5py <https://www.h5py.org>`_ 2.10.0 or later, which is used to work with
   CXI files.
 * `NumPy <https://numpy.org>`_ 1.19.0 or later.
 * `SciPy <https://scipy.org>`_ 1.5.2 or later.
+* `tqdm <https://github.com/tqdm/tqdm>`_ 4.56.0 or later.
 
 Packages
 --------
@@ -65,12 +65,15 @@ In order to install pyrost from source you will need:
 * `FFTW library <http://www.fftw.org/#documentation>`_ 3.3.8 or later,
   which is used for fast fourier transform computations.
 * `GNU Scientific Library <https://www.gnu.org/software/gsl/>`_ 2.4
-  or later, which is used for numerical integration and pseudo-random
-  number generation.
+  or later, which is used for pseudo-random number generation.
 * `LLVM's OpenMP library <http://openmp.llvm.org>`_ 10.0.0 or later, which
   is used for parallelization.
 * `Cython <https://cython.org>`_ 0.29 or later.
 * `NumPy <https://numpy.org>`_ 1.19.0 or later.
+* `SciPy <https://scipy.org>`_ 1.5.2 or later.
+* `h5py <https://www.h5py.org>`_ 2.10.0 or later, which is used to work with
+  CXI files.
+* `tqdm <https://github.com/tqdm/tqdm>`_ 4.56.0 or later.
 
 After installing the dependencies, you can download the the source code from
 the `GitHub pyrost repository page <https://github.com/simply-nicky/pyrost>`_.
