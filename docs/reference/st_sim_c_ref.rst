@@ -4,20 +4,16 @@ st_sim Core Functions
 Core functions of the st_sim Speckle Tracking scan simulation.
 Contains core tools to calculate wavefront propagation based on
 Fresnel diffraction theory and to generate simulated data from
-the wavefronts. All the functions are written in `Cython`_.
-
-.. _Cython: https://cython.org
+the wavefronts. All the functions are written in C.
 
 .. toctree::
     :maxdepth: 1
     :caption: Contents
 
-    c_funcs/rsc_wp
-    c_funcs/fhf_wp
-    c_funcs/fhf_wp_scan
-    c_funcs/bar_positions
-    c_funcs/barcode_profile
-    c_funcs/fft_convolve
-    c_funcs/fft_convolve_scan
-    c_funcs/make_frames
-    c_funcs/make_whitefield
+    funcs/rsc_wp
+    funcs/fraunhofer_wp
+    funcs/bar_positions
+    funcs/barcode_profile
+    funcs/fft_convolve
+    funcs/make_frames
+    funcs/make_whitefield

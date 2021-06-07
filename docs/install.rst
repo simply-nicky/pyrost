@@ -7,6 +7,8 @@ pyrost has the following **mandatory** runtime dependencies:
 
 * `Python <https://www.python.org/>`_ 3.6 or later (Python 2.x is
   **not** supported).
+* `FFTW library <http://www.fftw.org/#documentation>`_ 3.3.8 or later,
+  which is used for fast fourier transform computations.
 * `GNU Scientific Library <https://www.gnu.org/software/gsl/>`_ 2.4
   or later, which is used for numerical integration and pseudo-random
   number generation.
@@ -25,7 +27,7 @@ pyrost packages are available through `pypi <https://pypi.org/project/pyrost/>`_
 conda
 ^^^^^
 pyrost binary distribution is available via the `conda <https://anaconda.org/conda-forge/pyrost>`_
-package manager for Linux and OSX (Windows is **not** supported)in `conda-forge <https://conda-forge.org/>`_
+package manager for Linux and OSX (Windows is **not** supported) in `conda-forge <https://conda-forge.org/>`_
 channel. In order to install pyrost via conda, you just need to add `conda-forge`
 to the channels, and install as following:
 
@@ -60,6 +62,8 @@ In order to install pyrost from source you will need:
 * a C++ compiler (gcc or clang will do).
 * `Python <https://www.python.org/>`_ 3.6 or later (Python 2.x is
   **not** supported).
+* `FFTW library <http://www.fftw.org/#documentation>`_ 3.3.8 or later,
+  which is used for fast fourier transform computations.
 * `GNU Scientific Library <https://www.gnu.org/software/gsl/>`_ 2.4
   or later, which is used for numerical integration and pseudo-random
   number generation.

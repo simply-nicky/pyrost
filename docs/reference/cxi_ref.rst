@@ -1,24 +1,24 @@
-pyrost CXI Protocol
-===================
+Working with CXI Files
+======================
 
-Protocol
---------
+CXIProtocol
+-----------
 
-CXI protocol (:class:`pyrost.Protocol`) is helper class for a :class:`pyrost.STData`
+CXI protocol (:class:`pyrost.CXIProtocol`) is a helper class for a :class:`pyrost.STData`
 data container, which tells it where to look for the necessary data fields in a CXI
 file. The class is fully customizable so you can tailor it to your particular data
 structure of CXI file. The protocol consists of the following attributes for each
 data field (`data`, `whitefield`, etc.):
 
-* `datatypes` : data type (`float`, `int`, or `bool`).
+* `datatypes` : Data type (`float`, `int`, or `bool`).
 * `default_paths` : CXI file path.
 
 .. note::
 
-    You can save protocol to an INI file with :func:`pyrost.Protocol.export_ini`
-    and import protocol from INI file with :func:`pyrost.Protocol.import_ini`.
+    You can save protocol to an INI file with :func:`pyrost.CXIProtocol.export_ini`
+    and import protocol from INI file with :func:`pyrost.CXIProtocol.import_ini`.
 
-The default protocol can be accessed with :func:`pyrost.cxi_protocol`. The protocol
+The default protocol can be accessed with :func:`pyrost.CXIProtocol.import_default`. The protocol
 is given by:
 
 .. code-block:: ini
@@ -40,7 +40,7 @@ is given by:
     mask = bool
     n0 = int
     phase = float
-    pixel_abberations = float
+    pixel_aberrations = float
     pixel_map = float
     pixel_translations = float
     reference_image = float
@@ -65,7 +65,7 @@ is given by:
     mask = /speckle_tracking/mask
     n0 = /speckle_tracking/n0
     phase = /speckle_tracking/phase
-    pixel_abberations = /speckle_tracking/pixel_abberations
+    pixel_aberrations = /speckle_tracking/pixel_aberrations
     pixel_map = /speckle_tracking/pixel_map
     pixel_translations = /speckle_tracking/pixel_translations
     reference_image = /speckle_tracking/reference_image
@@ -76,32 +76,25 @@ is given by:
     x_pixel_size = /entry_1/instrument_1/detector_1/x_pixel_size
     y_pixel_size = /entry_1/instrument_1/detector_1/y_pixel_size
 
-.. toctree::
-    :maxdepth: 1
-    :caption: Contents
+CXILoader
+---------
 
-    classes/protocol
-    classes/cxi_protocol
-
-Loader
-------
-
-Speckle Tracking loader class (:class:`pyrost.STLoader`) uses a protocol to
+CXI file loader class (:class:`pyrost.CXILoader`) uses a protocol to
 automatically load all the necessary data fields from a CXI file. Other than
 the information provided by a protocol, a loader class requires the following
 attributes:
 
-* `policy` : loading policy for each attribute enlisted in protocol. If it's
+* `policy` : Loading policy for each attribute enlisted in protocol. If it's
   True, the corresponding attribute will be loaded.
-* `load_paths` : list of extra CXI file paths, where the loader will look for
+* `load_paths` : List of extra CXI file paths, where the loader will look for
   the data field.
 
 .. note::
 
-    You can save loader to an INI file with :func:`pyrost.STLoader.export_ini`
-    and import protocol from INI file with :func:`pyrost.STLoader.import_ini`.
+    You can save loader to an INI file with :func:`pyrost.CXILoader.export_ini`
+    and import loader from an INI file with :func:`pyrost.CXILoader.import_ini`.
 
-The default loader can be accessed with :func:`pyrost.loader`. The loader
+The default loader can be accessed with :func:`pyrost.CXILoader.import_default`. The loader
 is given by:
 
 .. code-block:: ini
@@ -126,7 +119,7 @@ is given by:
     mask = True
     n0 = False
     phase = False
-    pixel_abberations = False
+    pixel_aberrations = False
     pixel_map = False
     pixel_translations = False
     reference_image = False
@@ -137,11 +130,13 @@ is given by:
     x_pixel_size = True
     y_pixel_size = True
 
-.. automodule:: pyrost.protocol
+.. automodule:: pyrost.cxi_protocol
+
+Contents
+--------
 
 .. toctree::
-    :maxdepth: 1
-    :caption: Contents
+    :maxdepth: 2
 
-    classes/st_loader
-    classes/loader
+    classes/cxi_protocol
+    classes/cxi_loader

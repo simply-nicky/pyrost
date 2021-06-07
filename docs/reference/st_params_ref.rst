@@ -31,7 +31,7 @@ List of experimental parameters:
 * **Source parameters**:
 
     * `p0` : Source beam flux [cnt / s].
-    * `wl` : Incoming beam's wavelength [um].
+    * `wl` : Source beam's wavelength [um].
     * `th_s` : Source rocking curve width [rad].
 
 * **Lens parameters**:
@@ -39,8 +39,8 @@ List of experimental parameters:
     * `ap_x` : Lens' aperture size along the x axis [um].
     * `ap_y` : Lens' aperture size along the y axis [um].
     * `focus` : Focal distance [um].
-    * `alpha` : Third order abberations ceofficient [rad/mrad^3].
-    * `ab_cnt` : Lens' abberations center point [0.0 - 1.0].
+    * `alpha` : Third order aberrations coefficient [rad / mrad^3].
+    * `ab_cnt` : Lens' aberrations center point [0.0 - 1.0].
 
 * **Barcode sample parameters**:
 
@@ -52,20 +52,25 @@ List of experimental parameters:
     * `offset` : Barcode's offset at the beginning and at the end
       of the scan from the detector's bounds [um].
 
+* **System parameters**:
+
+    * `seed` : Seed used in all the pseudo-random number generations.
+
 .. note::
 
-    You can save protocol to an INI file with :func:`pyrost.Protocol.export_ini`
-    and import protocol from INI file with :func:`pyrost.Protocol.import_ini`.
+    You can save parameters to an INI file with :func:`pyrost.simulation.STParams.export_ini`
+    and import parameters from an INI file with :func:`pyrost.simulation.STParams.import_ini`.
 
-The default parameters are accessed width :func:`pyrost.simulation.parameters`.
+The default parameters are accessed with :func:`pyrost.simulation.STParams.import_default`.
 The parameters are given by:
 
 .. code-block:: ini
 
     [exp_geom]
-    defocus = 4e2
+    defocus = 1e2
     det_dist = 2e6
     step_size = 0.1
+    step_rnd = 0.2
     n_frames = 300
 
     [detector]
@@ -86,21 +91,20 @@ The parameters are given by:
     ab_cnt = 0.5
 
     [barcode]
-    bar_size = 0.1
-    bar_sigma = 0.01
-    bar_atn = 0.3
-    bulk_atn = 0.0
-    bar_rnd = 0.6
+    bar_size = 0.5
+    bar_sigma = 0.12
+    bar_atn = 0.15
+    bulk_atn = 0.15
+    bar_rnd = 0.9
     offset = 0
 
     [system]
-    verbose = False
+    seed = 0
 
-.. automodule:: pyrost.simulation.st_sim_param
+.. automodule:: pyrost.simulation.st_parameters
 
 .. toctree::
     :maxdepth: 1
     :caption: Contents
 
     classes/st_params
-    classes/parameters

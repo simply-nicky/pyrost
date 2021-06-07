@@ -2,6 +2,7 @@
 /figures/
 /results/
 /logs/
+dev.ipynb
 
 #jupyter checkpoints
 .ipynb_checkpoints/
@@ -13,9 +14,10 @@ __pycache__/
 
 # Libraries and Cython generated C extensions
 *.so
-pyrost/bin/beam_calc.c
-pyrost/bin/st_utils.c
-dev.c
+*.html
+pyrost/bin/*.c
+/*.c
+.pyxbld/
 
 # Distribution / packaging
 .Python

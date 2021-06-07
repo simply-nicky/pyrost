@@ -6,14 +6,14 @@ import pyrost as rst
 import pyrost.simulation as st_sim
 
 @pytest.fixture(params=[{'det_dist': 5e5, 'n_frames': 10, 'ap_x': 4,
-                         'ap_y': 1, 'focus': 3e3, 'defocus': 2e2},
+                         'ap_y': 1, 'focus': 3e3, 'defocus': -2e2},
                         {'det_dist': 4.5e5, 'n_frames': 5, 'ap_x': 3,
                          'ap_y': 1.5, 'focus': 2e3, 'defocus': 1e2}],
                 scope='session')
 def st_params(request):
     """Return a default instance of simulation parameters.
     """
-    return st_sim.parameters(**request.param)
+    return st_sim.STParams.import_default(**request.param)
 
 @pytest.fixture(scope='session')
 def sim_obj(st_params):
@@ -30,15 +30,16 @@ def loader(request):
     """
     Return the default loader.
     """
-    protocol = rst.cxi_protocol(float_precision=request.param)
-    return rst.loader(protocol=protocol)
+    protocol = rst.CXIProtocol(float_precision=request.param)
+    return rst.CXILoader(protocol=protocol)
 
 @pytest.fixture(params=['float32', 'float64'])
 def converter(request):
     """
     Return the default loader.
     """
-    return st_sim.converter(float_precision=request.param)
+    protocol = rst.CXIProtocol(float_precision=request.param)
+    return st_sim.STConverter(protocol=protocol)
 
 @pytest.fixture(scope='session')
 def temp_dir():
@@ -76,7 +77,7 @@ def test_save_and_load_sim(converter, loader, ptych, sim_obj, temp_dir):
     converter.save_sim(ptych, sim_obj, temp_dir)
     cxi_path = os.path.join(temp_dir, 'data.cxi')
     assert os.path.isfile(cxi_path)
-    data_dict = loader.load_dict(cxi_path)
+    data_dict = loader.load_to_dict(paths=cxi_path)
     for attr in rst.STData.attr_set:
         assert not data_dict[attr] is None
 
@@ -94,7 +95,7 @@ def test_st_update_sim(converter, ptych , sim_obj):
 @pytest.mark.rst
 def test_load_exp(path, roi, defocus, loader):
     assert os.path.isfile(path)
-    data_dict = loader.load_dict(path=path, roi=roi, defocus=defocus)
+    data_dict = loader.load_to_dict(paths=path, roi=roi, defocus=defocus)
     for attr in rst.STData.attr_set:
         assert not data_dict[attr] is None
 

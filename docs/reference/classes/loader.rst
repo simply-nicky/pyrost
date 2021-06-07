@@ -1,4 +1,0 @@
-loader
-======
-
-.. autofunction:: pyrost.loader

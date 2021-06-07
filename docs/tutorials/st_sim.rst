@@ -1,5 +1,5 @@
-Speckle Tracking Simulation
-===========================
+Simulating a 1D Speckle Tracking Scan
+=====================================
 
 You can simulate an one-dimensional Speckle Tracking scan either using
 Python interface or Terminal.
@@ -10,9 +10,10 @@ Python interface
 Experimental parameters
 ^^^^^^^^^^^^^^^^^^^^^^^
 
-Before performing the simulation, you need to choose experimental
-parameters. You can do it with :class:`pyrost.simulation.STParams` or
-:func:`pyrost.simulation.parameters`.
+Before performing the simulation, you need to choose the experimental
+parameters. You can do it with :class:`pyrost.simulation.STParams`. The
+st_sim library has built-in default parameters, which can be accessed
+with :func:`pyrost.simulation.STParams.import_default`.
 
 .. note:: Full list of experimental parameters is written in
     :doc:`../reference/st_params_ref`. All the spatial parameters are
@@ -21,10 +22,10 @@ parameters. You can do it with :class:`pyrost.simulation.STParams` or
 .. doctest::
 
     >>> import pyrost.simulation as st_sim
-    >>> params = st_sim.parameters(bar_size=0.7, bar_sigma=0.12, bar_atn=0.18,
-    >>>                            bulk_atn=0.2, p0 = 5e4, th_s=8e-5, n_frames=100,
-    >>>                            offset=2.0, step_size=0.1, defocus=150, alpha=0.05,
-    >>>                            ab_cnt=0.7, bar_rnd=0.8)
+    >>> params = st_sim.STParams.import_default(bar_size=0.7, bar_sigma=0.12, bar_atn=0.18,
+    >>>                                         bulk_atn=0.2, p0 = 5e4, th_s=8e-5, n_frames=100,
+    >>>                                         offset=2.0, step_size=0.1, defocus=150, alpha=0.05,
+    >>>                                         ab_cnt=0.7, bar_rnd=0.8)
 
 Performing the simulation
 ^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -47,7 +48,7 @@ saves the results to a CXI file using the provided CXI protocol.
     >>> ax.tick_params(labelsize=15) # doctest: +SKIP
     >>> plt.show() # doctest: +SKIP
 
-.. image:: ../figures/ptychograph.png
+.. image:: ../figures/sim_ptychograph.png
     :width: 100 %
     :alt: Ptychograph.
 
@@ -55,7 +56,7 @@ Or you can directly generate an :class:`pyrost.STData` data container to perform
 
 .. doctest::
 
-    >>> sim_obj = st_sim.STSim(params)=
+    >>> sim_obj = st_sim.STSim(params)
     >>> ptych = sim_obj.ptychograph()
     >>> st_conv = st_sim.STConverter()
     >>> st_data = st_conv.export_data(ptych, sim_obj)
@@ -104,8 +105,8 @@ just type :code:`python -m pyrost.simulation --help`.
       --ap_x AP_X           Lens size along the x axis [um] (default: 40.0)
       --ap_y AP_Y           Lens size along the y axis [um] (default: 2.0)
       --focus FOCUS         Focal distance [um] (default: 1500.0)
-      --alpha ALPHA         Third order abberations [rad/mrad^3] (default: -0.05)
-      --ab_cnt AB_CNT       Lens' abberations center point [0.0 - 1.0] (default:
+      --alpha ALPHA         Third order aberrations [rad/mrad^3] (default: -0.05)
+      --ab_cnt AB_CNT       Lens' aberrations center point [0.0 - 1.0] (default:
                             0.5)
       --bar_size BAR_SIZE   Average bar size [um] (default: 0.1)
       --bar_sigma BAR_SIGMA

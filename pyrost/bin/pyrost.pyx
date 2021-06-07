@@ -1,7 +1,8 @@
 cimport numpy as np
 import numpy as np
 from libc.math cimport sqrt, exp, pi, floor, ceil
-from cython.parallel import prange
+from cython.parallel import prange, parallel
+from libc.stdlib cimport abort, malloc, free
 cimport openmp
 
 ctypedef fused float_t:
@@ -9,7 +10,6 @@ ctypedef fused float_t:
     np.float32_t
 
 ctypedef np.uint64_t uint_t
-ctypedef np.npy_bool bool_t
 ctypedef np.complex128_t complex_t
 
 DEF FLOAT_MAX = 1.7976931348623157e+308
@@ -60,7 +60,7 @@ cdef void frame_reference(float_t[:, ::1] I0, float_t[:, ::1] w0, float_t[:, ::1
                     w0[jj, kk] += W[j, k]**2 * r
 
 def make_reference(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, :, ::1] u, float_t[::1] di,
-                   float_t[::1] dj, int sw_ss, int sw_fs, float_t ls, bool_t return_nm0=True):
+                   float_t[::1] dj, int sw_ss, int sw_fs, float_t ls, bint return_nm0=True, unsigned num_threads=1):
     r"""Generate an unabberated reference image of the sample
     based on the pixel mapping `u` and the measured data `I_n`
     using the `simple kriging`_.
@@ -94,6 +94,8 @@ def make_reference(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, :, ::1]
     return_nm0 : bool
         If True, also returns the lower bounds (`n0`, `m0`)
         of the reference image in pixels.
+    num_threads : int, optional
+        Number of threads.
 
     Returns
     -------
@@ -133,31 +135,30 @@ def make_reference(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, :, ::1]
         \exp\left[{-\frac{(\Delta ii_{ref})^2 + 
         (\Delta jj_{ref})^2}{ls^2}}\right]
     """
-    dtype = np.float64 if float_t is np.float64_t else np.float32
     cdef:
-        int a = I_n.shape[0], b = I_n.shape[1], c = I_n.shape[2], i, j, k, t
+        str dtype = 'float64' if float_t is np.float64_t else 'float32'
+        int a = I_n.shape[0], b = I_n.shape[1], c = I_n.shape[2]
+        int i, j, k, t
+        float_t Is, ws
         float_t n0 = -min_float(&u[0, 0, 0], b * c) + max_float(&di[0], a) + sw_ss
         float_t m0 = -min_float(&u[1, 0, 0], b * c) + max_float(&dj[0], a) + sw_fs
         int aa = <int>(max_float(&u[0, 0, 0], b * c) - min_float(&di[0], a) + n0) + 1 + sw_ss
         int bb = <int>(max_float(&u[1, 0, 0], b * c) - min_float(&dj[0], a) + m0) + 1 + sw_fs
-        int max_threads = openmp.omp_get_max_threads()
-        float_t[:, :, ::1] I = np.zeros((max_threads, aa, bb), dtype=dtype)
-        float_t[:, :, ::1] w = np.zeros((max_threads, aa, bb), dtype=dtype)
-        float_t[::1] Is = np.empty(max_threads, dtype=dtype)
-        float_t[::1] ws = np.empty(max_threads, dtype=dtype)
+        float_t[:, :, ::1] I = np.zeros((num_threads, aa, bb), dtype=dtype)
+        float_t[:, :, ::1] w = np.zeros((num_threads, aa, bb), dtype=dtype)
         float_t[:, ::1] I0 = np.zeros((aa, bb), dtype=dtype)
-    for i in prange(a, schedule='guided', nogil=True):
+    for i in prange(a, schedule='guided', num_threads=num_threads, nogil=True):
         t = openmp.omp_get_thread_num()
         frame_reference(I[t], w[t], I_n[i], W, u, di[i] - n0, dj[i] - m0, ls)
-    for k in prange(bb, schedule='guided', nogil=True):
+    for k in prange(bb, schedule='guided', num_threads=num_threads, nogil=True):
         t = openmp.omp_get_thread_num()
         for j in range(aa):
-            Is[t] = 0; ws[t] = 0
-            for i in range(max_threads):
-                Is[t] = Is[t] + I[i, j, k]
-                ws[t] = ws[t] + w[i, j, k]
-            if ws[t]:
-                I0[j, k] = Is[t] / ws[t]
+            Is = 0; ws = 0
+            for i in range(num_threads):
+                Is = Is + I[i, j, k]
+                ws = ws + w[i, j, k]
+            if ws:
+                I0[j, k] = Is / ws
             else:
                 I0[j, k] = 0
     if return_nm0:
@@ -355,7 +356,7 @@ cdef void update_pm_c(float_t[::1] I, float_t[:, ::1] I0, float_t[::1] u,
 
 def update_pixel_map_gs(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0,
                         float_t[:, :, ::1] u0, float_t[::1] di, float_t[::1] dj,
-                        int sw_ss, int sw_fs, float_t ls):
+                        int sw_ss, int sw_fs, float_t ls, unsigned num_threads=1):
     r"""Update the pixel mapping by minimizing mean-squared-error
     (MSE). Perform a grid search within the search window of `sw_ss`,
     `sw_fs` size along the slow and fast axes accordingly in order to
@@ -385,6 +386,8 @@ def update_pixel_map_gs(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::
         axis.
     ls : float
         Reference image length scale in pixels.
+    num_threads : int, optional
+        Number of threads.
 
     Returns
     -------
@@ -424,19 +427,21 @@ def update_pixel_map_gs(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::
         \exp\left[{-\frac{(\Delta ii_{ref})^2 + 
         (\Delta jj_{ref})^2}{ls^2}}\right]
     """
-    dtype = np.float64 if float_t is np.float64_t else np.float32
     cdef:
-        int a = I_n.shape[0], b = I_n.shape[1], c = I_n.shape[2], j, k, t
-        int max_threads = openmp.omp_get_max_threads()
-        float_t[::1, :, :] u = np.empty((2, b, c), dtype=dtype, order='F')
-        float_t[:, ::1] I = np.empty((max_threads, a + 1), dtype=dtype)
-    for k in prange(c, schedule='guided', nogil=True):
+        str dtype = 'float64' if float_t is np.float64_t else 'float32'
+        int a = I_n.shape[0], b = I_n.shape[1], c = I_n.shape[2]
+        int j, k, t
+        float_t[:, ::1] u_buf = np.empty((num_threads, 2), dtype=dtype)
+        float_t[:, :, ::1] u = np.empty((2, b, c), dtype=dtype)
+        float_t[:, ::1] I = np.empty((num_threads, a + 1), dtype=dtype)
+    for k in prange(c, schedule='guided', num_threads=num_threads, nogil=True):
         t = openmp.omp_get_thread_num()
         for j in range(b):
             krig_data_c(I[t], I_n, W, u0, j, k, ls)
-            u[:, j, k] = u0[:, j, k]
-            update_pm_c(I[t], I0, u[:, j, k], di, dj, sw_ss, sw_fs)
-    return np.asarray(u, order='C')
+            u_buf[t, 0] = u0[0, j, k]; u_buf[t, 1] = u0[1, j, k]
+            update_pm_c(I[t], I0, u_buf[t], di, dj, sw_ss, sw_fs)
+            u[0, j, k] = u_buf[t, 0]; u[1, j, k] = u_buf[t, 1]
+    return np.asarray(u)
 
 cdef void init_newton_c(float_t[::1] sptr, float_t[::1] I, float_t[:, ::1] I0,
                         float_t[::1] u, float_t[::1] di, float_t[::1] dj, int sw_fs) nogil:
@@ -491,7 +496,7 @@ cdef void newton_1d_c(float_t[::1] sptr, float_t[::1] I, float_t[:, ::1] I0, flo
 
 def update_pixel_map_nm(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0, float_t[:, :, ::1] u0,
                         float_t[::1] di, float_t[::1] dj, int sw_fs, float_t ls,
-                        int max_iter=500, float_t x_tol=1e-12):
+                        int max_iter=500, float_t x_tol=1e-12, unsigned num_threads=1):
     r"""Update the pixel mapping by minimizing mean-squared-error
     (MSE). Perform an iterative Newton's method within the search window
     of `sw_ss`, `sw_fs` size along the slow and fast axes accordingly
@@ -525,6 +530,8 @@ def update_pixel_map_nm(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::
         Maximum number of iterations.
     x_tol : float, optional
         Tolerance for termination by the change of `u`.
+    num_threads : int, optional
+        Number of threads.
 
     Returns
     -------
@@ -558,20 +565,22 @@ def update_pixel_map_nm(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::
             of Noisy Simulations", ACM Trans. Math. Softw., Vol. 38,
             Number 3, April 2012.
     """
-    dtype = np.float64 if float_t is np.float64_t else np.float32
     cdef:
-        int a = I_n.shape[0], b = I_n.shape[1], c = I_n.shape[2]
-        int aa = I0.shape[0], bb = I0.shape[1], j, k, t
-        int max_threads = openmp.omp_get_max_threads()
-        float_t[::1, :, :] u = np.empty((2, b, c), dtype=dtype, order='F')
-        float_t[:, ::1] I = np.empty((max_threads, a + 1), dtype=dtype)
-        float_t[:, ::1] sptr = np.zeros((max_threads, 3), dtype=dtype) # ss, fs, l1
-    for k in prange(c, schedule='static', nogil=True):
+        str dtype = 'float64' if float_t is np.float64_t else 'float32'
+        np.npy_intp a = I_n.shape[0], b = I_n.shape[1], c = I_n.shape[2]
+        np.npy_intp aa = I0.shape[0], bb = I0.shape[1]
+        int j, k, t
+        float_t[:, :, ::1] u = np.empty((b, c, 2), dtype=dtype)
+        float_t[:, ::1] u_buf = np.empty((num_threads, 2), dtype=dtype)
+        float_t[:, ::1] I = np.empty((num_threads, a + 1), dtype=dtype)
+        float_t[:, ::1] sptr = np.zeros((num_threads, 3), dtype=dtype) # ss, fs, l1
+    for k in prange(c, schedule='static', num_threads=num_threads, nogil=True):
         t = openmp.omp_get_thread_num()
         for j in range(b):
             krig_data_c(I[t], I_n, W, u0, j, k, ls)
-            u[:, j, k] = u0[:, j, k]
-            newton_1d_c(sptr[t], I[t], I0, u[:, j, k], di, dj, max_iter, x_tol, sw_fs)
+            u_buf[t, 0] = u0[0, j, k]; u_buf[t, 1] = u0[1, j, k]
+            newton_1d_c(sptr[t], I[t], I0, u_buf[t], di, dj, max_iter, x_tol, sw_fs)
+            u[0, j, k] = u_buf[t, 0]; u[1, j, k] = u_buf[t, 1]
     return np.asarray(u)
 
 cdef void update_t_c(float_t[:, :, ::1] SS_m, float_t[:, ::1] I, float_t[:, ::1] rss, float_t[:, ::1] I0,
@@ -618,7 +627,7 @@ cdef void update_t_c(float_t[:, :, ::1] SS_m, float_t[:, ::1] I, float_t[:, ::1]
 
 def update_translations_gs(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0,
                            float_t[:, :, ::1] u, float_t[::1] di, float_t[::1] dj,
-                           int sw_ss, int sw_fs, float_t ls):
+                           int sw_ss, int sw_fs, float_t ls, unsigned num_threads=1):
     r"""Update the sample pixel translations by minimizing total mean-squared-error
     (:math:$MSE_{total}$). Perform a grid search within the search window of
     `sw_ss` size in pixels for sample translations along the slow axis, and
@@ -651,6 +660,8 @@ def update_translations_gs(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:,
         axis.
     ls : float
         Reference image length scale in pixels.
+    num_threads : int, optional
+        Number of threads.
 
     Returns
     -------
@@ -690,30 +701,31 @@ def update_translations_gs(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:,
         \exp\left[{-\frac{(\Delta ii_{ref})^2 + 
         (\Delta jj_{ref})^2}{ls^2}}\right]
     """
-    dtype = np.float64 if float_t is np.float64_t else np.float32
     cdef:
-        int a = I_n.shape[0], b = I_n.shape[1], c = I_n.shape[2], i, j, k, t
-        int max_threads = openmp.omp_get_max_threads()
-        float_t[:, :, ::1] I = np.empty((b, c, a + 1), dtype=dtype)
-        float_t[:, :, ::1] I_buf = np.empty((max_threads + 1, b, c), dtype=dtype)
+        str dtype = 'float64' if float_t is np.float64_t else 'float32'
+        np.npy_intp a = I_n.shape[0], b = I_n.shape[1], c = I_n.shape[2]
+        int i, j, k, t
+        float_t[:, :, ::1] I = np.empty((a + 1, b, c), dtype=dtype)
+        float_t[:, ::1] I_buf = np.empty((num_threads, a + 1), dtype=dtype)
         float_t[:, :, ::1] SS_m = np.empty((3, b, c), dtype=dtype)
         float_t[:, ::1] dij = np.empty((a, 2), dtype=dtype)
         float_t m_ptr[3]
     m_ptr[2] = NO_VAR
-    for k in prange(c, schedule='guided', nogil=True):
-        for j in range(b):
-            krig_data_c(I[j, k], I_n, W, u, j, k, ls)
-            mse_bi(m_ptr, I[j, k], I0, di, dj, u[0, j, k], u[1, j, k])
-            SS_m[0, j, k] = m_ptr[0]; SS_m[1, j, k] = m_ptr[1]
-    I_buf[max_threads] = I[:, :, a]
-    for i in prange(a, schedule='guided', nogil=True):
+    for k in prange(c, schedule='guided', num_threads=num_threads, nogil=True):
         t = openmp.omp_get_thread_num()
-        I_buf[t] = I[:, :, i]; dij[i, 0] = di[i]; dij[i, 1] = dj[i]
-        update_t_c(SS_m, I_buf[t], I_buf[max_threads], I0, u, dij[i], sw_ss, sw_fs)
+        for j in range(b):
+            krig_data_c(I_buf[t], I_n, W, u, j, k, ls)
+            mse_bi(m_ptr, I_buf[t], I0, di, dj, u[0, j, k], u[1, j, k])
+            SS_m[0, j, k] = m_ptr[0]; SS_m[1, j, k] = m_ptr[1]
+            for i in range(a + 1):
+                I[i, j, k] = I_buf[t, i]
+    for i in prange(a, schedule='guided', num_threads=num_threads, nogil=True):
+        dij[i, 0] = di[i]; dij[i, 1] = dj[i]
+        update_t_c(SS_m, I[i], I[a], I0, u, dij[i], sw_ss, sw_fs)
     return np.asarray(dij)
 
 def mse_frame(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0,
-              float_t[:, :, ::1] u, float_t[::1] di, float_t[::1] dj, float_t ls):
+              float_t[:, :, ::1] u, float_t[::1] di, float_t[::1] dj, float_t ls, unsigned num_threads=1):
     """Return the average mean-squared-error (MSE) value per pixel.
 
     Parameters
@@ -736,6 +748,8 @@ def mse_frame(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0,
         in pixels.
     ls : float
         Reference image length scale in pixels.
+    num_threads : int, optional
+        Number of threads.
 
     Returns
     -------
@@ -747,24 +761,30 @@ def mse_frame(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0,
     update_pixel_map_gs : Description of error metric which
         is being minimized.
     """
-    dtype = np.float64 if float_t is np.float64_t else np.float32
     cdef:
-        int a = I_n.shape[0], b = I_n.shape[1], c = I_n.shape[2]
-        int aa = I0.shape[0], bb = I0.shape[1], j, k, t
-        int max_threads = openmp.omp_get_max_threads()
-        float_t[:, ::1] mptr = NO_VAR * np.ones((max_threads, 3), dtype=dtype)
-        float_t[:, ::1] I = np.empty((max_threads, a + 1), dtype=dtype)
+        str dtype = 'float64' if float_t is np.float64_t else 'float32'
+        np.npy_intp a = I_n.shape[0], b = I_n.shape[1], c = I_n.shape[2]
+        np.npy_intp aa = I0.shape[0], bb = I0.shape[1]
+        int j, k, t
+        float_t *mptr
+        float_t[:, ::1] I = np.empty((num_threads, a + 1), dtype=dtype)
         float_t[:, ::1] mse_f = np.empty((b, c), dtype=dtype)
-    for k in prange(c, schedule='guided', nogil=True):
-        t = openmp.omp_get_thread_num()
-        for j in range(b):
-            krig_data_c(I[t], I_n, W, u, j, k, ls)
-            mse_bi(&mptr[t, 0], I[t], I0, di, dj, u[0, j, k], u[1, j, k])
-            mse_f[j, k] = mptr[t, 0] / mptr[t, 1]
+    with nogil, parallel(num_threads=num_threads):
+        mptr = <float_t *>malloc(3 * sizeof(float_t))
+        if mptr is NULL:
+            abort()
+        mptr[2] = NO_VAR
+        for k in prange(c, schedule='guided'):
+            t = openmp.omp_get_thread_num()
+            for j in range(b):
+                krig_data_c(I[t], I_n, W, u, j, k, ls)
+                mse_bi(mptr, I[t], I0, di, dj, u[0, j, k], u[1, j, k])
+                mse_f[j, k] = mptr[0] / mptr[1]
+        free(mptr)
     return np.asarray(mse_f)
 
 def mse_total(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0,
-              float_t[:, :, ::1] u, float_t[::1] di, float_t[::1] dj, float_t ls):
+              float_t[:, :, ::1] u, float_t[::1] di, float_t[::1] dj, float_t ls, unsigned num_threads=1):
     """Return the average total mean-squared-error (MSE).
 
     Parameters
@@ -787,6 +807,8 @@ def mse_total(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0,
         in pixels.
     ls : float
         Reference image length scale in pixels.
+    num_threads : int, optional
+        Number of threads.
 
     Returns
     -------
@@ -798,20 +820,25 @@ def mse_total(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0,
     update_translations_gs : Description of error metric which
         is being minimized.
     """
-    dtype = np.float64 if float_t is np.float64_t else np.float32
     cdef:
-        int a = I_n.shape[0], b = I_n.shape[1], c = I_n.shape[2]
-        int aa = I0.shape[0], bb = I0.shape[1], j, k, t
-        int max_threads = openmp.omp_get_max_threads()
+        str dtype = 'float64' if float_t is np.float64_t else 'float32'
+        np.npy_intp a = I_n.shape[0], b = I_n.shape[1], c = I_n.shape[2]
+        int j, k, t
         float_t err = 0
-        float_t[:, ::1] mptr = NO_VAR * np.ones((max_threads, 3), dtype=dtype)
-        float_t[:, ::1] I = np.empty((max_threads, a + 1), dtype=dtype)
-    for k in prange(c, schedule='static', nogil=True):
-        t = openmp.omp_get_thread_num()
-        for j in range(b):
-            krig_data_c(I[t], I_n, W, u, j, k, ls)
-            mse_bi(&mptr[t, 0], I[t], I0, di, dj, u[0, j, k], u[1, j, k])
-            err += mptr[t, 0] / mptr[t, 1]
+        float_t *mptr
+        float_t[:, ::1] I = np.empty((num_threads, a + 1), dtype=dtype)
+    with nogil, parallel(num_threads=num_threads):
+        mptr = <float_t *>malloc(3 * sizeof(float_t))
+        if mptr is NULL:
+            abort()
+        mptr[2] = NO_VAR
+        for k in prange(c, schedule='guided'):
+            t = openmp.omp_get_thread_num()
+            for j in range(b):
+                krig_data_c(I[t], I_n, W, u, j, k, ls)
+                mse_bi(mptr, I[t], I0, di, dj, u[0, j, k], u[1, j, k])
+                err += mptr[0] / mptr[1]
+        free(mptr)
     return err / b / c
 
 def ct_integrate(float_t[:, ::1] sx_arr, float_t[:, ::1] sy_arr):
@@ -842,11 +869,12 @@ def ct_integrate(float_t[:, ::1] sx_arr, float_t[:, ::1] sy_arr):
               reconstruction from its derivatives," Appl. Opt. 51,
               5698-5704 (2012).
     """
-    dtype = np.float64 if float_t is np.float64_t else np.float32
     cdef:
-        int a = sx_arr.shape[0], b = sx_arr.shape[1], i, j, ii, jj
+        str dtype = 'float64' if float_t is np.float64_t else 'float32'
+        np.npy_intp a = sx_arr.shape[0], b = sx_arr.shape[1]
+        int i, j, ii, jj
         float_t[:, ::1] s_asdi = np.empty((2 * a, 2 * b), dtype=dtype)
-        complex_t[:, ::1] sf_asdi = np.empty((2 * a, 2 * b), dtype=np.complex128)
+        complex_t[:, ::1] sf_asdi = np.empty((2 * a, 2 * b), dtype='complex128')
         float_t xf, yf
     for i in range(a):
         for j in range(b):

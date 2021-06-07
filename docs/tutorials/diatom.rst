@@ -1,8 +1,8 @@
-Diatom
-======
+Speckle Tracking of the Diatom Dataset
+======================================
 
-Diatom CXI File
----------------
+Diatom dataset CXI File
+-----------------------
 First download the `diatom.cxi <https://www.cxidb.org/data/134/diatom.cxi>`_
 file from the `CXIDB <https://www.cxidb.org/>`_. The file has the following
 structure:
@@ -46,20 +46,20 @@ where each frame is an image of 516x1556 pixels.
 
 Loading the file
 ----------------
-Load the CXI file into a data container :class:`pyrost.STData` with :class:`pyrost.STLoader`.
-:func:`pyrost.loader` returns the default loader with the default CXI protocol
-(:func:`pyrost.protocol`).
+Load the CXI file into a data container :class:`pyrost.STData` with :class:`pyrost.CXILoader`.
+:func:`pyrost.CXILoader.import_default` returns the default loader with the default CXI protocol
+(:func:`pyrost.CXIProtocol.import_default`).
 
-.. note:: :class:`pyrost.STLoader` will raise an :class:`AttributeError` while loading the data
+.. note:: :class:`pyrost.CXILoader` will raise an :class:`AttributeError` while loading the data
     from the CXI file if some of the necessary attributes for Speckle Tracking algorithm
     are not provided. You can see full list of the necessary attributes in
-    :class:`pyrost.STData`. Adding the missing attributes to :func:`pyrost.STLoader.load`
+    :class:`pyrost.STData`. Adding the missing attributes to :func:`pyrost.CXILoader.load`
     solves the problem.
 
 .. doctest::
 
     >>> import pyrost as rst
-    >>> loader = rst.loader()
+    >>> loader = rst.CXILoader()
     >>> data = loader.load('results/diatom.cxi') # doctest: +SKIP
 
 Moreover, you can crop the data with the provided region of interest at the detector plane,
@@ -81,15 +81,15 @@ OR
 
 It worked! But still we can not perform the Speckle Tracking update procedure without the
 estimates of the defocus distance. You can estimate it with :func:`pyrost.STData.defocus_sweep`.
-It generates sample profiles for the set of defocus distances and yields an average value
-of gradient magnitude squared (:math:`\left| \nabla I_{ref} \right|^2`), which characterizes
+It generates sample profiles for a set of defocus distances and yields average values
+of the gradient magnitude squared (:math:`\left| \nabla I_{ref} \right|^2`), which characterizes
 reference image's contrast (the higher the value the better the estimate of defocus distance
-is).
+is). Also, it returns the set of sample profiles if `return_sweep` argument is True.
 
 .. doctest::
 
     >>> defoci = np.linspace(2e-3, 3e-3, 50) # doctest: +SKIP
-    >>> sweep_scan = data.defocus_sweep(defoci, ls_ri=0.7)
+    >>> sweep_scan = data.defocus_sweep(defoci, size=5, return_sweep=True)
     >>> defocus = defoci[np.argmax(sweep_scan)] # doctest: +SKIP
     >>> print(defocus) # doctest: +SKIP
     0.002204081632653061
@@ -111,34 +111,48 @@ Let's update the data container with the defocus distance we got.
 
     >>> data = data.update_defocus(defocus)
 
+.. _diatom-st-update:
+
 Speckle Tracking update
 -----------------------
 Now we're ready to generate a :class:`pyrost.SpeckleTracking` object, which does the heavy
 lifting of calculating the pixel mapping between reference plane and detector plane,
-and generating the unabberated profile of the sample.
+and generating the unabberated profile of the sample following the ptychographic speckle
+tracking algorithm [ST]_.
 
-.. note:: You should pay outmost attention to choose the right length scales of reference
-    image and pixel mapping (`ls_ri`, `ls_pm`). Essentually they stand for high frequency
-    cut-off of the measured data, it helps to supress Poisson noise. If the values are too
-    high you'll lose useful information. If the values are too low in presence of high noise,
-    you won't get accurate results.
+For the speckle tracking update you've got two options to choose from:
+
+    * :func:`pyrost.SpeckleTracking.iter_update` : performs the iterative reference image
+      and pixel mapping updates with the constant kernel bandwidths for the reference image
+      (`ls_ri`) and pixel mapping update (`ls_pm`).
+
+    * :func:`pyrost.SpeckleTracking.iter_update_gd` : does ditto, but updates the bandwidth
+      value for the reference image update at each iteration by the help of gradient descent to
+      attain the minimal mean-squared-error value.
+
+.. note:: You should pay outmost attention to choose the right kernel bandwidth used for
+    reference image and pixel mapping updates (`ls_ri`, `ls_pm`). Essentially they stand for
+    the high frequency cut-off imposed during the update, it helps to supress Poisson noise.
+    If the values are too high you'll lose useful information. If the values are too low in
+    presence of high noise, you won't get accurate results. Moreover, you can change the
+    pixel mapping post-update blurring (`blur`), which helps to prevent the noise amplification
+    when you perform multiple number of iterations. **As a rule of thumb, `blur` should be several
+    times larger than `ls_pm`, and many iterations with small steps (`sw_ss`, `sw_fs`) are less
+    prone to noise than a few iterations with large steps**.
 
 .. note:: Apart from pixel mapping update you may try to perform sample shifts update if you've
-    got low precision or credibilily of sample shifts measurements. You can do it with :func:`pyrost.SpeckleTracking.iter_update`
-    if you assign True to `update_translations` argument.
+    got low precision or credibilily of sample shifts measurements. You can do it by setting
+    `update_translations` parameter to True.
 
 .. doctest::
 
     >>> st_obj = data.get_st()
-    >>> st_res, errors = st_obj.iter_update(sw_fs=15, sw_ss=15, ls_pm=1.5, ls_ri=0.7, verbose=True, n_iter=5)
-    Iteration No. 0: Total MSE = 0.798
-    Iteration No. 1: Total MSE = 0.711
-    Iteration No. 2: Total MSE = 0.256
-    Iteration No. 3: Total MSE = 0.205
-    Iteration No. 4: Total MSE = 0.209
+    >>> st_res = st_obj.iter_update(sw_fs=15, sw_ss=15, ls_pm=1.5,
+    >>>                             ls_ri=0.7, verbose=True, n_iter=5)
 
     >>> fig, ax = plt.subplots(figsize=(10, 10)) # doctest: +SKIP
-    >>> ax.imshow(st_res.reference_image[700:1200, 100:700], vmin=0.7, vmax=1.3, extent=[100, 700, 1200, 700]) # doctest: +SKIP
+    >>> ax.imshow(st_res.reference_image[700:1200, 100:700], vmin=0.7, vmax=1.3,
+    >>>           extent=[100, 700, 1200, 700]) # doctest: +SKIP
     >>> ax.set_title('Reference image', fontsize=20) # doctest: +SKIP
     >>> ax.set_xlabel('fast axis', fontsize=15) # doctest: +SKIP
     >>> ax.set_ylabel('slow axis', fontsize=15) # doctest: +SKIP
@@ -151,9 +165,12 @@ and generating the unabberated profile of the sample.
 
 Phase reconstruction
 --------------------
-We got the pixel map, which can be easily translated to the deviation angles of the lens
-wavefront. Now we're able to reconstruct the lens' phase profile. Besides, you can fit
-the phase profile with polynomial function using :class:`pyrost.AbberationsFit`.
+We got the pixel map, which can be easily translated to the angular diplacement profile
+of the lens wavefront between reference and detector planes. Following the Hartmann sensor
+principle (look [ST]_ page 762 for more information), we  reconstruct the lens' phase
+profile with :func:`pyrost.STData.update_phase` method. Besides, you can fit the phase
+profile with polynomial function using :class:`pyrost.AberrationsFit` fitter object,
+which can be obtained with :func:`pyrost.STData.get_fit` method.
 
 .. doctest::
 
@@ -196,6 +213,8 @@ the phase profile with polynomial function using :class:`pyrost.AbberationsFit`.
     :width: 100 %
     :alt: Phase fit.
 
+.. _diatom-saving:
+
 Saving the results
 ------------------
 In the end you can save the results to a CXI file.
@@ -231,7 +250,7 @@ In the end you can save the results to a CXI file.
     /speckle_tracking/dss    Dataset {SCALAR}
     /speckle_tracking/mask   Dataset {516, 1556}
     /speckle_tracking/phase  Dataset {516, 1556}
-    /speckle_tracking/pixel_abberations Dataset {2, 516, 1556}
+    /speckle_tracking/pixel_aberrations Dataset {2, 516, 1556}
     /speckle_tracking/pixel_map Dataset {2, 516, 1556}
     /speckle_tracking/pixel_translations Dataset {121, 2}
     /speckle_tracking/reference_image Dataset {1455, 1498}
@@ -239,3 +258,9 @@ In the end you can save the results to a CXI file.
     /speckle_tracking/whitefield Dataset {516, 1556}
 
 As you can see all the results have been saved using the same CXI protocol.
+
+References
+----------
+
+.. [ST] `"Ptychographic X-ray speckle tracking", Morgan, A. J., Quiney, H. M., Bajt,
+        S. & Chapman, H. N. (2020). J. Appl. Cryst. 53, 760-780. <https://doi.org/10.1107/S1600576720005567>`_
