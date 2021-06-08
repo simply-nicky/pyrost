@@ -81,9 +81,9 @@ Let's update the data container with the defocus distance we got.
 Speckle Tracking update
 -----------------------
 Now we’re ready to generate a pyrost.SpeckleTracking object, which is able to perform the
-speckle tracking procedure with :func:`SpeckleTracking.iter_update_gd` method. For more
-information about the parameters see the section :ref:`diatom-st-update` in the Diatom
-dataset tutorial.
+speckle tracking procedure with :func:`pyrost.SpeckleTracking.iter_update_gd` method.
+For more information about the parameters see the section :ref:`diatom-st-update` in the
+Diatom dataset tutorial.
 
 .. doctest::
 
@@ -121,21 +121,24 @@ in pixels to center the scattering angles aroung the direction of the direct bea
     
 Moreover we would like to remove the first order polynomial term from the displacement
 profile with the :func:`pyrost.AberrationsFit.remove_linear_term`, since it
-characterizes the beam's defocus and is of no interest to us:
+characterizes the beam's defocus and is of no interest to us. After that, you
+can obtain the best fit to the displacement profile with :func:`pyrost.AberrationsFit.fit`
+and to the phase profile with :func:`pyrost.AberrationsFit.fit_phase`:
 
 .. doctest::
 
     >>> fit_obj = fit_obj.remove_linear_term()
+    >>> fit = fit_obj.fit(max_order=3)
 
     >>> fig, axes = plt.subplots(1, 2, figsize=(12, 4)) # doctest: +SKIP
     >>> axes[0].plot(fit_obj.thetas, fit_obj.theta_aberrations * 1e9, 'b') # doctest: +SKIP
-    >>> axes[0].plot(fit_obj.thetas, fit_obj.model(fcf_rst['fit']) * fit_obj.ref_ap * 1e9, # doctest: +SKIP
-    >>>              'b--', label=fr"RST $c_4 = {fcf_rst['c_4']:.4f} rad/mrad^4$") # doctest: +SKIP
+    >>> axes[0].plot(fit_obj.thetas, fit_obj.model(fit['fit']) * fit_obj.ref_ap * 1e9, # doctest: +SKIP
+    >>>              'b--', label=fr"RST $c_4 = {fit['c_4']:.4f} rad/mrad^4$") # doctest: +SKIP
     >>> axes[0].set_title('Angular displacements, nrad', fontsize=20) # doctest: +SKIP
     >>>  # doctest: +SKIP
     >>> axes[1].plot(fit_obj.thetas, fit_obj.phase, 'b') # doctest: +SKIP
-    >>> axes[1].plot(fit_obj.thetas, fit_obj.model(fcf_rst['ph_fit']), 'b--', # doctest: +SKIP
-    >>>              label=fr"RST $c_4={fcf_rst['c_4']:.4f} rad/mrad^4$") # doctest: +SKIP
+    >>> axes[1].plot(fit_obj.thetas, fit_obj.model(fit['ph_fit']), 'b--', # doctest: +SKIP
+    >>>              label=fr"RST $c_4={fit['c_4']:.4f} rad/mrad^4$") # doctest: +SKIP
     >>> axes[1].set_title('Phase, rad', fontsize=20) # doctest: +SKIP
     >>> for ax in axes: # doctest: +SKIP
     >>>     ax.legend(fontsize=15) # doctest: +SKIP

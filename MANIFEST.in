@@ -3,6 +3,7 @@ graft pyrost/config
 graft pyrost/bin
 graft pyrost/ini_templates
 graft pyrost/data
+graft pyrost/include
 exclude dev.pyx
 include pytest.ini
 include LICENSE
