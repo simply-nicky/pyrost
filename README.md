@@ -21,6 +21,7 @@ The documentation can be found on [Read the Docs](https://robust-speckle-trackin
 - [h5py](https://www.h5py.org) 2.10.0 or later.
 - [NumPy](https://numpy.org) 1.19.0 or later.
 - [SciPy](https://scipy.org) 1.5.2 or later.
+- [tqdm](https://github.com/tqdm/tqdm) 4.56.0 or later.
 
 ## Installation
 We recommend **not** building from source, but install the release via the
