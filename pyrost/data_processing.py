@@ -220,10 +220,8 @@ class STData(DataContainer):
             `whitefield`, `mask`, and `roi`.
         """
         roi = self.roi.copy()
-        data = np.zeros(self.data.shape, dtype=self.data.dtype)
-        data[:, roi[0]:roi[1], roi[2]:roi[3]] = self.get('data') * self.get('mask')
         roi[2 * axis:2 * (axis + 1)] = np.arange(2)
-        return {'data': np.sum(data, axis=axis + 1, keepdims=True),
+        return {'data': np.sum(self.data * self.mask, axis=axis + 1, keepdims=True),
                 'whitefield': None, 'mask': None, 'roi': roi}
 
     @dict_to_object
@@ -314,8 +312,8 @@ class STData(DataContainer):
             mask = (data > vmin) & (data < vmax)
         elif method == 'perc-bad':
             offsets = (data - np.median(data))
-            mask = (offsets > np.percentile(offsets, pmin)) & \
-                   (offsets < np.percentile(offsets, pmax))
+            mask = (offsets >= np.percentile(offsets, pmin)) & \
+                   (offsets <= np.percentile(offsets, pmax))
         else:
             ValueError('invalid method argument')
         mask_full = self.mask.copy()
@@ -551,19 +549,17 @@ class STData(DataContainer):
             st_obj = st_data.get_st().update_reference(ls_ri=ls_ri)
             extra['reference_image'].append(st_obj.reference_image)
             mean = st_obj.reference_image.copy()
-            if st_obj.reference_image.shape[0] > 1:
-                mean = fft_convolve(mean, kernel, mode='reflect', axis=0,
-                                    num_threads=self.num_threads)
-            if st_obj.reference_image.shape[1] > 1:
-                mean = fft_convolve(mean, kernel, mode='reflect', axis=1,
-                                    num_threads=self.num_threads)
             mean_sq = st_obj.reference_image**2
-            if st_obj.reference_image.shape[0] > 1:
+            if st_obj.reference_image.shape[0] > size:
+                mean = fft_convolve(mean, kernel, mode='reflect', axis=0,
+                                    num_threads=self.num_threads)[size // 2:-size // 2]
                 mean_sq = fft_convolve(mean_sq, kernel, mode='reflect', axis=0,
-                                       num_threads=self.num_threads)
-            if st_obj.reference_image.shape[1] > 1:
+                                       num_threads=self.num_threads)[size // 2:-size // 2]
+            if st_obj.reference_image.shape[1] > size:
+                mean = fft_convolve(mean, kernel, mode='reflect', axis=1,
+                                    num_threads=self.num_threads)[:, size // 2:-size // 2]
                 mean_sq = fft_convolve(mean_sq, kernel, mode='reflect', axis=1,
-                                       num_threads=self.num_threads)
+                                       num_threads=self.num_threads)[:, size // 2:-size // 2]
             r_image = (mean_sq - mean**2) / mean**2
             extra['r_image'].append(r_image)
             r_vals.append(np.mean(r_image))
