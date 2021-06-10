@@ -55,3 +55,4 @@ Contents
 
     classes/log_protocol
     funcs/cxi_converter_sigray
+    funcs/tilt_converter_sigray
