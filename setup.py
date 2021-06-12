@@ -44,7 +44,7 @@ with open('README.md', 'r') as readme:
     long_description = readme.read()
 
 setup(name='pyrost',
-      version='0.5.1',
+      version='0.5.2',
       author='Nikolay Ivanov',
       author_email="nikolay.ivanov@desy.de",
       long_description=long_description,
