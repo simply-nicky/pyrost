@@ -23,8 +23,8 @@ extension_args = {'language': 'c',
                                    os.path.join(os.path.dirname(__file__), 'pyrost/include')]}
 
 src_dir = 'pyrost/include'
-src_files = [os.path.join(src_dir, src_file)
-             for src_file in os.listdir(src_dir) if src_file.endswith('.c')]
+src_files = ['pyrost/include/st_gaussian.c', 'pyrost/include/st_utils.c',
+             'pyrost/include/st_waveprop_np.c', 'pyrost/include/st_waveprop_fftw.c']
 extensions = [Extension(name='pyrost.bin.simulation',
                         sources=['pyrost/bin/simulation' + ext,] + src_files, **extension_args),
               Extension(name='pyrost.bin.pyrost',

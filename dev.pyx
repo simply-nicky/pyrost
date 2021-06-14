@@ -8,9 +8,8 @@ from libc.string cimport memcmp
 from cython.parallel import prange, parallel
 from libc.stdlib cimport abort, malloc, free
 cimport openmp
-from scipy.ndimage import gaussian_gradient_magnitude as ggm, gaussian_filter as gf
 from libc.math cimport sqrt, erf, sin, cos, exp, fabs
-import speckle_tracking as st
+# import speckle_tracking as st
 
 ctypedef fused float_t:
     np.float64_t
@@ -27,98 +26,145 @@ DEF NO_VAR = -1.0
 # *ALWAYS* do that, or you will have segfaults
 np.import_array()
 
-cdef int binary_search_float(double *values, int l, int r, double x) nogil:
-    cdef int m = l + (r - l) // 2
-    if l <= r:
-        if x == values[m]:
-            return m
-        elif x > values[m] and x <= values[m + 1]:
-            return m + 1
-        elif x < values[m]:
-            return binary_search_float(values, l, m, x)
-        else:
-            return binary_search_float(values, m + 1, r, x)
-
-cdef int searchsorted(double *values, double x, int r) nogil:
-    if x < values[0]:
-        return 0
-    elif x > values[r - 1]:
-        return r
+cdef int extend_mode_to_code(str mode) except -1:
+    if mode == 'constant':
+        return EXTEND_CONSTANT
+    elif mode == 'nearest':
+        return EXTEND_NEAREST
+    elif mode == 'mirror':
+        return EXTEND_MIRROR
+    elif mode == 'reflect':
+        return EXTEND_REFLECT
+    elif mode == 'wrap':
+        return EXTEND_WRAP
     else:
-        return binary_search_float(values, 0, r, x)
+        raise RuntimeError('boundary mode not supported')
 
-cdef complex mll_c(double *layers, int a, complex mt1, complex mt2, double x, double sgm) nogil:
-    cdef:
-        int b = 2 * (a // 2), j0
-        double x0, x1
-        complex tr
-    j0 = searchsorted(layers, x, a) # even '-', odd '+'
-    tr = 0
-    if j0 > 0 and j0 < b:
-        x0 = (x - layers[j0 - 1]) / sqrt(2) / sgm
-        x1 = (x - layers[j0]) / sqrt(2) / sgm
-        tr += (mt1 - mt2) / 2 * (j0 % 2 - 0.5) * (erf(x0) - erf(x1))
-        tr -= (mt1 - mt2) / 4 * erf((x - layers[0]) / sqrt(2) / sgm)
-        tr += (mt1 - mt2) / 4 * erf((x - layers[b - 1]) / sqrt(2) / sgm)
-    tr += mt1 / 2 * erf((x - layers[0]) / sqrt(2) / sgm)
-    tr -= mt1 / 2 * erf((x - layers[b - 1]) / sqrt(2) / sgm)
-    return tr
+cdef np.ndarray check_array(np.ndarray array, int type_num):
+    if not np.PyArray_IS_C_CONTIGUOUS(array):
+        array = np.PyArray_GETCONTIGUOUS(array)
+    cdef int tn = np.PyArray_TYPE(array)
+    if tn != type_num:
+        array = np.PyArray_Cast(array, type_num)
+    return array
 
-def make_mll_slice(np.ndarray[double_t, ndim=1] x_arr, np.ndarray[double_t, ndim=1] layers, complex_t mt1, complex_t mt2, double sgm, double kdz):
-    cdef:
-        np.npy_intp a = np.PyArray_DIM(x_arr, 0), b = np.PyArray_DIM(layers, 0), i
-        complex_t rf
-        np.ndarray[complex_t, ndim=1] slc = np.empty(a, dtype=np.complex128)
-        double_t *_layers = <double_t *>np.PyArray_DATA(layers)
-    for i in prange(a, schedule='guided', nogil=True):
-        rf = mll_c(_layers, b, mt1, mt2, x_arr[i], sgm)
-        slc[i] = (cos(kdz * rf.real) + 1j * sin(kdz * rf.real)) * exp(-kdz * rf.imag)
-    return slc
+def fft_convolve(array: np.ndarray, kernel: np.ndarray, axis: cython.int=-1,
+                 mode: str='constant', cval: cython.double=0.0, backend: str='numpy',
+                 num_threads: cython.uint=1) -> np.ndarray:
+    """Convolve a multi-dimensional `array` with one-dimensional `kernel` along the
+    `axis` by means of FFT. Output has the same size as `array`.
 
-def st_update(I_n, dij, basis, x_ps, y_ps, z, df, search_window, n_iter=5,
-              filter=None, update_translations=False, verbose=False):
+    Parameters
+    ----------
+    array : numpy.ndarray
+        Input array.
+    kernel : numpy.ndarray
+        Kernel array.
+    axis : int, optional
+        Array axis along which convolution is performed.
+    mode : {'constant', 'nearest', 'mirror', 'reflect', 'wrap'}, optional
+        The mode parameter determines how the input array is extended when the filter
+        overlaps a border. Default value is 'constant'. The valid values and their behavior
+        is as follows:
+
+        * 'constant', (k k k k | a b c d | k k k k) : The input is extended by filling all
+          values beyond the edge with the same constant value, defined by the `cval`
+          parameter.
+        * 'nearest', (a a a a | a b c d | d d d d) : The input is extended by replicating
+          the last pixel.
+        * 'mirror', (c d c b | a b c d | c b a b) : The input is extended by reflecting
+          about the center of the last pixel. This mode is also sometimes referred to as
+          whole-sample symmetric.
+        * 'reflect', (d c b a | a b c d | d c b a) : The input is extended by reflecting
+          about the edge of the last pixel. This mode is also sometimes referred to as
+          half-sample symmetric.
+        * 'wrap', (a b c d | a b c d | a b c d) : The input is extended by wrapping around
+          to the opposite edge.
+    cval : float, optional
+        Value to fill past edges of input if mode is ‘constant’. Default is 0.0.
+    backend : {'fftw', 'numpy'}, optional
+        Choose backend library for the FFT implementation.
+    num_threads : int, optional
+        Number of threads.
+
+    Returns
+    -------
+    out : numpy.ndarray
+        A multi-dimensional array containing the discrete linear
+        convolution of `array` with `kernel`.
     """
-    Andrew's speckle tracking update algorithm
+    array = check_array(array, np.NPY_FLOAT64)
+    kernel = check_array(kernel, np.NPY_FLOAT64)
+
+    cdef int fail = 0
+    cdef np.npy_intp isize = np.PyArray_SIZE(array)
+    cdef int ndim = array.ndim
+    axis = axis if axis >= 0 else ndim + axis
+    axis = axis if axis <= ndim - 1 else ndim - 1
+    cdef np.npy_intp npts = np.PyArray_DIM(array, axis)
+    cdef np.npy_intp istride = np.PyArray_STRIDE(array, axis) / np.PyArray_ITEMSIZE(array)
+    cdef np.npy_intp ksize = np.PyArray_DIM(kernel, 0)
+    cdef int _mode = extend_mode_to_code(mode)
+    cdef np.npy_intp *dims = array.shape
+    cdef np.ndarray out = <np.ndarray>np.PyArray_SimpleNew(ndim, dims, np.NPY_FLOAT64)
+    cdef double *_out = <double *>np.PyArray_DATA(out)
+    cdef double *_inp = <double *>np.PyArray_DATA(array)
+    cdef double *_krn = <double *>np.PyArray_DATA(kernel)
+    with nogil:
+        if backend == 'fftw':
+            fail = fft_convolve_fftw(_out, _inp, _krn, isize, npts, istride, ksize, _mode, cval, num_threads)
+        elif backend == 'numpy':
+            fail = fft_convolve_np(_out, _inp, _krn, isize, npts, istride, ksize, _mode, cval, num_threads)
+        else:
+            raise ValueError('{:s} is invalid backend'.format(backend))
+    if fail:
+        raise RuntimeError('NumPy FFT exited with error')
+    return out
+
+# def st_update(I_n, dij, basis, x_ps, y_ps, z, df, search_window, n_iter=5,
+#               filter=None, update_translations=False, verbose=False):
+#     """
+#     Andrew's speckle tracking update algorithm
     
-    I_n - measured data
-    W - whitefield
-    basis - detector plane basis vectors
-    x_ps, y_ps - x and y pixel sizes
-    z - distance between the sample and the detector
-    df - defocus distance
-    sw_max - pixel mapping search window size
-    n_iter - number of iterations
-    """
-    M = np.ones((I_n.shape[1], I_n.shape[2]), dtype=bool)
-    W = st.make_whitefield(I_n, M, verbose=verbose)
-    u, dij_pix, res = st.generate_pixel_map(W.shape, dij, basis,
-                                            x_ps, y_ps, z,
-                                            df, verbose=verbose)
-    I0, n0, m0 = st.make_object_map(I_n, M, W, dij_pix, u, subpixel=True, verbose=verbose)
+#     I_n - measured data
+#     W - whitefield
+#     basis - detector plane basis vectors
+#     x_ps, y_ps - x and y pixel sizes
+#     z - distance between the sample and the detector
+#     df - defocus distance
+#     sw_max - pixel mapping search window size
+#     n_iter - number of iterations
+#     """
+#     M = np.ones((I_n.shape[1], I_n.shape[2]), dtype=bool)
+#     W = st.make_whitefield(I_n, M, verbose=verbose)
+#     u, dij_pix, res = st.generate_pixel_map(W.shape, dij, basis,
+#                                             x_ps, y_ps, z,
+#                                             df, verbose=verbose)
+#     I0, n0, m0 = st.make_object_map(I_n, M, W, dij_pix, u, subpixel=True, verbose=verbose)
 
-    es = []
-    for i in range(n_iter):
+#     es = []
+#     for i in range(n_iter):
 
-        # calculate errors
-        error_total = st.calc_error(I_n, M, W, dij_pix, I0, u, n0, m0, subpixel=True, verbose=verbose)[0]
+#         # calculate errors
+#         error_total = st.calc_error(I_n, M, W, dij_pix, I0, u, n0, m0, subpixel=True, verbose=verbose)[0]
 
-        # store total error
-        es.append(error_total)
+#         # store total error
+#         es.append(error_total)
 
-        # update pixel map
-        u = st.update_pixel_map(I_n, M, W, I0, u, n0, m0, dij_pix,
-                                search_window=search_window, subpixel=True,
-                                fill_bad_pix=False, integrate=False,
-                                quadratic_refinement=False, verbose=verbose,
-                                filter=filter)[0]
+#         # update pixel map
+#         u = st.update_pixel_map(I_n, M, W, I0, u, n0, m0, dij_pix,
+#                                 search_window=search_window, subpixel=True,
+#                                 fill_bad_pix=False, integrate=False,
+#                                 quadratic_refinement=False, verbose=verbose,
+#                                 filter=filter)[0]
 
-        # make reference image
-        I0, n0, m0 = st.make_object_map(I_n, M, W, dij_pix, u, subpixel=True, verbose=verbose)
+#         # make reference image
+#         I0, n0, m0 = st.make_object_map(I_n, M, W, dij_pix, u, subpixel=True, verbose=verbose)
 
-        # update translations
-        if update_translations:
-            dij_pix = st.update_translations(I_n, M, W, I0, u, n0, m0, dij_pix)[0]
-    return {'u':u, 'I0':I0, 'errors':es, 'n0': n0, 'm0': m0}
+#         # update translations
+#         if update_translations:
+#             dij_pix = st.update_translations(I_n, M, W, I0, u, n0, m0, dij_pix)[0]
+#     return {'u':u, 'I0':I0, 'errors':es, 'n0': n0, 'm0': m0}
 
 # def pixel_translations(basis, dij, df, z):
 #     dij_pix = (basis * dij[:, None]).sum(axis=-1)

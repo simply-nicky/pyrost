@@ -6,10 +6,8 @@ def make_ext(modname, pyxfilename):
     import sys
     import Cython.Compiler.Options
     Cython.Compiler.Options.annotate = True
-    return Extension(name='dev', sources=["dev.pyx", "pyrost/include/st_gaussian.c",
-                                          "pyrost/include/st_utils.c",
-                                          "pyrost/include/st_waveprop_fftw.c",
-                                          "pyrost/include/st_waveprop_np.c",], language="c",
+    return Extension(name='dev', sources=["dev.pyx", "pyrost/include/pocket_fft.c",
+                                          "pyrost/include/fft_functions.c"], language="c",
                      extra_compile_args=['-fopenmp', '-std=c99'],
                      extra_link_args=['-lgomp'],
                      libraries=['gsl', 'gslcblas', 'fftw3', 'fftw3_omp'],

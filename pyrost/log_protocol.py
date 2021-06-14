@@ -47,7 +47,8 @@ class LogProtocol(INIParser):
     """
     attr_dict = {'log_keys': ('ALL',), 'datatypes': ('ALL',)}
     fmt_dict = {'log_keys': 'str', 'datatypes': 'str'}
-    unit_dict = {'mm,mdeg': 1e-3, 'um,udeg': 1e-6, 'nm,ndeg': 1e-9, 'pm,pdeg': 1e-12}
+    unit_dict = {'percent': 1e-2, 'mm,mdeg': 1e-3, 'um,udeg': 1e-6,
+                 'nm,ndeg': 1e-9, 'pm,pdeg': 1e-12}
 
     def __init__(self, log_keys=None, datatypes=None):
         if log_keys is None:
@@ -225,22 +226,20 @@ class LogProtocol(INIParser):
         converters = {}
         for idx, (key, val) in enumerate(zip(keys, data_strings)):
             dtypes['names'].append(key)
+            unit = self._get_unit(key)
             if 'float' in key:
-                dtypes['formats'].append(np.float)
-                if self._has_unit(key):
-                    converters[idx] = lambda item, key=key: self._get_unit(key) * float(item)
+                dtypes['formats'].append(np.float_)
+                converters[idx] = lambda item, unit=unit: unit * float(item)
             elif 'int' in key:
                 if self._has_unit(key):
-                    converters[idx] = lambda item, key=key: self._get_unit(key) * float(item)
-                    dtypes['formats'].append(np.float)
+                    converters[idx] = lambda item, unit=unit: unit * float(item)
+                    dtypes['formats'].append(np.float_)
                 else:
                     dtypes['formats'].append(np.int)
             elif 'Array' in key:
                 dtypes['formats'].append(np.ndarray)
-                if self._has_unit(key):
-                    converters[idx] = lambda item, key=key: np.array([float(part) * self._get_unit(key)
-                                                                      for part in item.strip(b'[]').split(b',')])
-                converters[idx] = lambda item: np.array([float(part) for part in item.strip(b'[]').split(b',')])
+                converters[idx] = lambda item, unit=unit: np.array([float(part.strip(b' []')) * unit
+                                                                    for part in item.split(b',')])
             else:
                 dtypes['formats'].append('<S' + str(len(val)))
 
