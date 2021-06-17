@@ -1,8 +1,8 @@
-from setuptools import setup, find_packages
-from distutils.core import Extension
-import numpy
-import sys
 import os
+import sys
+from distutils.core import Extension
+from setuptools import setup, find_packages
+import numpy
 
 try:
     from Cython.Build import cythonize
@@ -22,7 +22,6 @@ extension_args = {'language': 'c',
                                    os.path.join(sys.prefix, 'include'),
                                    os.path.join(os.path.dirname(__file__), 'pyrost/include')]}
 
-src_dir = 'pyrost/include'
 src_files = ['pyrost/include/st_gaussian.c', 'pyrost/include/st_utils.c',
              'pyrost/include/st_waveprop_np.c', 'pyrost/include/st_waveprop_fftw.c']
 extensions = [Extension(name='pyrost.bin.simulation',

@@ -609,6 +609,7 @@ class MSPropagator(DataContainer):
             itor = tqdm(itor, total=self.sample.n_slices,
                         bar_format='{desc} {percentage:3.0f}% {bar} Slice {n_fmt} / {total_fmt} '\
                                    '[{elapsed}<{remaining}, {rate_fmt}{postfix}]')
+
         for idx, layer in enumerate(itor):
             if verbose:
                 itor.set_description(f"z = {self.sample.z_coords[idx]:.2f} um")
@@ -673,6 +674,6 @@ class MSPropagator(DataContainer):
                                      z=dist, wl=self.params.wl, backend='fftw',
                                      num_threads=self.num_threads))
         if return_coords:
-            x_arr = step * np.arange(self.size) + np.mean(self.x_arr)
+            x_arr = step * np.arange(wavefronts[0].size) + np.mean(self.x_arr)
             return np.stack(wavefronts, axis=1), x_arr
         return np.stack(wavefronts, axis=1)
