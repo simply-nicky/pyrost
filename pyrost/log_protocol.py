@@ -16,7 +16,7 @@ import numpy as np
 from .ini_parser import ROOT_PATH, INIParser
 from .cxi_protocol import CXIProtocol, CXILoader
 from .data_processing import STData
-from .bin import make_whitefield
+from .bin import median
 
 LOG_PROTOCOL = os.path.join(ROOT_PATH, 'config/log_protocol.ini')
 
@@ -47,7 +47,7 @@ class LogProtocol(INIParser):
     """
     attr_dict = {'log_keys': ('ALL',), 'datatypes': ('ALL',)}
     fmt_dict = {'log_keys': 'str', 'datatypes': 'str'}
-    unit_dict = {'percent': 1e-2, 'mm,mdeg': 1e-3, 'um,udeg': 1e-6,
+    unit_dict = {'percent': 1e-2, 'mm,mdeg': 1e-3, 'um,udeg,µdeg': 1e-6,
                  'nm,ndeg': 1e-9, 'pm,pdeg': 1e-12}
 
     def __init__(self, log_keys=None, datatypes=None):
@@ -153,6 +153,8 @@ class LogProtocol(INIParser):
             for line in log_file:
                 if line.startswith('# '):
                     log_str += line.strip('# ')
+                else:
+                    break
 
         # Divide log into sectors
         parts_list = [part for part in re.split('(' + \
@@ -189,7 +191,7 @@ class LogProtocol(INIParser):
                         raw_str = match[0]
                         raw_val = raw_str.strip('\n').split(': ')[1]
                         # Extract a number string
-                        val_num = re.search(r'\d+[.]*\d*', raw_val)
+                        val_num = re.search(r'[-]*\d+[.]*\d*', raw_val)
                         dtype = self.known_types[self.datatypes[attr]]
                         attr_dict[part_name][attr] = dtype(val_num[0] if val_num else raw_val)
                         # Apply unit conversion if needed
@@ -359,7 +361,7 @@ def tilt_converter_sigray(scan_num, out_path, target='Mo', distance=2.):
     with np.load(os.path.join(ROOT_PATH, 'data/sigray_mask.npz')) as mask_file:
         mask = np.tile(mask_file['mask'][None], (n_steps, 1, 1))
 
-    whitefield = make_whitefield(data, mask, axis=0)
+    whitefield = median(data, mask, axis=0)
     db_coord = np.unravel_index(np.argmax(whitefield), whitefield.shape)
 
     for flip_key in flip_dict:

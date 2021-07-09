@@ -361,8 +361,6 @@ class MLL(DataContainer):
         lens.
     sigma : float
         Bilayer's interdiffusion length [um].
-    z_coords : numpy.ndarray
-        Z coordinates of the MLL's slices [um].
 
     Attributes
     ----------
@@ -370,12 +368,12 @@ class MLL(DataContainer):
         Set of the attributes in the container which are necessary
         to initialize in the constructor.
     """
-    attr_set = {'layers', 'mat1_r', 'mat2_r', 'sigma', 'z_coords'}
+    attr_set = {'layers', 'mat1_r', 'mat2_r', 'sigma'}
     en_to_wl = 1.239841929761768 # h * c / e [eV * um]
 
-    def __init__(self, mat1_r, mat2_r, sigma, layers, z_coords):
+    def __init__(self, mat1_r, mat2_r, sigma, layers):
         super(MLL, self).__init__(mat1_r=mat1_r, mat2_r=mat2_r, sigma=sigma,
-                                  layers=layers, z_coords=z_coords)
+                                  layers=layers)
 
     @classmethod
     def import_params(cls, params):
@@ -394,12 +392,12 @@ class MLL(DataContainer):
         mat2_r = params.get_mat2_r(cls.en_to_wl / params.wl)
         sigma = params.mll_sigma
         return cls(mat1_r=mat1_r, mat2_r=mat2_r, sigma=sigma,
-                   layers=layers, z_coords=z_coords)
+                   layers=layers)
 
     @property
     def n_slices(self):
         "Total number of slices"
-        return self.z_coords.size
+        return self.layers.shape[0]
 
     @dict_to_object
     def update_interdiffusion(self, sigma):
@@ -503,11 +501,12 @@ class MSPropagator(DataContainer):
     * fx_arr : Spatial frequencies array [um^-1].
     * kernel : Diffraction kernel.
     * smp_profile : Sample's transmission profile at each slice.
-    * x_arr : Coordinates array [um].
+    * x_arr : Coordinates array in the transverse plane [um].
     * wf_inc : Wavefront at the entry surface.
+    * z_arr : Coordinates array along the propagation axis [um].
     """
     attr_set = {'num_threads', 'params', 'sample'}
-    init_set = {'beam_profile', 'fx_arr', 'kernel', 'smp_profile', 'x_arr', 'wf_inc'}
+    init_set = {'beam_profile', 'fx_arr', 'kernel', 'smp_profile', 'x_arr', 'wf_inc', 'z_arr'}
 
     def __init__(self, params, sample, num_threads=None, **kwargs):
         if num_threads is None:
@@ -518,7 +517,8 @@ class MSPropagator(DataContainer):
 
     def _init_dict(self):
         if self.x_arr is None or self.fx_arr is None:
-            self.x_arr = self.params.get_coords()
+            self.x_arr = self.params.get_xcoords()
+            self.z_arr = self.params.get_zcoords()
             self.fx_arr = np.fft.fftfreq(self.size, self.params.x_step)
 
         if self.kernel is None:
@@ -574,7 +574,7 @@ class MSPropagator(DataContainer):
                                 '[{elapsed}<{remaining}, {rate_fmt}{postfix}]')
         for idx, _ in itor:
             if verbose:
-                itor.set_description(f"z = {self.sample.z_coords[idx]:.2f} um")
+                itor.set_description(f"z = {self.z_arr[idx]:.2f} um")
 
     def beam_propagate(self, verbose=True):
         """Perform the multislice beam propagation. The results are
@@ -612,7 +612,7 @@ class MSPropagator(DataContainer):
 
         for idx, layer in enumerate(itor):
             if verbose:
-                itor.set_description(f"z = {self.sample.z_coords[idx]:.2f} um")
+                itor.set_description(f"z = {self.z_arr[idx]:.2f} um")
             current_slice *= layer
             fft_obj.execute()
             current_slice *= self.kernel
@@ -620,7 +620,7 @@ class MSPropagator(DataContainer):
             ifft_obj.execute()
             current_slice[:] = ifft_obj.output_array
 
-    def beam_downstream(self, z_arr, step=None, return_coords=True, verbose=True):
+    def beam_downstream(self, z_arr, step=None, return_coords=True, verbose=True, backend='fftw'):
         """Return the wavefront at distance `z_arr` downstream from
         the exit surface using Rayleigh-Sommerfeld convolution.
 
@@ -657,23 +657,25 @@ class MSPropagator(DataContainer):
         if step is None:
             step = self.params.x_step
         size = int(self.x_arr.size**2 * max(self.params.x_step, step) * \
-                   (step + self.params.x_step) / self.params.wl / z_arr.min())
+                   (step + self.params.x_step) / self.params.wl / np.min(z_arr))
         wf0 = self.beam_profile[-1]
         if size > self.x_arr.size:
             wf0 = np.pad(wf0, ((size - self.x_arr.size) // 2, (size - self.x_arr.size) // 2))
+        else:
+            size = self.x_arr.size
 
-        itor = z_arr
+        itor = np.atleast_1d(z_arr)
         if verbose:
-            itor = tqdm(itor, total=z_arr.size)
+            itor = tqdm(itor, total=itor.size)
 
         wavefronts = []
         for dist in itor:
             if verbose:
                 itor.set_description(f"z = {dist:.2f} um")
             wavefronts.append(rsc_wp(wft=wf0, dx0=self.params.x_step, dx=step,
-                                     z=dist, wl=self.params.wl, backend='fftw',
+                                     z=dist, wl=self.params.wl, backend=backend,
                                      num_threads=self.num_threads))
         if return_coords:
-            x_arr = step * np.arange(wavefronts[0].size) + np.mean(self.x_arr)
-            return np.stack(wavefronts, axis=1), x_arr
-        return np.stack(wavefronts, axis=1)
+            x_arr = step * np.arange(-size // 2, size - size // 2) + np.mean(self.x_arr)
+            return np.squeeze(np.stack(wavefronts, axis=1)), x_arr
+        return np.squeeze(np.stack(wavefronts, axis=1))

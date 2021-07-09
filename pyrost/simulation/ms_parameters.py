@@ -207,7 +207,7 @@ class MSParams(INIParser):
         """
         return next_fast_len(int((self.x_max - self.x_min) // self.x_step))
 
-    def get_coords(self, size=None):
+    def get_xcoords(self, size=None):
         """Return a coordinate array of a slice.
 
         Parameters
@@ -225,6 +225,16 @@ class MSParams(INIParser):
         if size is None:
             size = self.get_wavefront_size()
         return (self.x_min + self.x_max) / 2 + self.x_step * np.arange(-size // 2, size // 2)
+
+    def get_zcoords(self):
+        """Return a coordinate array along the propagation axis.
+
+        Returns
+        -------
+        z_arr : numpy.ndarray
+            Coordinate array [um].
+        """
+        return self.z_step * np.arange(self.mll_depth // self.z_step)
 
     def get_kernel(self, fx_arr):
         r"""Return diffraction kernel for the multislice propagation.

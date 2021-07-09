@@ -1,7 +1,7 @@
 import os
 import sys
-from distutils.core import Extension
 from setuptools import setup, find_packages
+from distutils.core import Extension
 import numpy
 
 try:
@@ -22,8 +22,8 @@ extension_args = {'language': 'c',
                                    os.path.join(sys.prefix, 'include'),
                                    os.path.join(os.path.dirname(__file__), 'pyrost/include')]}
 
-src_files = ['pyrost/include/st_gaussian.c', 'pyrost/include/st_utils.c',
-             'pyrost/include/st_waveprop_np.c', 'pyrost/include/st_waveprop_fftw.c']
+src_files = ["pyrost/include/pocket_fft.c", "pyrost/include/fft_functions.c",
+             "pyrost/include/array.c", "pyrost/include/routines.c"]
 extensions = [Extension(name='pyrost.bin.simulation',
                         sources=['pyrost/bin/simulation' + ext,] + src_files, **extension_args),
               Extension(name='pyrost.bin.pyrost',

@@ -64,6 +64,8 @@ class CXIProtocol(INIParser):
     cxi_protocol : Full list of data attributes and configuration
         parameters.
     """
+    known_types = {'int': np.int64, 'bool': np.bool, 'float': np.float64, 'str': str,
+                   'uint': np.uint32}
     attr_dict = {'config': ('float_precision', ), 'datatypes': ('ALL', ),
                  'default_paths': ('ALL', )}
     fmt_dict = {'config': 'str','datatypes': 'str', 'default_paths': 'str'}
@@ -80,9 +82,7 @@ class CXIProtocol(INIParser):
 
         if self.config['float_precision'] == 'float32':
             self.known_types['float'] = np.float32
-        elif self.config['float_precision'] == 'float64':
-            self.known_types['float'] = np.float64
-        else:
+        if not self.config['float_precision'] in ['float32', 'float64']:
             raise ValueError('Invalid float precision: {:s}'.format(self.config['float_precision']))
 
     @classmethod

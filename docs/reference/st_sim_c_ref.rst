@@ -16,4 +16,4 @@ the wavefronts. All the functions are written in C.
     funcs/barcode_profile
     funcs/fft_convolve
     funcs/make_frames
-    funcs/make_whitefield
+    funcs/median

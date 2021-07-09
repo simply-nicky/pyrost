@@ -8,7 +8,8 @@ def make_ext(modname, pyxfilename):
     Cython.Compiler.Options.annotate = True
     return Extension(name='dev', sources=["dev.pyx", "pyrost/include/pocket_fft.c",
                                           "pyrost/include/fft_functions.c",
-                                          "pyrost/include/st_utils.c"], language="c",
+                                          "pyrost/include/array.c",
+                                          "pyrost/include/routines.c"], language="c",
                      extra_compile_args=['-fopenmp', '-std=c99'],
                      extra_link_args=['-lgomp'],
                      libraries=['gsl', 'gslcblas', 'fftw3', 'fftw3_omp'],

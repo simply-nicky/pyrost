@@ -14,6 +14,7 @@ in order to perform the simulation.
 """
 import os
 import numpy as np
+from multiprocessing import cpu_count
 from ..ini_parser import INIParser, ROOT_PATH
 from ..bin import bar_positions, barcode_profile, gaussian_kernel
 
@@ -60,15 +61,15 @@ class STParams(INIParser):
                  'lens':     ('alpha', 'ap_x', 'ap_y', 'focus', 'ab_cnt'),
                  'barcode':  ('bar_atn', 'bar_rnd', 'bar_sigma', 'bar_size',
                               'bulk_atn', 'offset'),
-                 'system':   ('seed',)}
+                 'system':   ('num_threads', 'seed')}
 
     fmt_dict = {'exp_geom': 'float', 'exp_geom/n_frames': 'int',
                 'detector': 'int', 'detector/pix_size': 'float',
                 'source': 'float', 'lens': 'float', 'barcode': 'float',
-                'system/seed': 'int'}
+                'system': 'int'}
     FMT_LEN = 7
 
-    def __init__(self, barcode=None, detector=None, exp_geom=None, lens=None, source=None, seed=0):
+    def __init__(self, barcode=None, detector=None, exp_geom=None, lens=None, source=None, system=None):
         if barcode is None:
             barcode = self._import_ini(ST_PARAMETERS)['barcode']
         if detector is None:
@@ -79,11 +80,15 @@ class STParams(INIParser):
             lens = self._import_ini(ST_PARAMETERS)['lens']
         if source is None:
             source = self._import_ini(ST_PARAMETERS)['source']
+        if system is None:
+            system = self._import_ini(ST_PARAMETERS)['system']
         super(STParams, self).__init__(barcode=barcode, detector=detector,
                                        exp_geom=exp_geom, lens=lens, source=source,
-                                       system={'seed': seed})
+                                       system=system)
         if self.seed <= 0:
             self.update_seed()
+        if self.num_threads <= 0:
+            self.update_threads()
 
     @classmethod
     def _lookup_dict(cls):
@@ -153,15 +158,31 @@ class STParams(INIParser):
         for option, section in cls._lookup_dict().items():
             if option in kwargs:
                 attr_dict[section][option] = kwargs[option]
-        attr_dict['seed'] = attr_dict.pop('system')['seed']
         return cls(**attr_dict)
 
     def update_seed(self, seed=None):
-        """
+        """Update seed used in pseudo-random number generation.
+
+        Parameters
+        ----------
+        seed : int, optional
+            New seed value. Chosen randomly if None.
         """
         if seed is None or seed <= 0:
             seed = np.random.default_rng().integers(0, np.iinfo(np.int_).max, endpoint=False)
         self.seed = seed
+
+    def update_threads(self, num_threads=None):
+        """Update number of threads used in calculcations.
+
+        Parameters
+        ----------
+        num_threads : int, optional
+            New seed value. Chosen randomly if None.
+        """
+        if num_threads is None or num_threads <= 0 or num_threads > 64:
+            num_threads = np.clip(1, 64, cpu_count())
+        self.num_threads = num_threads
 
     def x_wavefront_size(self):
         r"""Return wavefront array size along the x axis, that

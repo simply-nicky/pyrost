@@ -38,7 +38,7 @@ from tqdm.auto import tqdm
 import numpy as np
 from .aberrations_fit import AberrationsFit
 from .data_container import DataContainer, dict_to_object
-from .bin import make_whitefield, make_reference, update_pixel_map_gs, update_pixel_map_nm
+from .bin import median, make_reference, update_pixel_map_gs, update_pixel_map_nm
 from .bin import update_translations_gs, mse_frame, mse_total, ct_integrate
 from .bin import gaussian_filter, fft_convolve
 
@@ -136,8 +136,9 @@ class STData(DataContainer):
         if self.mask is None or self.mask.shape != self.data.shape:
             self.mask = np.ones(self.data.shape)
         if self.whitefield is None:
-            self.whitefield = make_whitefield(data=self.data[self.good_frames],
-                                              mask=self.mask[self.good_frames], axis=0)
+            self.whitefield = median(data=self.data[self.good_frames],
+                                     mask=self.mask[self.good_frames], axis=0,
+                                     num_threads=self.num_threads)
 
         # Set a pixel map, deviation angles, and phase
         if not self.pixel_map is None:
@@ -186,6 +187,33 @@ class STData(DataContainer):
             super(STData, self).__setattr__(attr, value)
         else:
             super(STData, self).__setattr__(attr, value)
+
+    @dict_to_object
+    def bin_data(self, bin_ratio=2):
+        """Return a new :class:`STData` object with the data binned by
+        a factor `bin_ratio`.
+
+        Parameters
+        ----------
+        bin_ratio : int, optional
+            Binning ratio. The frame size will decrease by the factor of
+            `bin_ratio`.
+
+        Returns
+        -------
+        STData
+            New :class:`STData` object with binned `data`.
+        """
+        data = self.data[:, ::bin_ratio, ::bin_ratio]
+        whitefield = self.whitefield[::bin_ratio, ::bin_ratio]
+        mask = self.mask[:, ::bin_ratio, ::bin_ratio]
+        data_dict = {'basis_vectors': bin_ratio * self.basis_vectors, 'data': data,
+                     'whitefield': whitefield, 'mask': mask, 'roi': self.roi // bin_ratio,
+                     'x_pixel_size': bin_ratio * self.x_pixel_size,
+                     'y_pixel_size': bin_ratio * self.y_pixel_size}
+        if self._isdefocus:
+            data_dict['pixel_translations'] = self.pixel_translations / bin_ratio,
+        return data_dict
 
     @dict_to_object
     def crop_data(self, roi):
@@ -306,7 +334,7 @@ class STData(DataContainer):
         """
         data = self.get('data')
         if method == 'no-bad':
-            mask = np.ones((self.data.shape[0], self.roi[1] - self.roi[0],
+            mask = np.ones((self.good_frames.size, self.roi[1] - self.roi[0],
                             self.roi[3] - self.roi[2]), dtype=bool)
         elif method == 'range-bad':
             mask = (data > vmin) & (data < vmax)
@@ -318,10 +346,10 @@ class STData(DataContainer):
             ValueError('invalid method argument')
         mask_full = self.mask.copy()
         if update == 'reset':
-            mask_full[:, self.roi[0]:self.roi[1], self.roi[2]:self.roi[3]] = mask
+            mask_full[self.good_frames, self.roi[0]:self.roi[1], self.roi[2]:self.roi[3]] = mask
             return {'mask': mask_full, 'whitefield': None}
         if update == 'multiply':
-            mask_full[:, self.roi[0]:self.roi[1], self.roi[2]:self.roi[3]] *= mask
+            mask_full[self.good_frames, self.roi[0]:self.roi[1], self.roi[2]:self.roi[3]] *= mask
             return {'mask': mask_full, 'whitefield': None}
 
     @dict_to_object
@@ -672,7 +700,7 @@ class STData(DataContainer):
             in `cxi_file`.
         """
         for attr, data in self.items():
-            if isinstance(data, np.ndarray):
+            if not data is self.protocol:
                 self.protocol.write_cxi(attr, data, cxi_file, overwrite=overwrite)
 
 class SpeckleTracking(DataContainer):

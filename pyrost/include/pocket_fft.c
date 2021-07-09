@@ -10,7 +10,7 @@
  *  \author Martin Reinecke
  */
 #include "pocket_fft.h"
-#include "st_utils.h"
+#include "array.h"
 
 // adapted from https://stackoverflow.com/questions/42792939/
 // CAUTION: this function only works for arguments in the range [-0.25; 0.25]!
@@ -2208,7 +2208,9 @@ int irfft_np(void *plan, double *inp, size_t npts)
     return fail;
 }
 
-
+//
+// ---------------- FFTW ----------------
+//
 #define LPRE_SIZE 585
 static const size_t LPRE[LPRE_SIZE] = {18,    20,    21,    22,    24,    25,    26,    27,    28,    30,
                                        32,    33,    35,    36,    39,    40,    42,    44,    45,    48,
