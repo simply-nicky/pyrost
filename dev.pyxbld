@@ -12,7 +12,7 @@ def make_ext(modname, pyxfilename):
                                           "pyrost/include/routines.c"], language="c",
                      extra_compile_args=['-fopenmp', '-std=c99'],
                      extra_link_args=['-lgomp'],
-                     libraries=['gsl', 'gslcblas', 'fftw3', 'fftw3_omp'],
+                     libraries=['gsl', 'blas', 'fftw3', 'fftw3_omp'],
                      library_dirs=[os.path.join(sys.prefix, 'lib'),
                                    '/usr/local/lib'],
                      include_dirs=[numpy.get_include(),

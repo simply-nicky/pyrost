@@ -107,8 +107,8 @@ class STData(DataContainer):
     """
     attr_set = {'basis_vectors', 'data', 'distance', 'translations', 'wavelength',
                 'x_pixel_size', 'y_pixel_size'}
-    init_set = {'defocus_fs', 'defocus_ss', 'error_frame', 'good_frames', 'mask',
-                'phase', 'pixel_aberrations', 'pixel_map', 'pixel_translations',
+    init_set = {'defocus_fs', 'defocus_ss', 'error_frame', 'flatfields', 'good_frames',
+                'mask', 'phase', 'pixel_aberrations', 'pixel_map', 'pixel_translations',
                 'reference_image', 'roi', 'whitefield'}
 
     def __init__(self, protocol, num_threads=None, **kwargs):
@@ -625,7 +625,7 @@ class STData(DataContainer):
             return val
         return value
 
-    def get_st(self, aberrations=False):
+    def get_st(self, aberrations=False, ff_correction=False):
         """Return :class:`SpeckleTracking` object derived
         from the container. Return None if `defocus_fs`
         or `defocus_ss` doesn't exist in the container.
@@ -635,6 +635,8 @@ class STData(DataContainer):
         aberrations : bool, optional
             Add `pixel_aberrations` to `pixel_map` of
             :class:`SpeckleTracking` object if it's True.
+        ff_correction : bool, optional
+            Apple dynamic flatfield correction if it's True.
 
         Returns
         -------
@@ -645,7 +647,7 @@ class STData(DataContainer):
         """
         if not self._isdefocus:
             return None
-        return SpeckleTracking.import_data(self, aberrations)
+        return SpeckleTracking.import_data(self, aberrations, ff_correction)
 
     def get_st_list(self):
         """Return a list of all the :class:`SpeckleTracking`
@@ -682,6 +684,49 @@ class STData(DataContainer):
         if not self._isphase:
             return None
         return AberrationsFit.import_data(self, center=center, axis=axis)
+
+    def get_pca(self):
+        """Perform the Principal Component Analysis [PCA]_ of the measured data and
+        return a set of eigen flat fields (EFF).
+
+        Returns
+        -------
+        effs_var : numpy.ndarray
+            Variance ratio for each EFF, that it describes.
+        effs : numpy.ndarray
+            Set of eigen flat fields.
+
+        References
+        ----------
+        .. [PCA] Vincent Van Nieuwenhove, Jan De Beenhouwer, Francesco De Carlo,
+                 Lucia Mancini, Federica Marone, and Jan Sijbers, "Dynamic intensity
+                 normalization using eigen flat fields in X-ray imaging," Opt. Express
+                 23, 27975-27989 (2015).
+        """
+        data = self.get('data') * self.get('mask') - self.get('whitefield')
+        mat_svd = np.tensordot(data, data, axes=((1, 2), (1, 2)))
+        eig_vals, eig_vecs = np.linalg.eig(mat_svd)
+        effs = np.tensordot(eig_vecs, data, axes=((0,), (0,)))
+        return eig_vals / eig_vals.sum(), effs
+
+    @dict_to_object
+    def update_flatfields(self, effs):
+        """Update flatfields based on a set of eigen flat fields `effs`.
+
+        Parameters
+        ----------
+        effs : numpy.ndarray
+            Set of the most important eigen flat fields.
+
+        Returns
+        -------
+        STData
+            New :class:`STData` object with the updated `flatfields`.
+        """
+        data = self.get('data') * self.get('mask') - self.get('whitefield')
+        weights = np.tensordot(data, effs, axes=((1, 2), (1, 2))) / np.sum(effs * effs, axis=(1, 2))
+        flatfields = np.tensordot(weights, effs, axes=((1,), (0,))) + self.get('whitefield')
+        return {'flatfields': flatfields}
 
     def write_cxi(self, cxi_file, overwrite=True):
         """Write all the `attr` to a CXI file `cxi_file`.
@@ -781,7 +826,7 @@ class SpeckleTracking(DataContainer):
                     for key, val in self.attr_dict.items()}.__str__()
 
     @classmethod
-    def import_data(cls, st_data, aberrations=False):
+    def import_data(cls, st_data, aberrations=False, ff_correction=False):
         """Return a new :class:`SpeckleTracking` object
         with all the necessary data attributes imported from
         the :class:`STData` container object `st_data`.
@@ -793,6 +838,8 @@ class SpeckleTracking(DataContainer):
         aberrations : bool, optional
             Add `pixel_aberrations` from `st_data` to
             `pixel_map` if it's True.
+        ff_correction : bool, optional
+            Apple dynamic flatfield correction if it's True.
 
         Returns
         -------
@@ -803,10 +850,15 @@ class SpeckleTracking(DataContainer):
         pixel_map = st_data.get('pixel_map')
         if aberrations:
             pixel_map += st_data.get('pixel_aberrations')
+        whitefield = st_data.get('whitefield')
+        if ff_correction:
+            flatfields = st_data.get('flatfields')
+            if not flatfields is None:
+                data *= np.where(flatfields > 0, whitefield / flatfields, 1.)
         dij_pix = np.ascontiguousarray(np.swapaxes(st_data.get('pixel_translations'), 0, 1))
         return cls(data=data, st_data=st_data, dfs_pix=dij_pix[1], dss_pix=dij_pix[0],
                    num_threads=st_data.num_threads, pixel_map=pixel_map,
-                   whitefield=st_data.get('whitefield'))
+                   whitefield=whitefield)
 
     @dict_to_object
     def update_reference(self, ls_ri, sw_fs=0, sw_ss=0):

@@ -67,6 +67,25 @@ cdef np.ndarray normalize_sequence(object inp, np.npy_intp rank, int type_num):
         raise ValueError("Sequence argument must have length equal to input rank")
     return arr
 
+cdef np.ndarray object_to_array(object inp, int type_num):
+    # If input is a scalar, create a sequence of length equal to the
+    # rank by duplicating the input. If input is a sequence,
+    # check if its length is equal to the length of array.
+    cdef np.ndarray arr
+    cdef int tn
+    if np.PyArray_IsAnyScalar(inp):
+        arr = number_to_array(inp, 1, type_num)
+    elif np.PyArray_Check(inp):
+        arr = <np.ndarray>inp
+        tn = np.PyArray_TYPE(arr)
+        if tn != type_num:
+            arr = <np.ndarray>np.PyArray_Cast(arr, type_num)
+    elif isinstance(inp, (list, tuple)):
+        arr = <np.ndarray>np.PyArray_FROM_OTF(inp, type_num, np.NPY_ARRAY_C_CONTIGUOUS)
+    else:
+        raise ValueError("Wrong sequence argument type")
+    return arr
+
 def next_fast_len(target: cython.uint, backend: str='numpy') -> cython.uint:
     r"""Find the next fast size of input data to fft, for zero-padding, etc.
     FFT algorithms gain their speed by a recursive divide and conquer strategy.
@@ -819,7 +838,8 @@ def median_filter(data: np.ndarray, mask: np.ndarray, size: cython.uint=3, axis:
             raise TypeError('data argument has incompatible type: {:s}'.format(data.dtype))
     return out
 
-def dot(inp1: np.ndarray, inp2: np.ndarray, axis1: cython.int, axis2: cython.int, num_threads: cython.uint=1):
+# def dot(inp1: np.ndarray, inp2: np.ndarray, axis1: cython.int, axis2: cython.int, num_threads: cython.uint=1) -> np.ndarray:
+cpdef np.ndarray dot(np.ndarray inp1, np.ndarray inp2, int axis1, int axis2, unsigned int num_threads=1):
     cdef int ndim1 = inp1.ndim
     axis1 = axis1 if axis1 >= 0 else ndim1 + axis1
     axis1 = axis1 if axis1 <= ndim1 - 1 else ndim1 - 1
@@ -881,6 +901,60 @@ def dot(inp1: np.ndarray, inp2: np.ndarray, axis1: cython.int, axis2: cython.int
     free(odims)
     return out
 
+cdef void init_dims(np.PyArray_Dims *permute, np.PyArray_Dims *reshape, np.npy_intp *shape, np.ndarray axes, int ndim):
+    cdef int i, ii = 0
+    cdef np.npy_intp nax = axes.size
+    permute.len = ndim
+    reshape.len = ndim - nax + 1
+    permute.ptr = <np.npy_intp *>malloc(permute.len * sizeof(np.npy_intp))
+    reshape.ptr = <np.npy_intp *>malloc(reshape.len * sizeof(np.npy_intp))
+    cdef bint matched
+    for i in range(ndim):
+        matched = 0
+        for j in range(nax):
+            matched |= (axes[j] == i)
+        if not matched:
+            permute.ptr[ii] = i
+            reshape.ptr[ii] = shape[i]
+            ii += 1
+    if ndim != ii + nax:
+        raise ValueError("axes sequence must match to the shape of the array.")
+    reshape.ptr[ii] = 1
+    for i in range(0, nax):
+        permute.ptr[i + ii] = axes[i]
+        reshape.ptr[ii] *= shape[axes[i]]
+
+cdef void free_dims(np.PyArray_Dims *dims) nogil:
+    free(dims.ptr)
+    free(dims)
+
+def tensordot(inp1: np.ndarray, inp2: np.ndarray, axes1: object, axes2: object, num_threads: cython.uint=1) -> np.ndarray:
+    cdef np.ndarray ax1 = object_to_array(axes1, np.NPY_INT64)
+    cdef np.ndarray ax2 = object_to_array(axes2, np.NPY_INT64)
+
+    if ax1.size != ax2.size:
+        raise ValueError("len(axes1) and len(axes2) must be equal.")
+    if ax1.size > inp1.ndim or ax1.size > inp2.ndim:
+        raise ValueError("Too many axes provided.")
+    
+    cdef np.PyArray_Dims *perm1 = <np.PyArray_Dims *>malloc(sizeof(np.PyArray_Dims))
+    cdef np.PyArray_Dims *rshp1 = <np.PyArray_Dims *>malloc(sizeof(np.PyArray_Dims))
+    init_dims(perm1, rshp1, inp1.shape, ax1, inp1.ndim)
+    
+    cdef np.ndarray ninp1 = np.PyArray_Newshape(np.PyArray_Transpose(inp1, perm1), rshp1, np.NPY_CORDER)
+    free_dims(perm1)
+    free_dims(rshp1)
+
+    cdef np.PyArray_Dims *perm2 = <np.PyArray_Dims *>malloc(sizeof(np.PyArray_Dims))
+    cdef np.PyArray_Dims *rshp2 = <np.PyArray_Dims *>malloc(sizeof(np.PyArray_Dims))
+    init_dims(perm2, rshp2, inp2.shape, ax2, inp2.ndim)
+    
+    cdef np.ndarray ninp2 = np.PyArray_Newshape(np.PyArray_Transpose(inp2, perm2), rshp2, np.NPY_CORDER)
+    free_dims(perm2)
+    free_dims(rshp2)
+
+    cdef np.ndarray out = dot(ninp1, ninp2, ninp1.ndim - 1, ninp2.ndim - 1, num_threads)
+    return out
 
 def st_update(I_n, dij, basis, x_ps, y_ps, z, df, search_window, n_iter=5,
               filter=None, update_translations=False, verbose=False):

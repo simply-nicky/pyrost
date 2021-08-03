@@ -5,11 +5,13 @@
 #include <string.h>
 #include <math.h>
 #include <complex.h>
-#include <gsl/gsl_blas.h>
 #include <fftw3.h>
 #include <gsl/gsl_rng.h>
 #include <gsl/gsl_randist.h>
 #include <omp.h>
+
+// BLAS dot implementation
+double ddot_(const int *N, const double *a, const int *inca, const double *b, const int *incb); 
 
 #ifdef __GNUC__
 #define NOINLINE __attribute__((noinline))

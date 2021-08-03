@@ -269,9 +269,13 @@ int median_filter(void *out, void *data, unsigned char *mask, int ndim, size_t *
 
 void dot_double(void *out, line line1, line line2)
 {
-    double sum = cblas_ddot(line1->npts, (double *)line1->data, line1->stride,
-        (double *)line2->data, line2->stride);
-    *(double *)out = sum;
+    const int num = (int)line1->npts;
+    const int is1 = (int)line1->stride;
+    const double *ip1 = (double *)line1->data;
+    const int is2 = (int)line2->stride;
+    const double *ip2 = (double *)line2->data;
+
+    *(double *)out = ddot_(&num, ip1, &is1, ip2, &is2);
 }
 
 void dot_long(void *out, line line1, line line2)
