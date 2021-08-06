@@ -33,9 +33,9 @@ int fft_convolve_np(double *out, double *inp, int ndim, size_t *dims,
     if (threads == 0) {ERROR("fft_convolve_np: threads must be positive."); return -1;}
 
     double zerro = 0.;
-    array oarr = new_array(ndim, dims, (void *)out);
-    array iarr = new_array(ndim, dims, (void *)inp);
-    line kline = new_line(ksize, 1, krn);
+    array oarr = new_array(ndim, dims, sizeof(double), (void *)out);
+    array iarr = new_array(ndim, dims, sizeof(double), (void *)inp);
+    line kline = new_line(ksize, 1, sizeof(double), krn);
     
     int fail = 0;
     size_t flen = good_size(iarr->dims[axis] + ksize - 1);
@@ -48,7 +48,7 @@ int fft_convolve_np(double *out, double *inp, int ndim, size_t *dims,
         double *krnft = (double *)malloc(2 * (flen / 2 + 1) * sizeof(double));
         rfft_plan plan = make_rfft_plan(flen);
 
-        extend_line((void *)krnft, sizeof(double), flen, kline, EXTEND_CONSTANT, (void *)&zerro);
+        extend_line((void *)krnft, flen, kline, EXTEND_CONSTANT, (void *)&zerro);
         fail |= rfft_np((void *)plan, krnft, flen);
 
         line iline = init_line(iarr, axis);
@@ -56,9 +56,9 @@ int fft_convolve_np(double *out, double *inp, int ndim, size_t *dims,
         #pragma omp for
         for (int i = 0; i < (int)repeats; i++)
         {
-            update_line(iline, iarr, i, sizeof(double));
-            update_line(oline, oarr, i, sizeof(double));
-            extend_line((void *)inpft, sizeof(double), flen, iline, mode, (void *)&cval);
+            update_line(iline, iarr, i);
+            update_line(oline, oarr, i);
+            extend_line((void *)inpft, flen, iline, mode, (void *)&cval);
             fail |= fft_convolve_calc((void *)plan, (void *)plan, oline, inpft, krnft,
                 flen, rfft_np, irfft_np);
         }
@@ -86,9 +86,9 @@ int fft_convolve_fftw(double *out, double *inp, int ndim, size_t *dims,
     if (threads == 0) {ERROR("fft_convolve_np: threads must be positive."); return -1;}
 
     double zerro = 0.;
-    array oarr = new_array(ndim, dims, (void *)out);
-    array iarr = new_array(ndim, dims, (void *)inp);
-    line kline = new_line(ksize, 1, krn);
+    array oarr = new_array(ndim, dims, sizeof(double), (void *)out);
+    array iarr = new_array(ndim, dims, sizeof(double), (void *)inp);
+    line kline = new_line(ksize, 1, sizeof(double), krn);
     
     int fail = 0;
     size_t flen = next_fast_len_fftw(iarr->dims[axis] + ksize - 1);
@@ -111,7 +111,7 @@ int fft_convolve_fftw(double *out, double *inp, int ndim, size_t *dims,
                 inpft, FFTW_ESTIMATE);
         }
 
-        extend_line((void *)krnft, sizeof(double), flen, kline, EXTEND_CONSTANT, (void *)&zerro);
+        extend_line((void *)krnft, flen, kline, EXTEND_CONSTANT, (void *)&zerro);
         fail |= rfft_fftw((void *)rfft_plan, krnft, flen);
 
         line iline = init_line(iarr, axis);
@@ -119,9 +119,9 @@ int fft_convolve_fftw(double *out, double *inp, int ndim, size_t *dims,
         #pragma omp for
         for (int i = 0; i < (int)repeats; i++)
         {
-            update_line(iline, iarr, i, sizeof(double));
-            update_line(oline, oarr, i, sizeof(double));
-            extend_line((void *)inpft, sizeof(double), flen, iline, mode, (void *)&cval);
+            update_line(iline, iarr, i);
+            update_line(oline, oarr, i);
+            extend_line((void *)inpft, flen, iline, mode, (void *)&cval);
             fail |= fft_convolve_calc((void *)rfft_plan, (void *)irfft_plan, oline,
                 inpft, krnft, flen, rfft_fftw, irfft_fftw);
         }
@@ -232,13 +232,14 @@ int rsc_np(double complex *out, double complex *inp, int ndim, size_t *dims, int
     if (threads == 0) {ERROR("rsc_np: threads must be positive."); return -1;}
 
     double complex zerro = 0.;
-    array oarr = new_array(ndim, dims, (void *)out);
-    array iarr = new_array(ndim, dims, (void *)inp);
+    array oarr = new_array(ndim, dims, sizeof(double complex), (void *)out);
+    array iarr = new_array(ndim, dims, sizeof(double complex), (void *)inp);
 
     int fail = 0;
     dx = fabs(dx); dx0 = fabs(dx0);
     rsc_func rsc_calc = (dx0 >= dx) ? rsc_type1_calc : rsc_type2_calc;
     double alpha = (dx0 <= dx) ? (dx0 / dx) : (dx / dx0);
+
     size_t flen = good_size((size_t) (iarr->dims[axis] * (1 + alpha)) + 1);
     size_t repeats = iarr->size / iarr->dims[axis];
     threads = (threads > (unsigned) repeats) ? (unsigned) repeats : threads;
@@ -251,12 +252,13 @@ int rsc_np(double complex *out, double complex *inp, int ndim, size_t *dims, int
 
         line iline = init_line(iarr, axis);
         line oline = init_line(oarr, axis);
+
         #pragma omp for
         for (int i = 0; i < (int)repeats; i++)
         {
-            update_line(iline, iarr, i, sizeof(double complex));
-            update_line(oline, oarr, i, sizeof(double complex));
-            extend_line((void *)inpft, sizeof(double complex), flen, iline, EXTEND_CONSTANT, (void *)&zerro);
+            update_line(iline, iarr, i);
+            update_line(oline, oarr, i);
+            extend_line((void *)inpft, flen, iline, EXTEND_CONSTANT, (void *)&zerro);
             fail |= rsc_calc((void *)plan, (void *)plan, oline, inpft, krnft, flen,
                 dx0, dx, z, wl, fft_np, ifft_np);
         }
@@ -282,13 +284,14 @@ int rsc_fftw(double complex *out, double complex *inp, int ndim, size_t *dims, i
     if (threads == 0) {ERROR("rsc_fftw: threads must be positive."); return -1;}
 
     double complex zerro = 0.;
-    array oarr = new_array(ndim, dims, (void *)out);
-    array iarr = new_array(ndim, dims, (void *)inp);
+    array oarr = new_array(ndim, dims, sizeof(double complex), (void *)out);
+    array iarr = new_array(ndim, dims, sizeof(double complex), (void *)inp);
 
     int fail = 0;
     dx = fabs(dx); dx0 = fabs(dx0);
     rsc_func rsc_calc = (dx0 >= dx) ? rsc_type1_calc : rsc_type2_calc;
     double alpha = (dx0 <= dx) ? (dx0 / dx) : (dx / dx0);
+
     size_t flen = next_fast_len_fftw((size_t) (iarr->dims[axis] * (1 + alpha)) + 1);
     size_t repeats = iarr->size / iarr->dims[axis];
     threads = (threads > (unsigned) repeats) ? (unsigned) repeats : threads;
@@ -314,9 +317,9 @@ int rsc_fftw(double complex *out, double complex *inp, int ndim, size_t *dims, i
         #pragma omp for
         for (int i = 0; i < (int)repeats; i++)
         {
-            update_line(iline, iarr, i, sizeof(double complex));
-            update_line(oline, oarr, i, sizeof(double complex));
-            extend_line((void *)inpft, sizeof(double complex), flen, iline, EXTEND_CONSTANT, (void *)&zerro);
+            update_line(iline, iarr, i);
+            update_line(oline, oarr, i);
+            extend_line((void *)inpft, flen, iline, EXTEND_CONSTANT, (void *)&zerro);
             fail |= rsc_calc((void *)fft_plan, (void *)ifft_plan, oline, inpft, krnft, flen,
                 dx0, dx, z, wl, fft_fftw, ifft_fftw);
         }
@@ -376,8 +379,8 @@ int fraunhofer_np(double complex *out, double complex *inp, int ndim, size_t *di
     if (threads == 0) {ERROR("fraunhofer_np: threads must be positive."); return -1;}
 
     double complex zerro = 0.;
-    array oarr = new_array(ndim, dims, (void *)out);
-    array iarr = new_array(ndim, dims, (void *)inp);
+    array oarr = new_array(ndim, dims, sizeof(double complex), (void *)out);
+    array iarr = new_array(ndim, dims, sizeof(double complex), (void *)inp);
 
     int fail = 0;
     dx = fabs(dx); dx0 = fabs(dx0);
@@ -407,9 +410,9 @@ int fraunhofer_np(double complex *out, double complex *inp, int ndim, size_t *di
         #pragma omp for
         for (int i = 0; i < (int)repeats; i++)
         {
-            update_line(iline, iarr, i, sizeof(double complex));
-            update_line(oline, oarr, i, sizeof(double complex));
-            extend_line((void *)inpft, sizeof(double complex), flen, iline, EXTEND_CONSTANT, (void *)&zerro);
+            update_line(iline, iarr, i);
+            update_line(oline, oarr, i);
+            extend_line((void *)inpft, flen, iline, EXTEND_CONSTANT, (void *)&zerro);
             fail |= fraunhofer_calc((void *)plan, (void *)plan, oline, inpft, krnft, flen,
                 dx0, dx, alpha, fft_np, ifft_np);
         }
@@ -435,8 +438,8 @@ int fraunhofer_fftw(double complex *out, double complex *inp, int ndim, size_t *
     if (threads == 0) {ERROR("fraunhofer_fftw: threads must be positive."); return -1;}
 
     double complex zerro = 0.;
-    array oarr = new_array(ndim, dims, (void *)out);
-    array iarr = new_array(ndim, dims, (void *)inp);
+    array oarr = new_array(ndim, dims, sizeof(double complex), (void *)out);
+    array iarr = new_array(ndim, dims, sizeof(double complex), (void *)inp);
 
     int fail = 0;
     dx = fabs(dx); dx0 = fabs(dx0);
@@ -476,9 +479,9 @@ int fraunhofer_fftw(double complex *out, double complex *inp, int ndim, size_t *
         #pragma omp for
         for (int i = 0; i < (int)repeats; i++)
         {
-            update_line(iline, iarr, i, sizeof(double complex));
-            update_line(oline, oarr, i, sizeof(double complex));
-            extend_line((void *)inpft, sizeof(double complex), flen, iline, EXTEND_CONSTANT, (void *)&zerro);
+            update_line(iline, iarr, i);
+            update_line(oline, oarr, i);
+            extend_line((void *)inpft, flen, iline, EXTEND_CONSTANT, (void *)&zerro);
             fail |= fraunhofer_calc((void *)fft_plan, (void *)ifft_plan, oline, inpft, krnft, flen,
                 dx0, dx, alpha, fft_fftw, ifft_fftw);
         }

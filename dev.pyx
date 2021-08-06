@@ -711,7 +711,7 @@ def make_frames(pfx: np.ndarray, pfy: np.ndarray, dx: cython.double, dy: cython.
         raise RuntimeError('C backend exited with error.')
     return out
 
-def median(data: np.ndarray, mask: np.ndarray, axis: cython.int=0,
+def median(data: np.ndarray, mask: np.ndarray=None, axis: cython.int=0,
            num_threads: cython.uint=1) -> np.ndarray:
     """Calculate a median along the `axis`.
 
@@ -719,7 +719,7 @@ def median(data: np.ndarray, mask: np.ndarray, axis: cython.int=0,
     ----------
     data : numpy.ndarray
         Intensity frames.
-    mask : numpy.ndarray
+    mask : numpy.ndarray, optional
         Bad pixel mask.
     axis : int, optional
         Array axis along which median values are calculated.
@@ -733,14 +733,21 @@ def median(data: np.ndarray, mask: np.ndarray, axis: cython.int=0,
     """
     if not np.PyArray_IS_C_CONTIGUOUS(data):
         data = np.PyArray_GETCONTIGUOUS(data)
-    mask = check_array(mask, np.NPY_BOOL)
 
     cdef int ndim = data.ndim
-    if memcmp(data.shape, mask.shape, ndim * sizeof(np.npy_intp)):
-        raise ValueError('mask and data arrays must have identical shapes')
     axis = axis if axis >= 0 else ndim + axis
     axis = axis if axis <= ndim - 1 else ndim - 1
+
+    if mask is None:
+        mask = <np.ndarray>np.PyArray_SimpleNew(ndim, data.shape, np.NPY_BOOL)
+        np.PyArray_FILLWBYTE(mask, 1)
+    else:
+        mask = check_array(mask, np.NPY_BOOL)
+        if memcmp(data.shape, mask.shape, ndim * sizeof(np.npy_intp)):
+            raise ValueError('mask and data arrays must have identical shapes')
+
     cdef unsigned long *_dims = <unsigned long *>data.shape
+
     cdef np.npy_intp *odims = <np.npy_intp *>malloc((ndim - 1) * sizeof(np.npy_intp))
     if odims is NULL:
         raise MemoryError('not enough memory')
@@ -749,11 +756,13 @@ def median(data: np.ndarray, mask: np.ndarray, axis: cython.int=0,
         odims[i] = data.shape[i]
     for i in range(axis + 1, ndim):
         odims[i - 1] = data.shape[i]
+
     cdef int type_num = np.PyArray_TYPE(data)
     cdef np.ndarray out = <np.ndarray>np.PyArray_SimpleNew(ndim - 1, odims, type_num)
     cdef void *_out = <void *>np.PyArray_DATA(out)
     cdef void *_data = <void *>np.PyArray_DATA(data)
     cdef unsigned char *_mask = <unsigned char *>np.PyArray_DATA(mask)
+
     with nogil:
         if type_num == np.NPY_FLOAT64:
             fail = median_c(_out, _data, _mask, ndim, _dims, 8, axis, compare_double, num_threads)
@@ -763,24 +772,25 @@ def median(data: np.ndarray, mask: np.ndarray, axis: cython.int=0,
             fail = median_c(_out, _data, _mask, ndim, _dims, 4, axis, compare_long, num_threads)
         else:
             raise TypeError('data argument has incompatible type: {:s}'.format(data.dtype))
+
     free(odims)
     return out
 
-def median_filter(data: np.ndarray, mask: np.ndarray, size: cython.uint=3, axis: cython.int=0,
-                  mode: str='reflect', cval: cython.double=0., num_threads: cython.uint=1) -> np.ndarray:
+def median_filter(data: np.ndarray, size: object, mask: np.ndarray=None, mode: str='reflect', cval: cython.double=0.,
+                  num_threads: cython.uint=1) -> np.ndarray:
     """Calculate a median along the `axis`.
 
     Parameters
     ----------
     data : numpy.ndarray
         Intensity frames.
-    mask : numpy.ndarray
+    size : numpy.ndarray
+        Gives the shape that is taken from the input array, at every element position, to
+        define the input to the filter function. We adjust size to the number of dimensions
+        of the input array, so that, if the input array is shape (10,10,10), and size is 2,
+        then the actual size used is (2,2,2).
+    mask : numpy.ndarray, optional
         Bad pixel mask.
-    size : int, optional
-        `size` gives the shape that is taken from the input array, at every element position,
-        to define the input to the filter function. Default is 3.
-    axis : int, optional
-        Array axis along which median values are calculated.
     mode : {'constant', 'nearest', 'mirror', 'reflect', 'wrap'}, optional
         The mode parameter determines how the input array is extended when the filter
         overlaps a border. Default value is 'reflect'. The valid values and their behavior
@@ -811,14 +821,19 @@ def median_filter(data: np.ndarray, mask: np.ndarray, size: cython.uint=3, axis:
     """
     if not np.PyArray_IS_C_CONTIGUOUS(data):
         data = np.PyArray_GETCONTIGUOUS(data)
-    mask = check_array(mask, np.NPY_BOOL)
 
     cdef int ndim = data.ndim
-    if memcmp(data.shape, mask.shape, ndim * sizeof(np.npy_intp)):
-        raise ValueError('mask and data arrays must have identical shapes')
-    axis = axis if axis >= 0 else ndim + axis
-    axis = axis if axis <= ndim - 1 else ndim - 1
     cdef np.npy_intp *dims = data.shape
+
+    if mask is None:
+        mask = <np.ndarray>np.PyArray_SimpleNew(ndim, dims, np.NPY_BOOL)
+        np.PyArray_FILLWBYTE(mask, 1)
+    else:
+        mask = check_array(mask, np.NPY_BOOL)
+
+    cdef np.ndarray fsize = normalize_sequence(size, ndim, np.NPY_INTP)
+    cdef unsigned long *_fsize = <unsigned long *>np.PyArray_DATA(fsize)
+
     cdef unsigned long *_dims = <unsigned long *>dims
     cdef int type_num = np.PyArray_TYPE(data)
     cdef np.ndarray out = <np.ndarray>np.PyArray_SimpleNew(ndim, dims, type_num)
@@ -827,18 +842,19 @@ def median_filter(data: np.ndarray, mask: np.ndarray, size: cython.uint=3, axis:
     cdef unsigned char *_mask = <unsigned char *>np.PyArray_DATA(mask)
     cdef int _mode = extend_mode_to_code(mode)
     cdef void *_cval = <void *>&cval
+
     with nogil:
         if type_num == np.NPY_FLOAT64:
-            fail = median_filter_c(_out, _data, _mask, ndim, _dims, 8, axis, size, _mode, _cval, compare_double, num_threads)
+            fail = median_filter_c(_out, _data, _mask, ndim, _dims, 8, _fsize, _mode, _cval, compare_double, num_threads)
         elif type_num == np.NPY_FLOAT32:
-            fail = median_filter_c(_out, _data, _mask, ndim, _dims, 4, axis, size, _mode, _cval, compare_float, num_threads)
+            fail = median_filter_c(_out, _data, _mask, ndim, _dims, 4, _fsize, _mode, _cval, compare_float, num_threads)
         elif type_num == np.NPY_INT32:
-            fail = median_filter_c(_out, _data, _mask, ndim, _dims, 4, axis, size, _mode, _cval, compare_long, num_threads)
+            fail = median_filter_c(_out, _data, _mask, ndim, _dims, 4, _fsize, _mode, _cval, compare_long, num_threads)
         else:
             raise TypeError('data argument has incompatible type: {:s}'.format(data.dtype))
+
     return out
 
-# def dot(inp1: np.ndarray, inp2: np.ndarray, axis1: cython.int, axis2: cython.int, num_threads: cython.uint=1) -> np.ndarray:
 cpdef np.ndarray dot(np.ndarray inp1, np.ndarray inp2, int axis1, int axis2, unsigned int num_threads=1):
     cdef int ndim1 = inp1.ndim
     axis1 = axis1 if axis1 >= 0 else ndim1 + axis1

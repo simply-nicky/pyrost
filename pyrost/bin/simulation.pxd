@@ -35,10 +35,6 @@ cdef extern from "fft_functions.h":
                        convolve_func fft_convolve) nogil
 
 cdef extern from "routines.h":
-    int compare_double(void *a, void *b) nogil
-    int compare_float(void *a, void *b) nogil
-    int compare_long(void *a, void *b) nogil
-
     void barcode_bars(double *bars, unsigned long size, double x0, double b_dx, double rd, long seed) nogil
 
     int ml_profile(complex *out, double *inp, unsigned long isize, double *layers, unsigned long lsize, 
@@ -47,12 +43,17 @@ cdef extern from "routines.h":
     int frames(double *out, double *pfx, double *pfy, double dx, double dy, unsigned long *ishape,
                unsigned long *oshape, long seed, unsigned threads) nogil
 
+cdef extern from "median.c":
+    int compare_double(void *a, void *b) nogil
+    int compare_float(void *a, void *b) nogil
+    int compare_long(void *a, void *b) nogil
+
     int median_c "median" (void *out, void *data, unsigned char *mask, int ndim, unsigned long *dims,
                  unsigned long item_size, int axis, int (*compar)(void*, void*), unsigned threads) nogil
 
     int median_filter_c "median_filter" (void *out, void *data, unsigned char *mask, int ndim,
-                        unsigned long *dims, unsigned long item_size, int axis, unsigned long window,
-                        int mode, void *cval, int (*compar)(void*, void*), unsigned threads) nogil
+                        unsigned long *dims, unsigned long item_size, unsigned long *fsize, int mode,
+                        void *cval, int (*compar)(void*, void*), unsigned threads) nogil
 
 cdef extern from "fftw3.h":
     void fftw_init_threads() nogil
