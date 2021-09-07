@@ -148,7 +148,7 @@ class BasicElement:
         .. [GISAXS] http://gisaxs.com/index.php/Absorption_length
         """
         wavelength = self.en_to_wl / energy
-        return 4 * np.pi * self.get_refractive_index(energy).imag / wavelength
+        return 4 * np.pi * self.get_ref_index(energy).imag / wavelength
 
 class Element(BasicElement):
     """This class serves for accessing the scattering factors f1 and f2

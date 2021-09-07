@@ -56,8 +56,8 @@ int fft_convolve_np(double *out, double *inp, int ndim, size_t *dims,
         #pragma omp for
         for (int i = 0; i < (int)repeats; i++)
         {
-            update_line(iline, iarr, i);
-            update_line(oline, oarr, i);
+            UPDATE_LINE(iline, i);
+            UPDATE_LINE(oline, i);
             extend_line((void *)inpft, flen, iline, mode, (void *)&cval);
             fail |= fft_convolve_calc((void *)plan, (void *)plan, oline, inpft, krnft,
                 flen, rfft_np, irfft_np);
@@ -119,8 +119,8 @@ int fft_convolve_fftw(double *out, double *inp, int ndim, size_t *dims,
         #pragma omp for
         for (int i = 0; i < (int)repeats; i++)
         {
-            update_line(iline, iarr, i);
-            update_line(oline, oarr, i);
+            UPDATE_LINE(iline, i);
+            UPDATE_LINE(oline, i);
             extend_line((void *)inpft, flen, iline, mode, (void *)&cval);
             fail |= fft_convolve_calc((void *)rfft_plan, (void *)irfft_plan, oline,
                 inpft, krnft, flen, rfft_fftw, irfft_fftw);
@@ -256,8 +256,8 @@ int rsc_np(double complex *out, double complex *inp, int ndim, size_t *dims, int
         #pragma omp for
         for (int i = 0; i < (int)repeats; i++)
         {
-            update_line(iline, iarr, i);
-            update_line(oline, oarr, i);
+            UPDATE_LINE(iline, i);
+            UPDATE_LINE(oline, i);
             extend_line((void *)inpft, flen, iline, EXTEND_CONSTANT, (void *)&zerro);
             fail |= rsc_calc((void *)plan, (void *)plan, oline, inpft, krnft, flen,
                 dx0, dx, z, wl, fft_np, ifft_np);
@@ -314,11 +314,12 @@ int rsc_fftw(double complex *out, double complex *inp, int ndim, size_t *dims, i
 
         line iline = init_line(iarr, axis);
         line oline = init_line(oarr, axis);
+
         #pragma omp for
         for (int i = 0; i < (int)repeats; i++)
         {
-            update_line(iline, iarr, i);
-            update_line(oline, oarr, i);
+            UPDATE_LINE(iline, i);
+            UPDATE_LINE(oline, i);
             extend_line((void *)inpft, flen, iline, EXTEND_CONSTANT, (void *)&zerro);
             fail |= rsc_calc((void *)fft_plan, (void *)ifft_plan, oline, inpft, krnft, flen,
                 dx0, dx, z, wl, fft_fftw, ifft_fftw);
@@ -410,8 +411,8 @@ int fraunhofer_np(double complex *out, double complex *inp, int ndim, size_t *di
         #pragma omp for
         for (int i = 0; i < (int)repeats; i++)
         {
-            update_line(iline, iarr, i);
-            update_line(oline, oarr, i);
+            UPDATE_LINE(iline, i);
+            UPDATE_LINE(oline, i);
             extend_line((void *)inpft, flen, iline, EXTEND_CONSTANT, (void *)&zerro);
             fail |= fraunhofer_calc((void *)plan, (void *)plan, oline, inpft, krnft, flen,
                 dx0, dx, alpha, fft_np, ifft_np);
@@ -479,8 +480,8 @@ int fraunhofer_fftw(double complex *out, double complex *inp, int ndim, size_t *
         #pragma omp for
         for (int i = 0; i < (int)repeats; i++)
         {
-            update_line(iline, iarr, i);
-            update_line(oline, oarr, i);
+            UPDATE_LINE(iline, i);
+            UPDATE_LINE(oline, i);
             extend_line((void *)inpft, flen, iline, EXTEND_CONSTANT, (void *)&zerro);
             fail |= fraunhofer_calc((void *)fft_plan, (void *)ifft_plan, oline, inpft, krnft, flen,
                 dx0, dx, alpha, fft_fftw, ifft_fftw);

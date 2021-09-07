@@ -53,7 +53,7 @@ setup(name='pyrost',
       include_package_data=True,
       package_data={'pyrost': ['config/*.ini', 'ini_templates/*.ini', 'data/*.npz']},
       install_requires=['h5py', 'numpy', 'scipy'],
-      extras_require={'interactive': ['matplotlib', 'jupyter', 'pyximport']},
+      extras_require={'interactive': ['matplotlib', 'jupyter', 'pyximport', 'ipykernel', 'ipywidgets']},
       ext_modules=extensions,
       classifiers=[
           "Programming Language :: Python",

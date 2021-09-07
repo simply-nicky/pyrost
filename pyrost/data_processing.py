@@ -108,13 +108,10 @@ class STData(DataContainer):
     attr_set = {'basis_vectors', 'data', 'distance', 'translations', 'wavelength',
                 'x_pixel_size', 'y_pixel_size'}
     init_set = {'defocus_fs', 'defocus_ss', 'error_frame', 'flatfields', 'good_frames',
-                'mask', 'phase', 'pixel_aberrations', 'pixel_map', 'pixel_translations',
-                'reference_image', 'roi', 'whitefield'}
+                'mask', 'num_threads', 'phase', 'pixel_aberrations', 'pixel_map',
+                'pixel_translations', 'reference_image', 'roi', 'whitefield'}
 
-    def __init__(self, protocol, num_threads=None, **kwargs):
-        if num_threads is None:
-            num_threads = np.clip(1, 64, cpu_count())
-        self.__dict__['num_threads'] = num_threads
+    def __init__(self, protocol, **kwargs):
         # Initialize protocol for the proper data type conversion in __setattr__
         self.__dict__['protocol'] = protocol
 
@@ -128,13 +125,18 @@ class STData(DataContainer):
         self._init_dict()
 
     def _init_dict(self):
+        # Set number of threads, num_threads is not a part of the protocol
+        if self.num_threads is None:
+            self.num_threads = np.clip(1, 64, cpu_count())
         # Set ROI, good frames array, mask, and whitefield
         if self.roi is None:
             self.roi = np.array([0, self.data.shape[1], 0, self.data.shape[2]])
         if self.good_frames is None:
             self.good_frames = np.arange(self.data.shape[0])
-        if self.mask is None or self.mask.shape != self.data.shape:
+        if self.mask is None:
             self.mask = np.ones(self.data.shape)
+        if self.mask.shape == self.data.shape[1:]:
+            self.mask = np.tile(self.mask[None, :], (self.data.shape[0], 1, 1))
         if self.whitefield is None:
             self.whitefield = median(data=self.data[self.good_frames],
                                      mask=self.mask[self.good_frames], axis=0,
@@ -180,10 +182,12 @@ class STData(DataContainer):
 
     def __setattr__(self, attr, value):
         if attr in self.attr_set | self.init_set:
-            if isinstance(value, np.ndarray):
-                value = np.array(value, dtype=self.protocol.get_dtype(attr))
-            elif not value is None:
-                value = self.protocol.get_dtype(attr)(value)
+            dtype = self.protocol.get_dtype(attr)
+            if not dtype is None:
+                if isinstance(value, np.ndarray):
+                    value = np.array(value, dtype=dtype)
+                elif not value is None:
+                    value = dtype(value)
             super(STData, self).__setattr__(attr, value)
         else:
             super(STData, self).__setattr__(attr, value)
@@ -249,18 +253,22 @@ class STData(DataContainer):
         """
         roi = self.roi.copy()
         roi[2 * axis:2 * (axis + 1)] = np.arange(2)
-        return {'data': np.sum(self.data * self.mask, axis=axis + 1, keepdims=True),
+
+        data = np.zeros(self.data.shape, self.data.dtype)
+        data[self.good_frames, self.roi[0]:self.roi[1], self.roi[2]:self.roi[3]] = self.get('data') * self.get('mask')
+        return {'data': np.sum(data, axis=axis + 1, keepdims=True),
                 'whitefield': None, 'mask': None, 'roi': roi}
 
     @dict_to_object
-    def mask_frames(self, good_frames):
+    def mask_frames(self, good_frames=None):
         """Return a new :class:`STData` object with the updated
-        good frames mask.
+        good frames mask. Mask empty frames by default.
 
         Parameters
         ----------
-        good_frames : iterable
-            List of good frames' indices.
+        good_frames : iterable, optional
+            List of good frames' indices. Keeps non-empty frames
+            if not provided.
 
         Returns
         -------
@@ -268,6 +276,8 @@ class STData(DataContainer):
             New :class:`STData` object with the updated `good_frames`
             and `whitefield`.
         """
+        if good_frames is None:
+            good_frames = np.where(self.data.sum(axis=(1, 2)) > 0)[0]
         return {'good_frames': np.asarray(good_frames, dtype=np.int),
                 'whitefield': None}
 
@@ -337,7 +347,7 @@ class STData(DataContainer):
             mask = np.ones((self.good_frames.size, self.roi[1] - self.roi[0],
                             self.roi[3] - self.roi[2]), dtype=bool)
         elif method == 'range-bad':
-            mask = (data > vmin) & (data < vmax)
+            mask = (data >= vmin) & (data < vmax)
         elif method == 'perc-bad':
             offsets = (data - np.median(data))
             mask = (offsets >= np.percentile(offsets, pmin)) & \
@@ -745,7 +755,7 @@ class STData(DataContainer):
             in `cxi_file`.
         """
         for attr, data in self.items():
-            if not data is self.protocol:
+            if attr in self.protocol:
                 self.protocol.write_cxi(attr, data, cxi_file, overwrite=overwrite)
 
 class SpeckleTracking(DataContainer):

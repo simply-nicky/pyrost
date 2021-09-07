@@ -43,10 +43,11 @@ cdef extern from "routines.h":
     int frames(double *out, double *pfx, double *pfy, double dx, double dy, unsigned long *ishape,
                unsigned long *oshape, long seed, unsigned threads) nogil
 
-cdef extern from "median.c":
+cdef extern from "median.h":
     int compare_double(void *a, void *b) nogil
     int compare_float(void *a, void *b) nogil
-    int compare_long(void *a, void *b) nogil
+    int compare_int(void *a, void *b) nogil
+    int compare_uint(void *a, void *b) nogil
 
     int median_c "median" (void *out, void *data, unsigned char *mask, int ndim, unsigned long *dims,
                  unsigned long item_size, int axis, int (*compar)(void*, void*), unsigned threads) nogil

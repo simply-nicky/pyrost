@@ -8,7 +8,7 @@ LDFLAGS = -shared   # linking flags
 RM = rm -f   # rm command
 TARGET_LIB = libimgutils.so  # target lib
 
-SRCS = array.c fft_functions.c median.c pocket_fft.c # source files
+SRCS = array.c fastsum.c fft_functions.c median.c pocket_fft.c pyrost.c routines.c # source files
 OBJS = $(SRCS:.c=.o)
 
 .PHONY: all

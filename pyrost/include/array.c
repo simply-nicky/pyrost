@@ -32,26 +32,6 @@ void free_array(array arr)
     free(arr);
 }
 
-void unravel_index(int *coord, int idx, array arr)
-{
-    int _idx = idx;
-    for (int n = 0; n < arr->ndim; n++)
-    {
-        coord[n] = _idx / arr->strides[n];
-        _idx -= coord[n] * arr->strides[n];
-    }
-}
-
-int ravel_index(int *coord, array arr)
-{
-    int idx = 0;
-    for (int n = 0; n < arr->ndim; n++)
-    {
-        idx += arr->strides[n] * coord[n];
-    }
-    return idx;
-}
-
 // note: the line count over axis is given by: arr->size / arr->dims[axis]
 // note: you can free the line just with: free(line)
 
@@ -63,7 +43,8 @@ line new_line(size_t npts, size_t stride, size_t item_size, void *data)
     ln->npts = npts;
     ln->stride = stride;
     ln->item_size = item_size;
-    ln->data = data;
+    ln->line_size = ln->npts * ln->stride * ln->item_size;
+    ln->data = ln->first = data;
     return ln;
 }
 
@@ -78,15 +59,46 @@ line init_line(array arr, int axis)
     ln->npts = arr->dims[axis];
     ln->stride = arr->strides[axis];
     ln->item_size = arr->item_size;
-    ln->data = arr->data;
+    ln->line_size = ln->npts * ln->stride * ln->item_size;
+    ln->data = ln->first = arr->data;
     return ln;
 }
 
-void update_line(line ln, array arr, int iter)
+slice init_slice(array arr, int axis)
 {
-    int div = iter / ln->stride;
-    ln->data = arr->data + ln->npts * ln->stride * ln->item_size * div;
-    ln->data += (iter - div * ln->stride) * ln->item_size;
+    /* check parameters */
+    if (axis < 0 || axis >= arr->ndim) {ERROR("init_line: invalid axis."); return NULL;}
+    if (arr->ndim < 2) {ERROR("init_slice: array must be 2D or higher"); return NULL;}
+
+    slice slc = (slice)malloc(sizeof(slice_s));
+    if (!slc) {ERROR("init_slice: not enough memory."); return NULL;}
+
+    slc->iter = (array)malloc(sizeof(array_s));
+    slc->iter->ndim = arr->ndim - 1;
+    slc->iter->item_size = arr->item_size;
+    slc->iter->dims = (size_t *)malloc(slc->iter->ndim * sizeof(size_t));
+    slc->iter->strides = (size_t *)malloc(slc->iter->ndim * sizeof(size_t));
+    for (int n = 0, m = 0; n < arr->ndim; n++)
+    {
+        if (n != axis)
+        {
+            slc->iter->dims[m] = arr->dims[n];
+            slc->iter->strides[m] = arr->dims[n];
+            m++;
+        }
+    }
+
+    slc->iter->data = slc->first = arr->data;
+    slc->stride = arr->strides[axis];
+
+    return slc;
+}
+
+void free_slice(slice slc)
+{
+    free(slc->iter->dims);
+    free_array(slc->iter);
+    free(slc);
 }
 
 void extend_line(void *out, size_t osize, line inp, EXTEND_MODE mode, void *cval)
@@ -95,7 +107,7 @@ void extend_line(void *out, size_t osize, line inp, EXTEND_MODE mode, void *cval
     int size_before = dsize - dsize / 2;
     int size_after = dsize - size_before;
 
-    void *last = inp->data + inp->npts * inp->stride * inp->item_size;
+    void *last = inp->data + inp->line_size;
     void *dst = out + size_before * inp->item_size;
     void *src = inp->data;
 
@@ -364,7 +376,8 @@ int extend_point(void *out, int *coord, array arr, array mask, EXTEND_MODE mode,
             ERROR("extend_point: invalid extend mode.");
     }
 
-    int index = ravel_index(close, arr);
+    int index;
+    RAVEL_INDEX(close, index, arr);
     free(close);
 
     if (((unsigned char *)mask->data)[index])

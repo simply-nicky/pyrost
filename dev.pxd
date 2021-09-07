@@ -60,7 +60,8 @@ cdef extern from "routines.h":
 cdef extern from "median.h":
     int compare_double(void *a, void *b) nogil
     int compare_float(void *a, void *b) nogil
-    int compare_long(void *a, void *b) nogil
+    int compare_int(void *a, void *b) nogil
+    int compare_uint(void *a, void *b) nogil
 
     int median_c "median" (void *out, void *data, unsigned char *mask, int ndim, unsigned long *dims,
                  unsigned long item_size, int axis, int (*compar)(void*, void*), unsigned threads) nogil
@@ -68,6 +69,11 @@ cdef extern from "median.h":
     int median_filter_c "median_filter" (void *out, void *data, unsigned char *mask, int ndim,
                         unsigned long *dims, unsigned long item_size, unsigned long *fsize, int mode,
                         void *cval, int (*compar)(void*, void*), unsigned threads) nogil
+
+cdef extern from "pyrost.h":
+    int make_reference_nfft(double **I0, int *X0, int *Y0, double *n0, double *m0, double *I, double *W,
+                            double *u, unsigned long *dims, double *di, double *dj, double ls,
+                            unsigned int threads) nogil
 
 cdef extern from "fftw3.h":
     void fftw_init_threads() nogil

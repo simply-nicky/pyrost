@@ -47,7 +47,7 @@ class LogProtocol(INIParser):
     """
     attr_dict = {'log_keys': ('ALL',), 'datatypes': ('ALL',)}
     fmt_dict = {'log_keys': 'str', 'datatypes': 'str'}
-    unit_dict = {'percent': 1e-2, 'mm,mdeg': 1e-3, 'um,udeg,µdeg': 1e-6,
+    unit_dict = {'percent': 1e-2, 'mm,mdeg': 1e-3, 'µm,um,udeg,µdeg': 1e-6,
                  'nm,ndeg': 1e-9, 'pm,pdeg': 1e-12}
 
     def __init__(self, log_keys=None, datatypes=None):
@@ -244,12 +244,13 @@ class LogProtocol(INIParser):
                                                                     for part in item.split(b',')])
             else:
                 dtypes['formats'].append('<S' + str(len(val)))
+                converters[idx] = lambda item: item.strip(b' []')
 
         return dict(zip(keys, np.loadtxt(path, delimiter=';',
                                          converters=converters,
                                          dtype=dtypes, unpack=True)))
 
-def cxi_converter_sigray(scan_num, target='Mo', distance=2.):
+def cxi_converter_sigray(scan_num, target='Mo', distance=None, lens='up'):
     """Convert measured frames and log files from the
     Sigray laboratory to a :class:`pyrost.STData` data
     container.
@@ -262,6 +263,9 @@ def cxi_converter_sigray(scan_num, target='Mo', distance=2.):
         Sigray X-ray source target used.
     distance : float, optional
         Detector distance in meters.
+    lens : {'up', 'down'}, optional
+        Specify the lens mount. If specified, the lens-to-detector
+        distance will be automatically parsed from the log file.
 
     Returns
     -------
@@ -310,6 +314,14 @@ def cxi_converter_sigray(scan_num, target='Mo', distance=2.):
             translations[:, 0] = log_data[data_key][:n_steps]
         if 'Y-SAM' in data_key:
             translations[:, 1] = log_data[data_key][:n_steps]
+
+    if distance is None:
+        if lens == 'up':
+            distance = log_attrs['Session logged attributes']['lens_up_dist']
+        elif lens == 'down':
+            distance = log_attrs['Session logged attributes']['lens_down_dist']
+        else:
+            raise ValueError(f'lens keyword is invalid: {lens:s}')
 
     return STData(basis_vectors=basis_vectors, data=data[:n_steps], distance=distance,
                   mask=mask, translations=translations, wavelength=wl_dict[target],

@@ -21,9 +21,9 @@ footprint init_footprint(int ndim, size_t item_size, size_t *fsize)
     if (!fpt || !fpt->offsets || !fpt->coordinates || !fpt->data)
     {ERROR("new_footprint: not enough memory."); return NULL;}
 
-    for (int i = 0; i < fpt->npts; i++)
+    for (int i = 0; i < (int)farr->size; i++)
     {
-        unravel_index(&(fpt->offsets[ndim * i]), i, farr);
+        UNRAVEL_INDEX(fpt->offsets + ndim * i, i, farr);
         for (int n = 0; n < fpt->ndim; n++) fpt->offsets[ndim * i + n] -= farr->dims[n] / 2;
     }
 
@@ -62,7 +62,7 @@ void update_footprint(footprint fpt, int *coord, array arr, array mask, EXTEND_M
         }
         else
         {
-            index = ravel_index(&(fpt->coordinates[i * fpt->ndim]), arr);
+            RAVEL_INDEX(fpt->coordinates + i * fpt->ndim, index, arr);
             memcpy(fpt->data + fpt->counter * fpt->item_size, arr->data + index * arr->item_size,
                 arr->item_size);
             fpt->counter++;
@@ -84,9 +84,16 @@ int compare_float(const void *a, const void *b)
     else return 0;
 }
 
-int compare_long(const void *a, const void *b)
+int compare_int(const void *a, const void *b)
 {
-    return (*(long *)a - *(long *)b);
+    return (*(int *)a - *(int *)b);
+}
+
+int compare_uint(const void *a, const void *b)
+{
+    if (*(unsigned int *)a > *(unsigned int *)b) return 1;
+    else if (*(unsigned int *)a < *(unsigned int *)b) return -1;
+    else return 0;
 }
 
 static void wirthselect(void *data, void *key, int k, int l, int m, size_t size,
@@ -141,8 +148,8 @@ int median(void *out, void *data, unsigned char *mask, int ndim, size_t *dims, s
         #pragma omp for
         for (int i = 0; i < (int)repeats; i++)
         {
-            update_line(iline, iarr, i);
-            update_line(mline, marr, i);
+            UPDATE_LINE(iline, i);
+            UPDATE_LINE(mline, i);
 
             int len = 0;
             for (int n = 0; n < (int)iline->npts; n++)
@@ -191,7 +198,7 @@ int median_filter(void *out, void *data, unsigned char *mask, int ndim, size_t *
         #pragma omp for
         for (int i = 0; i < (int)iarr->size; i++)
         {
-            unravel_index(coord, i, iarr);
+            UNRAVEL_INDEX(coord, i, iarr);
 
             update_footprint(fpt, coord, iarr, marr, mode, cval);
 
@@ -206,7 +213,7 @@ int median_filter(void *out, void *data, unsigned char *mask, int ndim, size_t *
         free_footprint(fpt); free(coord); free(key);
     }
 
-    free_array(iarr);
+    free_array(iarr); free_array(marr);
 
     return 0;
 }

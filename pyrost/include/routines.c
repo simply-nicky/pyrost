@@ -145,8 +145,8 @@ int dot(void *out, void *inp1, int ndim1, size_t *dims1, int axis1, void *inp2, 
     if (dims1[axis1] != dims2[axis2]) {ERROR("dot: incompatible shapes."); return -1;}
     if (threads == 0) {ERROR("dot: threads must be positive."); return -1;}
 
-    array arr1 = new_array(ndim1, dims1, sizeof(double), inp1);
-    array arr2 = new_array(ndim2, dims2, sizeof(double), inp2);
+    array arr1 = new_array(ndim1, dims1, item_size, inp1);
+    array arr2 = new_array(ndim2, dims2, item_size, inp2);
 
     int rep1 = arr1->size / arr1->dims[axis1];
     int rep2 = arr2->size / arr2->dims[axis2];
@@ -163,8 +163,8 @@ int dot(void *out, void *inp1, int ndim1, size_t *dims1, int axis1, void *inp2, 
         for (int i = 0; i < (int)repeats; i++)
         {
             div = i / rep2;
-            update_line(line1, arr1, div);
-            update_line(line2, arr2, i - div * rep2);
+            UPDATE_LINE(line1, div);
+            UPDATE_LINE(line2, i - div * rep2);
 
             dot_func(out + i * line1->item_size, line1, line2);
         }

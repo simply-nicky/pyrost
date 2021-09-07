@@ -746,9 +746,13 @@ def median(data: np.ndarray, mask: np.ndarray=None, axis: cython.int=0,
         elif type_num == np.NPY_FLOAT32:
             fail = median_c(_out, _data, _mask, ndim, _dims, 4, axis, compare_float, num_threads)
         elif type_num == np.NPY_INT32:
-            fail = median_c(_out, _data, _mask, ndim, _dims, 4, axis, compare_long, num_threads)
+            fail = median_c(_out, _data, _mask, ndim, _dims, 4, axis, compare_int, num_threads)
+        elif type_num == np.NPY_UINT32:
+            fail = median_c(_out, _data, _mask, ndim, _dims, 4, axis, compare_uint, num_threads)
         else:
             raise TypeError('data argument has incompatible type: {:s}'.format(data.dtype))
+    if fail:
+        raise RuntimeError('C backend exited with error.')
 
     free(odims)
     return out
@@ -826,8 +830,12 @@ def median_filter(data: np.ndarray, size: object, mask: np.ndarray=None, mode: s
         elif type_num == np.NPY_FLOAT32:
             fail = median_filter_c(_out, _data, _mask, ndim, _dims, 4, _fsize, _mode, _cval, compare_float, num_threads)
         elif type_num == np.NPY_INT32:
-            fail = median_filter_c(_out, _data, _mask, ndim, _dims, 4, _fsize, _mode, _cval, compare_long, num_threads)
+            fail = median_filter_c(_out, _data, _mask, ndim, _dims, 4, _fsize, _mode, _cval, compare_int, num_threads)
+        elif type_num == np.NPY_UINT32:
+            fail = median_filter_c(_out, _data, _mask, ndim, _dims, 4, _fsize, _mode, _cval, compare_uint, num_threads)
         else:
             raise TypeError('data argument has incompatible type: {:s}'.format(data.dtype))
+    if fail:
+        raise RuntimeError('C backend exited with error.')
 
     return out
