@@ -1,8 +1,8 @@
+import os
+import sys
 from setuptools import setup, find_packages
 from distutils.core import Extension
 import numpy
-import sys
-import os
 
 try:
     from Cython.Build import cythonize
@@ -22,9 +22,8 @@ extension_args = {'language': 'c',
                                    os.path.join(sys.prefix, 'include'),
                                    os.path.join(os.path.dirname(__file__), 'pyrost/include')]}
 
-src_dir = 'pyrost/include'
-src_files = [os.path.join(src_dir, src_file)
-             for src_file in os.listdir(src_dir) if src_file.endswith('.c')]
+src_files = ["pyrost/include/pocket_fft.c", "pyrost/include/fft_functions.c",
+             "pyrost/include/array.c", "pyrost/include/routines.c", "pyrost/include/median.c"]
 extensions = [Extension(name='pyrost.bin.simulation',
                         sources=['pyrost/bin/simulation' + ext,] + src_files, **extension_args),
               Extension(name='pyrost.bin.pyrost',
@@ -44,7 +43,7 @@ with open('README.md', 'r') as readme:
     long_description = readme.read()
 
 setup(name='pyrost',
-      version='0.5.1',
+      version='0.5.2',
       author='Nikolay Ivanov',
       author_email="nikolay.ivanov@desy.de",
       long_description=long_description,
@@ -54,7 +53,7 @@ setup(name='pyrost',
       include_package_data=True,
       package_data={'pyrost': ['config/*.ini', 'ini_templates/*.ini', 'data/*.npz']},
       install_requires=['h5py', 'numpy', 'scipy'],
-      extras_require={'interactive': ['matplotlib', 'jupyter', 'pyximport']},
+      extras_require={'interactive': ['matplotlib', 'jupyter', 'pyximport', 'ipykernel', 'ipywidgets']},
       ext_modules=extensions,
       classifiers=[
           "Programming Language :: Python",

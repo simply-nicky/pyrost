@@ -64,6 +64,8 @@ class CXIProtocol(INIParser):
     cxi_protocol : Full list of data attributes and configuration
         parameters.
     """
+    known_types = {'int': np.int64, 'bool': np.bool, 'float': np.float64, 'str': str,
+                   'uint': np.uint32}
     attr_dict = {'config': ('float_precision', ), 'datatypes': ('ALL', ),
                  'default_paths': ('ALL', )}
     fmt_dict = {'config': 'str','datatypes': 'str', 'default_paths': 'str'}
@@ -80,9 +82,7 @@ class CXIProtocol(INIParser):
 
         if self.config['float_precision'] == 'float32':
             self.known_types['float'] = np.float32
-        elif self.config['float_precision'] == 'float64':
-            self.known_types['float'] = np.float64
-        else:
+        if not self.config['float_precision'] in ['float32', 'float64']:
             raise ValueError('Invalid float precision: {:s}'.format(self.config['float_precision']))
 
     @classmethod
@@ -332,6 +332,8 @@ class CXIProtocol(INIParser):
         if data is None:
             pass
         else:
+            if not attr in self:
+                raise ValueError(f"protocol doesn't contain the given attribute '{attr:s}'")
             if cxi_path is None:
                 cxi_path = self.get_default_path(attr, cxi_path)
             if cxi_path in cxi_file:
@@ -585,12 +587,11 @@ class CXILoader(CXIProtocol):
         attr_dict = {}
         with h5py.File(path, 'r') as cxi_file:
             for attr in attrs:
-                if self.get_policy(attr, False):
+                if attr in attributes and not attributes[attr] is None:
+                    attr_dict[attr] = np.asarray(attributes[attr], dtype=self.get_dtype(attr))
+                elif self.get_policy(attr, False):
                     cxi_path = self.find_path(attr, cxi_file)
-                    if attr in attributes and not attributes[attr] is None:
-                        attr_dict[attr] = np.asarray(attributes[attr], dtype=self.get_dtype(attr))
-                    else:
-                        attr_dict[attr] = self.read_cxi(attr, cxi_file, cxi_path=cxi_path)
+                    attr_dict[attr] = self.read_cxi(attr, cxi_file, cxi_path=cxi_path)
                 else:
                     attr_dict[attr] = None
         if attr_dict.get('defocus'):
@@ -598,56 +599,56 @@ class CXILoader(CXIProtocol):
             attr_dict['defocus_fs'] = attr_dict['defocus']
         return attr_dict
 
-    def load_data_shape(self, paths):
+    def load_data_shape(self, data_files):
         """Retrieve the shape of the main data array from the CXI files.
 
         Parameters
         ----------
-        paths : str or list of str
-            Paths to the CXI files.
+        data_files : str or list of str
+            Paths to the data CXI files.
 
         Returns
         -------
         shapes : dict
-            Dictionary of the data shapes for every file in `paths`.
+            Dictionary of the data shapes for every file in `data_files`.
         """
-        if isinstance(paths, (str, list)):
-            if isinstance(paths, str):
-                paths = [paths,]
+        if isinstance(data_files, (str, list)):
+            if isinstance(data_files, str):
+                data_files = [data_files,]
         else:
-            raise ValueError('paths must be a string or a list of strings')
+            raise ValueError('data_files must be a string or a list of strings')
         shapes = {}
-        for path in paths:
+        for path in data_files:
             with h5py.File(path, 'r') as cxi_file:
                 cxi_path = self.find_path('data', cxi_file)
                 shapes[path] = self.read_shape('data', cxi_file, cxi_path)
         return shapes
 
-    def load_data(self, paths, idxs=None):
+    def load_data(self, data_files, idxs=None):
         """Retrieve the main data array from the CXI files.
 
         Parameters
         ----------
-        paths : str or list of str
-            Path to the log file.
+        data_files : str or list of str
+            Paths to the data CXI files.
         idxs : dict, optional
             Indices of the data to retrieve for the each file in
-            `paths`.
+            `data_files`.
 
         Returns
         -------
         data : dict
             Data arrays retrieved from the CXI files.
         """
-        if isinstance(paths, (str, list)):
-            if isinstance(paths, str):
-                paths = [paths,]
+        if isinstance(data_files, (str, list)):
+            if isinstance(data_files, str):
+                data_files = [data_files,]
         else:
-            raise ValueError('paths must be a string or a list of strings')
+            raise ValueError('data_files must be a string or a list of strings')
         if idxs is None:
-            idxs = {path: None for path in paths}
+            idxs = {path: None for path in data_files}
         data = {}
-        for path in paths:
+        for path in data_files:
             with h5py.File(path, 'r') as cxi_file:
                 cxi_path = self.find_path('data', cxi_file)
                 data[path] = self.read_cxi('data', cxi_file, idxs=idxs[path],

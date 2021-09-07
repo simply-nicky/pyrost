@@ -28,7 +28,6 @@ the default protocol.
 """
 import os
 import argparse
-from multiprocessing import cpu_count
 import h5py
 import numpy as np
 from ..cxi_protocol import CXIProtocol, ROOT_PATH
@@ -36,7 +35,7 @@ from ..data_container import DataContainer, dict_to_object
 from ..data_processing import STData
 from .st_parameters import STParams
 from ..bin import rsc_wp, fraunhofer_wp, fft_convolve
-from ..bin import make_frames, make_whitefield, gaussian_gradient_magnitude
+from ..bin import make_frames, median, gaussian_gradient_magnitude
 
 class STSim(DataContainer):
     """One-dimensional Speckle Tracking scan simulation class.
@@ -101,18 +100,15 @@ class STSim(DataContainer):
     st_sim_param : Full list of experimental parameters.
     """
     backends = {'numpy', 'fftw'}
-    attr_set = {'backend', 'num_threads', 'params'}
+    attr_set = {'backend', 'params'}
     init_set = {'bars', 'det_wfx', 'det_wfy', 'det_ix', 'det_iy', 'lens_wfx',
                 'lens_wfy', 'roi', 'smp_pos', 'smp_profile', 'smp_wfx', 'smp_wfy'}
 
-    def __init__(self, params, backend='numpy', num_threads=None, **kwargs):
-        if num_threads is None:
-            num_threads = np.clip(1, 64, cpu_count())
+    def __init__(self, params, backend='numpy', **kwargs):
         if not backend in self.backends:
             err_msg = f'backend must be one of the following: {str(self.backends):s}'
             raise ValueError(err_msg)
-        super(STSim, self).__init__(backend=backend, num_threads=num_threads,
-                                    params=params, **kwargs)
+        super(STSim, self).__init__(backend=backend, params=params, **kwargs)
         self._init_dict()
 
     def _init_dict(self):
@@ -130,12 +126,12 @@ class STSim(DataContainer):
             dx1 = np.abs(dx0 * self.params.defocus / self.params.focus)
             z01 = self.params.focus + self.params.defocus
             self.smp_wfx = rsc_wp(wft=self.lens_wfx, dx0=dx0, dx=dx1, z=z01, wl=self.params.wl,
-                                  backend=self.backend, num_threads=self.num_threads)
+                                  backend=self.backend, num_threads=self.params.num_threads)
         if self.smp_wfy is None:
             dy0 = 2 * self.params.ap_y / self.y_size
             z01 = self.params.focus + self.params.defocus
             self.smp_wfy = rsc_wp(wft=self.lens_wfy, dx0=dy0, dx=dy0, z=z01, wl=self.params.wl,
-                                  backend=self.backend, num_threads=self.num_threads)
+                                  backend=self.backend, num_threads=self.params.num_threads)
 
         # Initialize sample's translations
         if self.smp_pos is None:
@@ -147,7 +143,7 @@ class STSim(DataContainer):
                          / self.params.focus / self.x_size)
             x1_arr = dx1 * np.arange(-self.x_size // 2, self.x_size // 2) + self.smp_pos[:, None]
             self.smp_profile = self.params.barcode_profile(x_arr=x1_arr, bars=self.bars,
-                                                           num_threads=self.num_threads)
+                                                           num_threads=self.params.num_threads)
 
         # Initialize wavefronts at the detector plane
         if self.det_wfx is None:
@@ -157,7 +153,7 @@ class STSim(DataContainer):
             wft = self.smp_wfx * self.smp_profile
             self.det_wfx = fraunhofer_wp(wft=wft, dx0=dx1, dx=dx2, z=self.params.det_dist,
                                          wl=self.params.wl, backend=self.backend,
-                                         num_threads=self.num_threads)
+                                         num_threads=self.params.num_threads)
             self.det_wx = np.abs(fraunhofer_wp(wft=self.smp_wfx, dx0=dx1, dx=dx2,
                                                z=self.params.det_dist, wl=self.params.wl,
                                                backend=self.backend, num_threads=1))
@@ -178,13 +174,13 @@ class STSim(DataContainer):
             sc_x = self.params.source_curve(dist=self.params.defocus + self.params.det_dist, step=dx)
             det_ix = np.sqrt(self.params.p0) / self.params.ap_x * np.abs(self.det_wfx)**2
             self.det_ix = fft_convolve(array=det_ix, kernel=sc_x, backend=self.backend,
-                                       num_threads=self.num_threads)
+                                       num_threads=self.params.num_threads)
         if self.det_iy is None:
             dy = self.params.ss_size * self.params.pix_size / self.y_size
             sc_y = self.params.source_curve(dist=self.params.defocus + self.params.det_dist, step=dy)
             det_iy = np.sqrt(self.params.p0) / self.params.ap_y * np.abs(self.det_wfy)**2
             self.det_iy = fft_convolve(array=det_iy, kernel=sc_y, backend=self.backend,
-                                       num_threads=self.num_threads)
+                                       num_threads=self.params.num_threads)
 
         # Initialize region of interest
         if self.roi is None:
@@ -194,10 +190,10 @@ class STSim(DataContainer):
                 cnt_x, cnt_y = self.x_size // 2 + int((x0 + x1) / 2 // dx), self.y_size // 2
                 grad_x = gaussian_gradient_magnitude(self.det_wx, self.x_size // 100,
                                                      mode='nearest',
-                                                     num_threads=self.num_threads)
+                                                     num_threads=self.params.num_threads)
                 grad_y = gaussian_gradient_magnitude(self.det_wy, self.y_size // 100,
                                                      mode='nearest',
-                                                     num_threads=self.num_threads)
+                                                     num_threads=self.params.num_threads)
                 fs0 = (np.argmax(grad_x[:cnt_x]) * self.params.fs_size) // self.x_size
                 fs1 = ((cnt_x + np.argmax(grad_x[cnt_x:])) * self.params.fs_size) // self.x_size
             else:
@@ -274,7 +270,7 @@ class STSim(DataContainer):
         seed = self.params.seed if apply_noise else -1
         frames = make_frames(pfx=self.det_ix, pfy=self.det_iy, dx=dx, dy=dy,
                              shape=(self.params.ss_size, self.params.fs_size),
-                             seed=seed, num_threads=self.num_threads)
+                             seed=seed, num_threads=self.params.num_threads)
         if not wfieldx is None:
             frames *= (wfieldx / wfieldx.mean())
         if not wfieldy is None:
@@ -414,7 +410,7 @@ class STConverter:
         data_dict['good_frames'] = np.arange(data.shape[0],
                                              dtype=self.protocol.get_dtype('good_frames'))
         data_dict['mask'] = np.ones(data.shape, dtype=self.protocol.get_dtype('mask'))
-        data_dict['whitefield'] = make_whitefield(mask=data_dict['mask'], data=data)
+        data_dict['whitefield'] = median(mask=data_dict['mask'], data=data, axis=0, num_threads=st_params.num_threads)
 
         # Initialize defocus distances
         data_dict['defocus_fs'] = self.crd_rat * st_params.defocus

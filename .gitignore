@@ -2,6 +2,10 @@
 /figures/
 /results/
 /logs/
+/pyrost/include/*.d
+/pyrost/include/*.o
+/pyrost/include/*.out
+/pyrost/include/*.so
 dev.ipynb
 
 #jupyter checkpoints

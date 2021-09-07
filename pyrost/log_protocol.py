@@ -16,7 +16,7 @@ import numpy as np
 from .ini_parser import ROOT_PATH, INIParser
 from .cxi_protocol import CXIProtocol, CXILoader
 from .data_processing import STData
-from .bin import make_whitefield
+from .bin import median
 
 LOG_PROTOCOL = os.path.join(ROOT_PATH, 'config/log_protocol.ini')
 
@@ -47,7 +47,8 @@ class LogProtocol(INIParser):
     """
     attr_dict = {'log_keys': ('ALL',), 'datatypes': ('ALL',)}
     fmt_dict = {'log_keys': 'str', 'datatypes': 'str'}
-    unit_dict = {'mm,mdeg': 1e-3, 'um,udeg': 1e-6, 'nm,ndeg': 1e-9, 'pm,pdeg': 1e-12}
+    unit_dict = {'percent': 1e-2, 'mm,mdeg': 1e-3, 'µm,um,udeg,µdeg': 1e-6,
+                 'nm,ndeg': 1e-9, 'pm,pdeg': 1e-12}
 
     def __init__(self, log_keys=None, datatypes=None):
         if log_keys is None:
@@ -152,6 +153,8 @@ class LogProtocol(INIParser):
             for line in log_file:
                 if line.startswith('# '):
                     log_str += line.strip('# ')
+                else:
+                    break
 
         # Divide log into sectors
         parts_list = [part for part in re.split('(' + \
@@ -188,7 +191,7 @@ class LogProtocol(INIParser):
                         raw_str = match[0]
                         raw_val = raw_str.strip('\n').split(': ')[1]
                         # Extract a number string
-                        val_num = re.search(r'\d+[.]*\d*', raw_val)
+                        val_num = re.search(r'[-]*\d+[.]*\d*', raw_val)
                         dtype = self.known_types[self.datatypes[attr]]
                         attr_dict[part_name][attr] = dtype(val_num[0] if val_num else raw_val)
                         # Apply unit conversion if needed
@@ -225,30 +228,29 @@ class LogProtocol(INIParser):
         converters = {}
         for idx, (key, val) in enumerate(zip(keys, data_strings)):
             dtypes['names'].append(key)
+            unit = self._get_unit(key)
             if 'float' in key:
-                dtypes['formats'].append(np.float)
-                if self._has_unit(key):
-                    converters[idx] = lambda item, key=key: self._get_unit(key) * float(item)
+                dtypes['formats'].append(np.float_)
+                converters[idx] = lambda item, unit=unit: unit * float(item)
             elif 'int' in key:
                 if self._has_unit(key):
-                    converters[idx] = lambda item, key=key: self._get_unit(key) * float(item)
-                    dtypes['formats'].append(np.float)
+                    converters[idx] = lambda item, unit=unit: unit * float(item)
+                    dtypes['formats'].append(np.float_)
                 else:
                     dtypes['formats'].append(np.int)
             elif 'Array' in key:
                 dtypes['formats'].append(np.ndarray)
-                if self._has_unit(key):
-                    converters[idx] = lambda item, key=key: np.array([float(part) * self._get_unit(key)
-                                                                      for part in item.strip(b'[]').split(b',')])
-                converters[idx] = lambda item: np.array([float(part) for part in item.strip(b'[]').split(b',')])
+                converters[idx] = lambda item, unit=unit: np.array([float(part.strip(b' []')) * unit
+                                                                    for part in item.split(b',')])
             else:
                 dtypes['formats'].append('<S' + str(len(val)))
+                converters[idx] = lambda item: item.strip(b' []')
 
         return dict(zip(keys, np.loadtxt(path, delimiter=';',
                                          converters=converters,
                                          dtype=dtypes, unpack=True)))
 
-def cxi_converter_sigray(scan_num, target='Mo', distance=2.):
+def cxi_converter_sigray(scan_num, target='Mo', distance=None, lens='up'):
     """Convert measured frames and log files from the
     Sigray laboratory to a :class:`pyrost.STData` data
     container.
@@ -261,6 +263,9 @@ def cxi_converter_sigray(scan_num, target='Mo', distance=2.):
         Sigray X-ray source target used.
     distance : float, optional
         Detector distance in meters.
+    lens : {'up', 'down'}, optional
+        Specify the lens mount. If specified, the lens-to-detector
+        distance will be automatically parsed from the log file.
 
     Returns
     -------
@@ -309,6 +314,14 @@ def cxi_converter_sigray(scan_num, target='Mo', distance=2.):
             translations[:, 0] = log_data[data_key][:n_steps]
         if 'Y-SAM' in data_key:
             translations[:, 1] = log_data[data_key][:n_steps]
+
+    if distance is None:
+        if lens == 'up':
+            distance = log_attrs['Session logged attributes']['lens_up_dist']
+        elif lens == 'down':
+            distance = log_attrs['Session logged attributes']['lens_down_dist']
+        else:
+            raise ValueError(f'lens keyword is invalid: {lens:s}')
 
     return STData(basis_vectors=basis_vectors, data=data[:n_steps], distance=distance,
                   mask=mask, translations=translations, wavelength=wl_dict[target],
@@ -360,7 +373,7 @@ def tilt_converter_sigray(scan_num, out_path, target='Mo', distance=2.):
     with np.load(os.path.join(ROOT_PATH, 'data/sigray_mask.npz')) as mask_file:
         mask = np.tile(mask_file['mask'][None], (n_steps, 1, 1))
 
-    whitefield = make_whitefield(data, mask, axis=0)
+    whitefield = median(data, mask, axis=0)
     db_coord = np.unravel_index(np.argmax(whitefield), whitefield.shape)
 
     for flip_key in flip_dict:

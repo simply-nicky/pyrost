@@ -38,7 +38,7 @@ from tqdm.auto import tqdm
 import numpy as np
 from .aberrations_fit import AberrationsFit
 from .data_container import DataContainer, dict_to_object
-from .bin import make_whitefield, make_reference, update_pixel_map_gs, update_pixel_map_nm
+from .bin import median, make_reference, update_pixel_map_gs, update_pixel_map_nm
 from .bin import update_translations_gs, mse_frame, mse_total, ct_integrate
 from .bin import gaussian_filter, fft_convolve
 
@@ -107,14 +107,11 @@ class STData(DataContainer):
     """
     attr_set = {'basis_vectors', 'data', 'distance', 'translations', 'wavelength',
                 'x_pixel_size', 'y_pixel_size'}
-    init_set = {'defocus_fs', 'defocus_ss', 'error_frame', 'good_frames', 'mask',
-                'phase', 'pixel_aberrations', 'pixel_map', 'pixel_translations',
-                'reference_image', 'roi', 'whitefield'}
+    init_set = {'defocus_fs', 'defocus_ss', 'error_frame', 'flatfields', 'good_frames',
+                'mask', 'num_threads', 'phase', 'pixel_aberrations', 'pixel_map',
+                'pixel_translations', 'reference_image', 'roi', 'whitefield'}
 
-    def __init__(self, protocol, num_threads=None, **kwargs):
-        if num_threads is None:
-            num_threads = np.clip(1, 64, cpu_count())
-        self.__dict__['num_threads'] = num_threads
+    def __init__(self, protocol, **kwargs):
         # Initialize protocol for the proper data type conversion in __setattr__
         self.__dict__['protocol'] = protocol
 
@@ -128,16 +125,22 @@ class STData(DataContainer):
         self._init_dict()
 
     def _init_dict(self):
+        # Set number of threads, num_threads is not a part of the protocol
+        if self.num_threads is None:
+            self.num_threads = np.clip(1, 64, cpu_count())
         # Set ROI, good frames array, mask, and whitefield
         if self.roi is None:
             self.roi = np.array([0, self.data.shape[1], 0, self.data.shape[2]])
         if self.good_frames is None:
             self.good_frames = np.arange(self.data.shape[0])
-        if self.mask is None or self.mask.shape != self.data.shape:
+        if self.mask is None:
             self.mask = np.ones(self.data.shape)
+        if self.mask.shape == self.data.shape[1:]:
+            self.mask = np.tile(self.mask[None, :], (self.data.shape[0], 1, 1))
         if self.whitefield is None:
-            self.whitefield = make_whitefield(data=self.data[self.good_frames],
-                                              mask=self.mask[self.good_frames], axis=0)
+            self.whitefield = median(data=self.data[self.good_frames],
+                                     mask=self.mask[self.good_frames], axis=0,
+                                     num_threads=self.num_threads)
 
         # Set a pixel map, deviation angles, and phase
         if not self.pixel_map is None:
@@ -179,13 +182,42 @@ class STData(DataContainer):
 
     def __setattr__(self, attr, value):
         if attr in self.attr_set | self.init_set:
-            if isinstance(value, np.ndarray):
-                value = np.array(value, dtype=self.protocol.get_dtype(attr))
-            elif not value is None:
-                value = self.protocol.get_dtype(attr)(value)
+            dtype = self.protocol.get_dtype(attr)
+            if not dtype is None:
+                if isinstance(value, np.ndarray):
+                    value = np.array(value, dtype=dtype)
+                elif not value is None:
+                    value = dtype(value)
             super(STData, self).__setattr__(attr, value)
         else:
             super(STData, self).__setattr__(attr, value)
+
+    @dict_to_object
+    def bin_data(self, bin_ratio=2):
+        """Return a new :class:`STData` object with the data binned by
+        a factor `bin_ratio`.
+
+        Parameters
+        ----------
+        bin_ratio : int, optional
+            Binning ratio. The frame size will decrease by the factor of
+            `bin_ratio`.
+
+        Returns
+        -------
+        STData
+            New :class:`STData` object with binned `data`.
+        """
+        data = self.data[:, ::bin_ratio, ::bin_ratio]
+        whitefield = self.whitefield[::bin_ratio, ::bin_ratio]
+        mask = self.mask[:, ::bin_ratio, ::bin_ratio]
+        data_dict = {'basis_vectors': bin_ratio * self.basis_vectors, 'data': data,
+                     'whitefield': whitefield, 'mask': mask, 'roi': self.roi // bin_ratio,
+                     'x_pixel_size': bin_ratio * self.x_pixel_size,
+                     'y_pixel_size': bin_ratio * self.y_pixel_size}
+        if self._isdefocus:
+            data_dict['pixel_translations'] = self.pixel_translations / bin_ratio,
+        return data_dict
 
     @dict_to_object
     def crop_data(self, roi):
@@ -221,18 +253,22 @@ class STData(DataContainer):
         """
         roi = self.roi.copy()
         roi[2 * axis:2 * (axis + 1)] = np.arange(2)
-        return {'data': np.sum(self.data * self.mask, axis=axis + 1, keepdims=True),
+
+        data = np.zeros(self.data.shape, self.data.dtype)
+        data[self.good_frames, self.roi[0]:self.roi[1], self.roi[2]:self.roi[3]] = self.get('data') * self.get('mask')
+        return {'data': np.sum(data, axis=axis + 1, keepdims=True),
                 'whitefield': None, 'mask': None, 'roi': roi}
 
     @dict_to_object
-    def mask_frames(self, good_frames):
+    def mask_frames(self, good_frames=None):
         """Return a new :class:`STData` object with the updated
-        good frames mask.
+        good frames mask. Mask empty frames by default.
 
         Parameters
         ----------
-        good_frames : iterable
-            List of good frames' indices.
+        good_frames : iterable, optional
+            List of good frames' indices. Keeps non-empty frames
+            if not provided.
 
         Returns
         -------
@@ -240,6 +276,8 @@ class STData(DataContainer):
             New :class:`STData` object with the updated `good_frames`
             and `whitefield`.
         """
+        if good_frames is None:
+            good_frames = np.where(self.data.sum(axis=(1, 2)) > 0)[0]
         return {'good_frames': np.asarray(good_frames, dtype=np.int),
                 'whitefield': None}
 
@@ -306,10 +344,10 @@ class STData(DataContainer):
         """
         data = self.get('data')
         if method == 'no-bad':
-            mask = np.ones((self.data.shape[0], self.roi[1] - self.roi[0],
+            mask = np.ones((self.good_frames.size, self.roi[1] - self.roi[0],
                             self.roi[3] - self.roi[2]), dtype=bool)
         elif method == 'range-bad':
-            mask = (data > vmin) & (data < vmax)
+            mask = (data >= vmin) & (data < vmax)
         elif method == 'perc-bad':
             offsets = (data - np.median(data))
             mask = (offsets >= np.percentile(offsets, pmin)) & \
@@ -318,10 +356,10 @@ class STData(DataContainer):
             ValueError('invalid method argument')
         mask_full = self.mask.copy()
         if update == 'reset':
-            mask_full[:, self.roi[0]:self.roi[1], self.roi[2]:self.roi[3]] = mask
+            mask_full[self.good_frames, self.roi[0]:self.roi[1], self.roi[2]:self.roi[3]] = mask
             return {'mask': mask_full, 'whitefield': None}
         if update == 'multiply':
-            mask_full[:, self.roi[0]:self.roi[1], self.roi[2]:self.roi[3]] *= mask
+            mask_full[self.good_frames, self.roi[0]:self.roi[1], self.roi[2]:self.roi[3]] *= mask
             return {'mask': mask_full, 'whitefield': None}
 
     @dict_to_object
@@ -597,7 +635,7 @@ class STData(DataContainer):
             return val
         return value
 
-    def get_st(self, aberrations=False):
+    def get_st(self, aberrations=False, ff_correction=False):
         """Return :class:`SpeckleTracking` object derived
         from the container. Return None if `defocus_fs`
         or `defocus_ss` doesn't exist in the container.
@@ -607,6 +645,8 @@ class STData(DataContainer):
         aberrations : bool, optional
             Add `pixel_aberrations` to `pixel_map` of
             :class:`SpeckleTracking` object if it's True.
+        ff_correction : bool, optional
+            Apple dynamic flatfield correction if it's True.
 
         Returns
         -------
@@ -617,7 +657,7 @@ class STData(DataContainer):
         """
         if not self._isdefocus:
             return None
-        return SpeckleTracking.import_data(self, aberrations)
+        return SpeckleTracking.import_data(self, aberrations, ff_correction)
 
     def get_st_list(self):
         """Return a list of all the :class:`SpeckleTracking`
@@ -655,6 +695,49 @@ class STData(DataContainer):
             return None
         return AberrationsFit.import_data(self, center=center, axis=axis)
 
+    def get_pca(self):
+        """Perform the Principal Component Analysis [PCA]_ of the measured data and
+        return a set of eigen flat fields (EFF).
+
+        Returns
+        -------
+        effs_var : numpy.ndarray
+            Variance ratio for each EFF, that it describes.
+        effs : numpy.ndarray
+            Set of eigen flat fields.
+
+        References
+        ----------
+        .. [PCA] Vincent Van Nieuwenhove, Jan De Beenhouwer, Francesco De Carlo,
+                 Lucia Mancini, Federica Marone, and Jan Sijbers, "Dynamic intensity
+                 normalization using eigen flat fields in X-ray imaging," Opt. Express
+                 23, 27975-27989 (2015).
+        """
+        data = self.get('data') * self.get('mask') - self.get('whitefield')
+        mat_svd = np.tensordot(data, data, axes=((1, 2), (1, 2)))
+        eig_vals, eig_vecs = np.linalg.eig(mat_svd)
+        effs = np.tensordot(eig_vecs, data, axes=((0,), (0,)))
+        return eig_vals / eig_vals.sum(), effs
+
+    @dict_to_object
+    def update_flatfields(self, effs):
+        """Update flatfields based on a set of eigen flat fields `effs`.
+
+        Parameters
+        ----------
+        effs : numpy.ndarray
+            Set of the most important eigen flat fields.
+
+        Returns
+        -------
+        STData
+            New :class:`STData` object with the updated `flatfields`.
+        """
+        data = self.get('data') * self.get('mask') - self.get('whitefield')
+        weights = np.tensordot(data, effs, axes=((1, 2), (1, 2))) / np.sum(effs * effs, axis=(1, 2))
+        flatfields = np.tensordot(weights, effs, axes=((1,), (0,))) + self.get('whitefield')
+        return {'flatfields': flatfields}
+
     def write_cxi(self, cxi_file, overwrite=True):
         """Write all the `attr` to a CXI file `cxi_file`.
 
@@ -672,7 +755,7 @@ class STData(DataContainer):
             in `cxi_file`.
         """
         for attr, data in self.items():
-            if isinstance(data, np.ndarray):
+            if attr in self.protocol:
                 self.protocol.write_cxi(attr, data, cxi_file, overwrite=overwrite)
 
 class SpeckleTracking(DataContainer):
@@ -753,7 +836,7 @@ class SpeckleTracking(DataContainer):
                     for key, val in self.attr_dict.items()}.__str__()
 
     @classmethod
-    def import_data(cls, st_data, aberrations=False):
+    def import_data(cls, st_data, aberrations=False, ff_correction=False):
         """Return a new :class:`SpeckleTracking` object
         with all the necessary data attributes imported from
         the :class:`STData` container object `st_data`.
@@ -765,6 +848,8 @@ class SpeckleTracking(DataContainer):
         aberrations : bool, optional
             Add `pixel_aberrations` from `st_data` to
             `pixel_map` if it's True.
+        ff_correction : bool, optional
+            Apple dynamic flatfield correction if it's True.
 
         Returns
         -------
@@ -775,10 +860,15 @@ class SpeckleTracking(DataContainer):
         pixel_map = st_data.get('pixel_map')
         if aberrations:
             pixel_map += st_data.get('pixel_aberrations')
+        whitefield = st_data.get('whitefield')
+        if ff_correction:
+            flatfields = st_data.get('flatfields')
+            if not flatfields is None:
+                data *= np.where(flatfields > 0, whitefield / flatfields, 1.)
         dij_pix = np.ascontiguousarray(np.swapaxes(st_data.get('pixel_translations'), 0, 1))
         return cls(data=data, st_data=st_data, dfs_pix=dij_pix[1], dss_pix=dij_pix[0],
                    num_threads=st_data.num_threads, pixel_map=pixel_map,
-                   whitefield=st_data.get('whitefield'))
+                   whitefield=whitefield)
 
     @dict_to_object
     def update_reference(self, ls_ri, sw_fs=0, sw_ss=0):
