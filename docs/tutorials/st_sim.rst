@@ -73,8 +73,8 @@ just type :code:`python -m pyrost.simulation --help`.
     $ python -m pyrost.simulation --help      
     usage: __main__.py [-h] [-f INI_FILE] [--defocus DEFOCUS]
                        [--det_dist DET_DIST] [--step_size STEP_SIZE]
-                       [--n_frames N_FRAMES] [--fs_size FS_SIZE]
-                       [--ss_size SS_SIZE] [--p0 P0] [--wl WL] [--th_s TH_S]
+                       [--n_frames N_FRAMES] [--detx_size FS_SIZE]
+                       [--dety_size SS_SIZE] [--p0 P0] [--wl WL] [--th_s TH_S]
                        [--ap_x AP_X] [--ap_y AP_Y] [--focus FOCUS] [--alpha ALPHA]
                        [--ab_cnt AB_CNT] [--bar_size BAR_SIZE] [--bar_sigma BAR_SIGMA]
                        [--bar_atn BAR_ATN] [--bulk_atn BULK_ATN]
@@ -97,8 +97,8 @@ just type :code:`python -m pyrost.simulation --help`.
       --step_size STEP_SIZE
                             Scan step size [um] (default: 0.1)
       --n_frames N_FRAMES   Number of frames (default: 300)
-      --fs_size FS_SIZE     Fast axis frames size in pixels (default: 2000)
-      --ss_size SS_SIZE     Slow axis frames size in pixels (default: 1000)
+      --detx_size FS_SIZE     Fast axis frames size in pixels (default: 2000)
+      --dety_size SS_SIZE     Slow axis frames size in pixels (default: 1000)
       --p0 P0               Source beam flux [cnt / s] (default: 200000.0)
       --wl WL               Wavelength [um] (default: 7.29e-05)
       --th_s TH_S           Source rocking curve width [rad] (default: 0.0002)

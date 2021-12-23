@@ -11,10 +11,12 @@ pipeline. All the functions are written in `Cython`_ or C.
 
     funcs/gaussian_filter
     funcs/gaussian_gradient_magnitude
-    funcs/make_reference
-    funcs/update_pixel_map_gs
-    funcs/update_pixel_map_nm
-    funcs/update_translations_gs
-    funcs/mse_frame
+    funcs/KR_reference
+    funcs/LOWESS_reference
+    funcs/pm_gsearch
+    funcs/tr_gsearch
+    funcs/mse_det_frame
+    funcs/mse_ref_frame
     funcs/mse_total
     funcs/ct_integrate
+    funcs/fourier_basis

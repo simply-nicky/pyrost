@@ -96,6 +96,13 @@ int compare_uint(const void *a, const void *b)
     else return 0;
 }
 
+int compare_ulong(const void *a, const void *b)
+{
+    if (*(unsigned long *)a > *(unsigned long *)b) return 1;
+    else if (*(unsigned long *)a < *(unsigned long *)b) return -1;
+    else return 0;
+}
+
 static void wirthselect(void *data, void *key, int k, int l, int m, size_t size,
     int (*compar)(const void*, const void*))
 {

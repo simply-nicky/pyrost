@@ -64,7 +64,7 @@ You can perform the Speckle Tracking procedure with :class:`pyrost.SpeckleTracki
 .. doctest::
 
     >>> st_obj = data.get_st()
-    >>> st_res, errors = st_obj.iter_update(sw_fs=10, ls_pm=2.5, ls_ri=5, verbose=True, n_iter=10)
+    >>> st_res, errors = st_obj.iter_update(sw_x=10, ls_pm=2.5, ls_ri=5, verbose=True, n_iter=10)
 
 **OR** you can perform iterative update, where the reference image length scale is updated
 based on gradeint descent with momentum algorithm, which in general gives lower final error.
@@ -72,7 +72,7 @@ based on gradeint descent with momentum algorithm, which in general gives lower 
 .. doctest::
 
     >>> st_obj = data.get_st()
-    >>> st_res = st_obj.iter_update_gd(sw_fs=8, ls_pm=2.5, ls_ri=50., verbose=True, n_iter=20)
+    >>> st_res = st_obj.iter_update_gd(sw_x=8, ls_pm=2.5, ls_ri=50., verbose=True, n_iter=20)
 
     >>> fig, axes = plt.subplots(1, 2, figsize=(16, 6)) # doctest: +SKIP
     >>> axes[0].plot(np.arange(st_res.reference_image.shape[1]) - st_res.m0, # doctest: +SKIP
@@ -113,7 +113,7 @@ polynomial function.
     >>> axes[1].legend(fontsize=15) # doctest: +SKIP
     >>> for ax in axes: # doctest: +SKIP
     >>>     ax.tick_params(axis='both', which='major', labelsize=15) # doctest: +SKIP
-    >>>     ax.set_xlabel('fast axis', fontsize=15) # doctest: +SKIP
+    >>>     ax.set_xlabel('horizontal axis', fontsize=15) # doctest: +SKIP
     >>> plt.show() # doctest: +SKIP
 
 .. image:: ../figures/1d_sim_fits.png

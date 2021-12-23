@@ -470,7 +470,7 @@ int fraunhofer_fftw(double complex *out, double complex *inp, int ndim, size_t *
         double complex k0 = -(sin(ph) + cos(ph) * I) / sqrt(wl * z) * dx0;
         for (int i = 0; i < (int)flen; i++)
         {
-            ph = M_PI * pow(i - flen / 2, 2) * alpha;
+            ph = M_PI * pow(i - (int)flen / 2, 2) * alpha;
             krnft[i] = k0 * (cos(ph) - sin(ph) * I);
         }
         fail |= fft_fftw(fft_plan, krnft);

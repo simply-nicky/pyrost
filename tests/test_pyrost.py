@@ -5,10 +5,10 @@ import pytest
 import pyrost as rst
 import pyrost.simulation as st_sim
 
-@pytest.fixture(params=[{'det_dist': 5e5, 'n_frames': 10, 'ap_x': 4,
-                         'ap_y': 1, 'focus': 3e3, 'defocus': -2e2},
+@pytest.fixture(params=[{'det_dist': 5.0e5, 'n_frames': 10, 'ap_x': 4,
+                         'ap_y': 1, 'focus': 3.0e3, 'defocus': -2.0e2},
                         {'det_dist': 4.5e5, 'n_frames': 5, 'ap_x': 3,
-                         'ap_y': 1.5, 'focus': 2e3, 'defocus': 1e2}],
+                         'ap_y': 1.5, 'focus': 2.0e3, 'defocus': 1.0e2}],
                 scope='session')
 def st_params(request):
     """Return a default instance of simulation parameters.
@@ -16,12 +16,12 @@ def st_params(request):
     return st_sim.STParams.import_default(**request.param)
 
 @pytest.fixture(scope='session')
-def sim_obj(st_params):
+def sim_obj(st_params: st_sim.STParams):
     sim_obj = st_sim.STSim(st_params)
     return sim_obj
 
 @pytest.fixture(scope='session')
-def ptych(sim_obj):
+def ptych(sim_obj: st_sim.STSim):
     data = sim_obj.ptychograph()
     return data
 
@@ -87,7 +87,7 @@ def test_st_update_sim(converter, ptych , sim_obj):
     assert st_data.data.dtype == converter.protocol.known_types['float']
     st_obj = st_data.get_st()
     pixel_map0 = st_obj.pixel_map.copy()
-    st_obj.iter_update(sw_fs=10, ls_pm=2.5, ls_ri=15,
+    st_obj.iter_update(sw_x=10, ls_pm=2.5, ls_ri=15,
                        verbose=True, n_iter=10)
     assert (st_obj.pixel_map == pixel_map0).all()
     assert st_obj.pixel_map.dtype == converter.protocol.known_types['float']
@@ -106,7 +106,7 @@ def test_st_update_exp(path, roi, defocus, loader):
     assert data.data.dtype == loader.known_types['float']
     st_obj = data.get_st()
     pixel_map0 = st_obj.pixel_map.copy()
-    st_obj.iter_update_gd(sw_fs=10, ls_pm=2.5, ls_ri=30,
+    st_obj.iter_update_gd(sw_x=10, ls_pm=2.5, ls_ri=30,
                           verbose=True, n_iter=10)
     assert (st_obj.pixel_map == pixel_map0).all()
     assert st_obj.pixel_map.dtype == loader.known_types['float']
@@ -116,7 +116,7 @@ def test_full(converter, ptych, sim_obj):
     data = converter.export_data(ptych, sim_obj)
     assert data.data.dtype == converter.protocol.known_types['float']
     st_obj = data.get_st()
-    st_res = st_obj.iter_update_gd(sw_fs=10, ls_pm=2.5, ls_ri=15,
+    st_res = st_obj.iter_update_gd(sw_x=10, ls_pm=2.5, ls_ri=15,
                                    verbose=True, n_iter=10)
     data = data.update_phase(st_res)
     fit = data.fit_phase(axis=1)

@@ -1,4 +1,3 @@
-cimport numpy as np
 import numpy as np
 import cython
 from libc.string cimport memcmp
@@ -94,7 +93,7 @@ def next_fast_len(target: cython.uint, backend: str='numpy') -> cython.uint:
     else:
         raise ValueError('{:s} is invalid backend'.format(backend))
 
-def fft_convolve(array: np.ndarray, kernel: np.ndarray, axis: cython.int=-1,
+def fft_convolve(array not None: np.ndarray, kernel not None: np.ndarray, axis: cython.int=-1,
                  mode: str='constant', cval: cython.double=0.0, backend: str='numpy',
                  num_threads: cython.uint=1) -> np.ndarray:
     """Convolve a multi-dimensional `array` with one-dimensional `kernel` along the
@@ -166,7 +165,7 @@ def fft_convolve(array: np.ndarray, kernel: np.ndarray, axis: cython.int=-1,
         raise RuntimeError('C backend exited with error.')
     return out
 
-def rsc_wp(wft: np.ndarray, dx0: cython.double, dx: cython.double, z: cython.double,
+def rsc_wp(wft not None: np.ndarray, dx0: cython.double, dx: cython.double, z: cython.double,
            wl: cython.double, axis: cython.int=-1, backend: str='numpy',
            num_threads: cython.uint=1) -> np.ndarray:
     r"""Wavefront propagator based on Rayleigh-Sommerfeld convolution
@@ -250,7 +249,7 @@ def rsc_wp(wft: np.ndarray, dx0: cython.double, dx: cython.double, z: cython.dou
         raise RuntimeError('C backend exited with error.')
     return out
 
-def fraunhofer_wp(wft: np.ndarray, dx0: cython.double, dx: cython.double,
+def fraunhofer_wp(wft not None: np.ndarray, dx0: cython.double, dx: cython.double,
                   z: cython.double, wl: cython.double, axis: cython.int=-1,
                   backend: str='numpy', num_threads: cython.uint=1) -> np.ndarray:
     r"""Fraunhofer diffraction propagator. Propagates a wavefront `wft` by
@@ -349,7 +348,7 @@ def gaussian_kernel(sigma: double, order: cython.uint=0, truncate: cython.double
         gauss_kernel1d(_out, sigma, order, dims[0])
     return out
 
-def gaussian_filter(inp: np.ndarray, sigma: object, order: object=0, mode: str='reflect',
+def gaussian_filter(inp not None: np.ndarray, sigma: object, order not None: object=0, mode: str='reflect',
                     cval: cython.double=0., truncate: cython.double=4., backend: str='numpy',
                     num_threads: cython.uint=1) -> np.ndarray:
     r"""Multidimensional Gaussian filter. The multidimensional filter is implemented as
@@ -405,6 +404,11 @@ def gaussian_filter(inp: np.ndarray, sigma: object, order: object=0, mode: str='
     cdef np.ndarray sigmas = normalize_sequence(sigma, ndim, np.NPY_FLOAT64)
     cdef np.ndarray orders = normalize_sequence(order, ndim, np.NPY_UINT32)
 
+    cdef int n
+    for n in range(ndim):
+        if inp.shape[n] == 1:
+            sigmas[n] = 0.0
+
     cdef int fail = 0
     cdef np.npy_intp *dims = inp.shape
     cdef np.ndarray out = <np.ndarray>np.PyArray_SimpleNew(ndim, dims, np.NPY_FLOAT64)
@@ -425,7 +429,7 @@ def gaussian_filter(inp: np.ndarray, sigma: object, order: object=0, mode: str='
         raise RuntimeError('C backend exited with error.')
     return out
 
-def gaussian_gradient_magnitude(inp: np.ndarray, sigma: object, mode: str='reflect',
+def gaussian_gradient_magnitude(inp not None: np.ndarray, sigma not None: object, mode: str='reflect',
                                 cval: cython.double=0., truncate: cython.double=4.,
                                 backend: str='numpy', num_threads: cython.uint=1) -> np.ndarray:
     r"""Multidimensional gradient magnitude using Gaussian derivatives. The multidimensional
@@ -469,7 +473,12 @@ def gaussian_gradient_magnitude(inp: np.ndarray, sigma: object, mode: str='refle
 
     cdef int ndim = inp.ndim
     cdef np.ndarray sigmas = normalize_sequence(sigma, ndim, np.NPY_FLOAT64)
-    
+
+    cdef int n
+    for n in range(ndim):
+        if inp.shape[n] == 1:
+            sigmas[n] = 0.0
+
     cdef int fail = 0
     cdef np.npy_intp *dims = inp.shape
     cdef np.ndarray out = <np.ndarray>np.PyArray_SimpleNew(ndim, dims, np.NPY_FLOAT64)
@@ -541,7 +550,7 @@ cdef np.ndarray ml_profile_wrapper(np.ndarray x_arr, np.ndarray layers, complex 
         raise RuntimeError('C backend exited with error.')
     return out
 
-def barcode_profile(x_arr: np.ndarray, bars: np.ndarray, bulk_atn: cython.double,
+def barcode_profile(x_arr not None: np.ndarray, bars not None: np.ndarray, bulk_atn: cython.double,
                     bar_atn: cython.double, bar_sigma: cython.double,
                     num_threads: cython.uint) -> np.ndarray:
     r"""Return an array of barcode's transmission profile calculated
@@ -592,7 +601,7 @@ def barcode_profile(x_arr: np.ndarray, bars: np.ndarray, bulk_atn: cython.double
     cdef complex mt1 = -1j * log(1 - bar_atn)
     return ml_profile_wrapper(x_arr, bars, mt0, mt1, 0., bar_sigma, num_threads)
 
-def mll_profile(x_arr: np.ndarray, layers: np.ndarray, complex mt0,
+def mll_profile(x_arr not None: np.ndarray, layers not None: np.ndarray, complex mt0,
                 complex mt1, sigma: cython.double, num_threads: cython.uint) -> np.ndarray:
     r"""Return an array of MLL's transmission profile calculated
     at `x_arr` coordinates.
@@ -642,7 +651,7 @@ def mll_profile(x_arr: np.ndarray, layers: np.ndarray, complex mt0,
     """
     return ml_profile_wrapper(x_arr, layers, 0., mt0, mt1, sigma, num_threads)
 
-def make_frames(pfx: np.ndarray, pfy: np.ndarray, dx: cython.double, dy: cython.double,
+def make_frames(pfx not None: np.ndarray, pfy not None: np.ndarray, dx: cython.double, dy: cython.double,
                 shape: tuple, seed: cython.long, num_threads: cython.uint) -> np.ndarray:
     """Generate intensity frames from one-dimensional intensity profiles (`pfx`,
     `pfy`) and whitefield profiles (`wfx`, `wfy`). Intensity profiles resized into
@@ -688,7 +697,7 @@ def make_frames(pfx: np.ndarray, pfy: np.ndarray, dx: cython.double, dy: cython.
         raise RuntimeError('C backend exited with error.')
     return out
 
-def median(data: np.ndarray, mask: np.ndarray=None, axis: cython.int=0,
+def median(data not None: np.ndarray, mask: np.ndarray=None, axis: cython.int=0,
            num_threads: cython.uint=1) -> np.ndarray:
     """Calculate a median along the `axis`.
 
@@ -749,6 +758,8 @@ def median(data: np.ndarray, mask: np.ndarray=None, axis: cython.int=0,
             fail = median_c(_out, _data, _mask, ndim, _dims, 4, axis, compare_int, num_threads)
         elif type_num == np.NPY_UINT32:
             fail = median_c(_out, _data, _mask, ndim, _dims, 4, axis, compare_uint, num_threads)
+        elif type_num == np.NPY_UINT64:
+            fail = median_c(_out, _data, _mask, ndim, _dims, 8, axis, compare_ulong, num_threads)
         else:
             raise TypeError('data argument has incompatible type: {:s}'.format(data.dtype))
     if fail:
@@ -757,7 +768,7 @@ def median(data: np.ndarray, mask: np.ndarray=None, axis: cython.int=0,
     free(odims)
     return out
 
-def median_filter(data: np.ndarray, size: object, mask: np.ndarray=None, mode: str='reflect', cval: cython.double=0.,
+def median_filter(data not None: np.ndarray, size not None: object, mask: np.ndarray=None, mode: str='reflect', cval: cython.double=0.,
                   num_threads: cython.uint=1) -> np.ndarray:
     """Calculate a median along the `axis`.
 
@@ -833,6 +844,8 @@ def median_filter(data: np.ndarray, size: object, mask: np.ndarray=None, mode: s
             fail = median_filter_c(_out, _data, _mask, ndim, _dims, 4, _fsize, _mode, _cval, compare_int, num_threads)
         elif type_num == np.NPY_UINT32:
             fail = median_filter_c(_out, _data, _mask, ndim, _dims, 4, _fsize, _mode, _cval, compare_uint, num_threads)
+        elif type_num == np.NPY_UINT64:
+            fail = median_filter_c(_out, _data, _mask, ndim, _dims, 8, _fsize, _mode, _cval, compare_ulong, num_threads)
         else:
             raise TypeError('data argument has incompatible type: {:s}'.format(data.dtype))
     if fail:

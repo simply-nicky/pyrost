@@ -75,37 +75,47 @@ int frames(double *out, double *pfx, double *pfy, double dx, double dy, size_t *
     if (threads == 0) {ERROR("frames: threads must be positive."); return -1;}
 
     size_t nframes = ishape[0], ypts = ishape[1], xpts = ishape[2];
-    size_t ss_size = oshape[1], fs_size = oshape[2];
-    double *pfyss = (double *)malloc(ss_size * sizeof(double));
-    double *pfxss = (double *)malloc(fs_size * sizeof(double));
-    rebin_line_double(pfyss, pfy, ss_size, ypts, threads);
+    size_t dety_size = oshape[1], detx_size = oshape[2];
+    double *pfyss = (double *)malloc(dety_size * sizeof(double));
+    double *pfxss = (double *)malloc(detx_size * sizeof(double));
+    rebin_line_double(pfyss, pfy, dety_size, ypts, threads);
+
     for (int n = 0; n < (int) nframes; n++)
     {
-        rebin_line_double(pfxss, pfx, fs_size, xpts, threads);
+        rebin_line_double(pfxss, pfx, detx_size, xpts, threads);
         if (seed >= 0)
         {
+            gsl_rng *r_master = gsl_rng_alloc(gsl_rng_mt19937);
+            gsl_rng_set(r_master, (unsigned long) seed);
+
             #pragma omp parallel num_threads(threads)
             {
+                unsigned long thread_seed;
                 gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937);
-                gsl_rng_set(r, (unsigned long) seed);
+
+                thread_seed = gsl_rng_get(r_master);
+                gsl_rng_set(r, thread_seed);
+
                 #pragma omp for
-                for (int i = 0; i < (int) (fs_size * ss_size); i++)
+                for (int i = 0; i < (int) (detx_size * dety_size); i++)
                 {
-                    double val = pfxss[i % fs_size] * pfyss[i / fs_size] * dx * dy;
+                    double val = pfxss[i % detx_size] * pfyss[i / detx_size] * dx * dy;
                     out[i] = gsl_ran_poisson(r, val);
                 }
                 gsl_rng_free(r);
             }
+
+            gsl_rng_free(r_master);
         }
         else
         {
             #pragma omp parallel for num_threads(threads)
-            for (int i = 0; i < (int) (fs_size * ss_size); i++)
+            for (int i = 0; i < (int) (detx_size * dety_size); i++)
             {
-                out[i] = pfxss[i % fs_size] * pfyss[i / fs_size] * dx * dy;
+                out[i] = pfxss[i % detx_size] * pfyss[i / detx_size] * dx * dy;
             }
         }
-        out += fs_size * ss_size; pfx += xpts;
+        out += detx_size * dety_size; pfx += xpts;
     }
     free(pfxss); free(pfyss);
 

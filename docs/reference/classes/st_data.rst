@@ -4,8 +4,9 @@ STData
 .. autoclass:: pyrost.STData
     :members:
     :inherited-members:
-    :exclude-members: crop_data, integrate_data, mask_frames, update_mask, mirror_data, make_whitefield, make_pixel_map, update_defocus
+    :exclude-members: bin_data, crop_data, integrate_data, mask_frames, mirror_data, make_whitefield, make_pixel_map, update_mask, update_defocus, update_flatfields
 
+    .. automethod:: bin_data
     .. automethod:: crop_data
     .. automethod:: integrate_data
     .. automethod:: make_whitefield
@@ -13,4 +14,5 @@ STData
     .. automethod:: mask_frames
     .. automethod:: mirror_data
     .. automethod:: update_defocus
+    .. automethod:: update_flatfields
     .. automethod:: update_mask

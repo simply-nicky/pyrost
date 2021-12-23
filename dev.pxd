@@ -70,11 +70,6 @@ cdef extern from "median.h":
                         unsigned long *dims, unsigned long item_size, unsigned long *fsize, int mode,
                         void *cval, int (*compar)(void*, void*), unsigned threads) nogil
 
-cdef extern from "pyrost.h":
-    int make_reference_nfft(double **I0, int *X0, int *Y0, double *n0, double *m0, double *I, double *W,
-                            double *u, unsigned long *dims, double *di, double *dj, double ls,
-                            unsigned int threads) nogil
-
 cdef extern from "fftw3.h":
     void fftw_init_threads() nogil
     void fftw_cleanup_threads() nogil
@@ -85,3 +80,21 @@ cdef enum:
     EXTEND_MIRROR = 2
     EXTEND_REFLECT = 3
     EXTEND_WRAP = 4
+
+cdef extern from "gsl/gsl_rng.h":
+
+    ctypedef struct gsl_rng_type
+    ctypedef struct gsl_rng
+
+    cdef gsl_rng_type *gsl_rng_mt19937
+
+    gsl_rng *gsl_rng_alloc(gsl_rng_type * T) nogil
+
+    unsigned long int gsl_rng_get(gsl_rng * r) nogil
+
+    void gsl_rng_set(gsl_rng * r, unsigned long int seed) nogil
+
+    void gsl_rng_free(gsl_rng * r) nogil
+
+    double gsl_rng_uniform(gsl_rng * r) nogil
+    unsigned long gsl_rng_uniform_int(gsl_rng * r, unsigned long n) nogil

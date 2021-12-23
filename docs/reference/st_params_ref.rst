@@ -22,9 +22,9 @@ List of experimental parameters:
 
 * **Detector parameters**:
 
-    * `fs_size` : Detector's size along the fast axis in
+    * `detx_size` : Detector's size along the horizontal axis in
       pixels.
-    * `ss_size` : Detector's size along the slow axis in
+    * `dety_size` : Detector's size along the vertical axis in
       pixels.
     * `pix_size` : Detector's pixel size [um].
 
@@ -74,8 +74,8 @@ The parameters are given by:
     n_frames = 300
 
     [detector]
-    fs_size = 2000
-    ss_size = 1000
+    detx_size = 2000
+    dety_size = 1000
     pix_size = 55
 
     [source]

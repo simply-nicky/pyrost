@@ -26,8 +26,10 @@ the default protocol.
 >>> st_conv = sim.STConverter()
 >>> st_conv.save_sim(data, sim_obj, 'test')
 """
+from __future__ import annotations
 import os
 import argparse
+from typing import Dict, Optional, Union
 import h5py
 import numpy as np
 from ..cxi_protocol import CXIProtocol, ROOT_PATH
@@ -104,14 +106,14 @@ class STSim(DataContainer):
     init_set = {'bars', 'det_wfx', 'det_wfy', 'det_ix', 'det_iy', 'lens_wfx',
                 'lens_wfy', 'roi', 'smp_pos', 'smp_profile', 'smp_wfx', 'smp_wfy'}
 
-    def __init__(self, params, backend='numpy', **kwargs):
+    def __init__(self, params: STParams, backend: str='numpy', **kwargs: Union[int, np.ndarray]) -> None:
         if not backend in self.backends:
             err_msg = f'backend must be one of the following: {str(self.backends):s}'
             raise ValueError(err_msg)
         super(STSim, self).__init__(backend=backend, params=params, **kwargs)
         self._init_dict()
 
-    def _init_dict(self):
+    def _init_dict(self) -> None:
         # Initialize barcode's bar positions
         if self.bars is None:
             self.bars = self.params.bar_positions(dist=self.params.defocus)
@@ -142,14 +144,14 @@ class STSim(DataContainer):
             dx1 = np.abs(2 * self.params.ap_x * self.params.defocus \
                          / self.params.focus / self.x_size)
             x1_arr = dx1 * np.arange(-self.x_size // 2, self.x_size // 2) + self.smp_pos[:, None]
-            self.smp_profile = self.params.barcode_profile(x_arr=x1_arr, bars=self.bars,
+            self.smp_profile = self.params.barcode_profile(x_arr=x1_arr, dx=dx1, bars=self.bars,
                                                            num_threads=self.params.num_threads)
 
         # Initialize wavefronts at the detector plane
         if self.det_wfx is None:
             dx1 = np.abs(2 * self.params.ap_x * self.params.defocus \
                          / self.params.focus / self.x_size)
-            dx2 = self.params.fs_size * self.params.pix_size / self.x_size
+            dx2 = self.params.detx_size * self.params.pix_size / self.x_size
             wft = self.smp_wfx * self.smp_profile
             self.det_wfx = fraunhofer_wp(wft=wft, dx0=dx1, dx=dx2, z=self.params.det_dist,
                                          wl=self.params.wl, backend=self.backend,
@@ -160,7 +162,7 @@ class STSim(DataContainer):
 
         if self.det_wfy is None:
             dy1 = 2 * self.params.ap_y / self.y_size
-            dy2 = self.params.ss_size * self.params.pix_size / self.y_size
+            dy2 = self.params.dety_size * self.params.pix_size / self.y_size
             self.det_wfy = fraunhofer_wp(wft=self.smp_wfy, dx0=dy1, dx=dy2, z=self.params.det_dist,
                                          wl=self.params.wl, backend=self.backend,
                                          num_threads=1)
@@ -170,13 +172,13 @@ class STSim(DataContainer):
 
         # Initialize intensity profiles at the detector plane
         if self.det_ix is None:
-            dx = self.params.fs_size * self.params.pix_size / self.x_size
+            dx = self.params.detx_size * self.params.pix_size / self.x_size
             sc_x = self.params.source_curve(dist=self.params.defocus + self.params.det_dist, step=dx)
             det_ix = np.sqrt(self.params.p0) / self.params.ap_x * np.abs(self.det_wfx)**2
             self.det_ix = fft_convolve(array=det_ix, kernel=sc_x, backend=self.backend,
                                        num_threads=self.params.num_threads)
         if self.det_iy is None:
-            dy = self.params.ss_size * self.params.pix_size / self.y_size
+            dy = self.params.dety_size * self.params.pix_size / self.y_size
             sc_y = self.params.source_curve(dist=self.params.defocus + self.params.det_dist, step=dy)
             det_iy = np.sqrt(self.params.p0) / self.params.ap_y * np.abs(self.det_wfy)**2
             self.det_iy = fft_convolve(array=det_iy, kernel=sc_y, backend=self.backend,
@@ -185,8 +187,8 @@ class STSim(DataContainer):
         # Initialize region of interest
         if self.roi is None:
             x0, x1 = self.params.beam_span(self.params.det_dist)
-            if (x1 - x0) < self.params.fs_size * self.params.pix_size:
-                dx = self.params.fs_size * self.params.pix_size / self.x_size
+            if (x1 - x0) < self.params.detx_size * self.params.pix_size:
+                dx = self.params.detx_size * self.params.pix_size / self.x_size
                 cnt_x, cnt_y = self.x_size // 2 + int((x0 + x1) / 2 // dx), self.y_size // 2
                 grad_x = gaussian_gradient_magnitude(self.det_wx, self.x_size // 100,
                                                      mode='nearest',
@@ -194,24 +196,24 @@ class STSim(DataContainer):
                 grad_y = gaussian_gradient_magnitude(self.det_wy, self.y_size // 100,
                                                      mode='nearest',
                                                      num_threads=self.params.num_threads)
-                fs0 = (np.argmax(grad_x[:cnt_x]) * self.params.fs_size) // self.x_size
-                fs1 = ((cnt_x + np.argmax(grad_x[cnt_x:])) * self.params.fs_size) // self.x_size
+                x0 = (np.argmax(grad_x[:cnt_x]) * self.params.detx_size) // self.x_size
+                x1 = ((cnt_x + np.argmax(grad_x[cnt_x:])) * self.params.detx_size) // self.x_size
             else:
-                fs0, fs1 = 0, self.params.fs_size
-            ss0 = (np.argmax(grad_y[:cnt_y]) * self.params.ss_size) // self.y_size
-            ss1 = ((cnt_y + np.argmax(grad_y[cnt_y:])) * self.params.ss_size) // self.y_size
-            self.roi = np.array([ss0, ss1, fs0, fs1])
+                x0, x1 = 0, self.params.detx_size
+            y0 = (np.argmax(grad_y[:cnt_y]) * self.params.dety_size) // self.y_size
+            y1 = ((cnt_y + np.argmax(grad_y[cnt_y:])) * self.params.dety_size) // self.y_size
+            self.roi = np.array([y0, y1, x0, x1])
 
     @property
-    def x_size(self):
+    def x_size(self) -> int:
         return self.lens_wfx.size
 
     @property
-    def y_size(self):
+    def y_size(self) -> int:
         return self.lens_wfy.size
 
     @dict_to_object
-    def update_bars(self, bars):
+    def update_bars(self, bars: np.ndarray) -> STSim:
         """Return a new :class:`STSim` object with the updated
         `bars`.
 
@@ -229,7 +231,7 @@ class STSim(DataContainer):
         return {'bars': bars, 'smp_profile': None, 'det_wfx': None, 'det_ix': None}
 
     @dict_to_object
-    def update_roi(self, roi):
+    def update_roi(self, roi: np.ndarray) -> STSim:
         """Return a new :class:`STSim` object with the updated
         region of interest.
 
@@ -247,7 +249,8 @@ class STSim(DataContainer):
         """
         return {'roi': roi}
 
-    def frames(self, wfieldx=None, wfieldy=None, apply_noise=True):
+    def frames(self, wfieldx: Optional[np.ndarray]=None, wfieldy: Optional[np.ndarray]=None,
+               apply_noise: bool=True) -> np.ndarray:
         """Return intensity frames at the detector plane. Applies
         Poisson noise if `apply_noise` is True.
 
@@ -265,11 +268,11 @@ class STSim(DataContainer):
         numpy.ndarray
             Intensity frames.
         """
-        dx = self.params.fs_size * self.params.pix_size / self.x_size
-        dy = self.params.ss_size * self.params.pix_size / self.y_size
+        dx = self.params.detx_size * self.params.pix_size / self.x_size
+        dy = self.params.dety_size * self.params.pix_size / self.y_size
         seed = self.params.seed if apply_noise else -1
         frames = make_frames(pfx=self.det_ix, pfy=self.det_iy, dx=dx, dy=dy,
-                             shape=(self.params.ss_size, self.params.fs_size),
+                             shape=(self.params.dety_size, self.params.detx_size),
                              seed=seed, num_threads=self.params.num_threads)
         if not wfieldx is None:
             frames *= (wfieldx / wfieldx.mean())
@@ -277,7 +280,8 @@ class STSim(DataContainer):
             frames *= (wfieldy / wfieldy.mean())[:, None]
         return frames
 
-    def ptychograph(self, wfieldx=None, wfieldy=None, apply_noise=True):
+    def ptychograph(self, wfieldx: Optional[np.ndarray]=None, wfieldy: Optional[np.ndarray]=None,
+                    apply_noise: bool=True) -> np.ndarray:
         """Return a ptychograph of intensity frames. Applies Poisson
         noise if `apply_noise` is True.
 
@@ -328,8 +332,8 @@ class STConverter:
 
     * basis_vectors : Detector basis vectors.
     * data : Measured intensity frames.
-    * defocus_fs : Defocus distance along the fast detector axis.
-    * defocus_ss : Defocus distance along the slow detector axis.
+    * defocus_x : Defocus distance along the horizontal detector axis.
+    * defocus_y : Defocus distance along the vertical detector axis.
     * distance : Sample-to-detector distance.
     * energy : Incoming beam photon energy [eV].
     * good_frames : An array of good frames' indices.
@@ -338,9 +342,9 @@ class STConverter:
     * translations : Sample's translations.
     * wavelength : Incoming beam's wavelength.
     * whitefield : Measured frames' whitefield.
-    * x_pixel_size : Pixel's size along the fast detector
+    * x_pixel_size : Pixel's size along the horizontal detector
       axis.
-    * y_pixel_size : Pixel's size along the slow detector
+    * y_pixel_size : Pixel's size along the vertical detector
       axis.
     """
     unit_vector_fs = np.array([1, 0, 0])
@@ -352,12 +356,10 @@ class STConverter:
                    'energy', 'good_frames', 'mask', 'roi', 'translations',
                    'wavelength', 'whitefield', 'x_pixel_size', 'y_pixel_size'}
 
-    def __init__(self, protocol=None, coord_ratio=1e-6):
-        if protocol is None:
-            protocol = CXIProtocol()
+    def __init__(self, protocol: Optional[CXIProtocol]=CXIProtocol.import_default(), coord_ratio: float=1e-6) -> None:
         self.protocol, self.crd_rat = protocol, coord_ratio
 
-    def _ini_parsers(self, st_params):
+    def _ini_parsers(self, st_params: STParams) -> Dict[str, dict]:
         ini_parsers = {}
         for filename in os.listdir(self.templates_dir):
             path = os.path.join(self.templates_dir, filename)
@@ -370,7 +372,8 @@ class STConverter:
         ini_parsers['protocol'] = self.protocol.export_ini()
         return ini_parsers
 
-    def export_dict(self, data, roi, smp_pos, st_params):
+    def export_dict(self, data: np.ndarray, roi: np.ndarray, smp_pos: np.ndarray,
+                    st_params: STParams) -> Dict[str, Union[np.ndarray, float]]:
         """Export simulated data `data` (fetched from :func:`STSim.frames`
         or :func:`STSim.ptychograph`) and `st_params` to :class:`dict` object.
 
@@ -413,8 +416,8 @@ class STConverter:
         data_dict['whitefield'] = median(mask=data_dict['mask'], data=data, axis=0, num_threads=st_params.num_threads)
 
         # Initialize defocus distances
-        data_dict['defocus_fs'] = self.crd_rat * st_params.defocus
-        data_dict['defocus_ss'] = self.crd_rat * st_params.defocus
+        data_dict['defocus_x'] = self.crd_rat * st_params.defocus
+        data_dict['defocus_y'] = self.crd_rat * st_params.defocus
 
         # Initialize sample-to-detector distance
         data_dict['distance'] = self.crd_rat * st_params.det_dist
@@ -435,7 +438,7 @@ class STConverter:
         data_dict['translations'] = self.crd_rat * t_arr
         return data_dict
 
-    def export_data(self, data, sim_obj):
+    def export_data(self, data: np.ndarray, sim_obj: STSim) -> STData:
         """Export simulated data `data` (fetched from :func:`STSim.frames`
         or :func:`STSim.ptychograph`) and a :class:`STSim` object `sim_obj`
         to a data container.
@@ -459,7 +462,7 @@ class STConverter:
         return STData(protocol=self.protocol, **self.export_dict(data, roi=sim_obj.roi,
                       smp_pos=sim_obj.smp_pos, st_params=sim_obj.params))
 
-    def save_sim(self, data, sim_obj, dir_path):
+    def save_sim(self, data: np.ndarray, sim_obj: STSim, dir_path: str) -> None:
         """Export simulated data `data` (fetched from :func:`STSim.frames`
         or :func:`STSim.ptychograph`) and a :class:`STSim` object
         `sim_obj` to `dir_path` folder.
@@ -489,7 +492,8 @@ class STConverter:
         self.save(data=data, roi=sim_obj.roi, smp_pos=sim_obj.smp_pos,
                   st_params=sim_obj.params, dir_path=dir_path)
 
-    def save(self, data, roi, smp_pos, st_params, dir_path):
+    def save(self, data: np.ndarray, roi: np.ndarray, smp_pos: np.ndarray, st_params: STParams,
+             dir_path: str) -> None:
         """Export simulated data `data` (fetched from :func:`STSim.frames`
         or :func:`STSim.ptychograph`), `smp_pos`, and `st_params` to `dir_path`
         folder.
@@ -537,8 +541,8 @@ def main():
     parser.add_argument('--step_rnd', type=float,
                         help="Random deviation of sample translations [0.0 - 1.0]")
     parser.add_argument('--n_frames', type=int, help="Number of frames")
-    parser.add_argument('--fs_size', type=int, help="Fast axis frames size in pixels")
-    parser.add_argument('--ss_size', type=int, help="Slow axis frames size in pixels")
+    parser.add_argument('--detx_size', type=int, help="horizontal axis frames size in pixels")
+    parser.add_argument('--dety_size', type=int, help="vertical axis frames size in pixels")
     parser.add_argument('--p0', type=float, help="Source beam flux [cnt / s]")
     parser.add_argument('--wl', type=float, help="Wavelength [um]")
     parser.add_argument('--th_s', type=float, help="Source rocking curve width [rad]")

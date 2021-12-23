@@ -10,13 +10,15 @@ in order to perform the simulation.
 >>> st_params = sim.STParams.import_ini()
 >>> print(st_params)
 {'defocus': 400.0, 'det_dist': 2000000.0, 'step_size': 0.1, 'n_frames': 300,
-'fs_size': 2000, 'ss_size': 1000, 'pix_size': 55.0, '...': '...'}
+'detx_size': 2000, 'dety_size': 1000, 'pix_size': 55.0, '...': '...'}
 """
+from __future__ import annotations
 import os
-import numpy as np
+from typing import Dict, Iterator, Tuple, Union, Optional
 from multiprocessing import cpu_count
+import numpy as np
 from ..ini_parser import INIParser, ROOT_PATH
-from ..bin import bar_positions, barcode_profile, gaussian_kernel
+from ..bin import bar_positions, barcode_profile, gaussian_kernel, gaussian_filter
 
 ST_PARAMETERS = os.path.join(ROOT_PATH, 'config/st_parameters.ini')
 
@@ -56,7 +58,7 @@ class STParams(INIParser):
     """
     attr_dict = {'exp_geom': ('defocus', 'det_dist', 'n_frames',
                               'step_size', 'step_rnd'),
-                 'detector': ('fs_size', 'pix_size', 'ss_size'),
+                 'detector': ('detx_size', 'dety_size', 'pix_size'),
                  'source':   ('p0', 'th_s', 'wl'),
                  'lens':     ('alpha', 'ap_x', 'ap_y', 'focus', 'ab_cnt'),
                  'barcode':  ('bar_atn', 'bar_rnd', 'bar_sigma', 'bar_size',
@@ -69,19 +71,9 @@ class STParams(INIParser):
                 'system': 'int'}
     FMT_LEN = 7
 
-    def __init__(self, barcode=None, detector=None, exp_geom=None, lens=None, source=None, system=None):
-        if barcode is None:
-            barcode = self._import_ini(ST_PARAMETERS)['barcode']
-        if detector is None:
-            detector = self._import_ini(ST_PARAMETERS)['detector']
-        if exp_geom is None:
-            exp_geom = self._import_ini(ST_PARAMETERS)['exp_geom']
-        if lens is None:
-            lens = self._import_ini(ST_PARAMETERS)['lens']
-        if source is None:
-            source = self._import_ini(ST_PARAMETERS)['source']
-        if system is None:
-            system = self._import_ini(ST_PARAMETERS)['system']
+    def __init__(self, barcode: Dict[str, float], detector: Dict[str, Union[int, float]],
+                 exp_geom: Dict[str, Union[int, float]], lens: Dict[str, float],
+                 source: Dict[str, float], system: Dict[str, int]) -> None:
         super(STParams, self).__init__(barcode=barcode, detector=detector,
                                        exp_geom=exp_geom, lens=lens, source=source,
                                        system=system)
@@ -91,27 +83,27 @@ class STParams(INIParser):
             self.update_threads()
 
     @classmethod
-    def _lookup_dict(cls):
+    def _lookup_dict(cls) -> Dict[str, str]:
         lookup = {}
         for section in cls.attr_dict:
             for option in cls.attr_dict[section]:
                 lookup[option] = section
         return lookup
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[str]:
         return self._lookup.__iter__()
 
-    def __contains__(self, attr):
+    def __contains__(self, attr: str) -> bool:
         return attr in self._lookup
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return self._format(self.export_dict()).__repr__()
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self._format(self.export_dict()).__str__()
 
     @classmethod
-    def import_default(cls, **kwargs):
+    def import_default(cls, **kwargs: Union[int, float]) -> STParams:
         """Return the default :class:`STParams`. Extra arguments
         override the default values if provided.
 
@@ -132,7 +124,7 @@ class STParams(INIParser):
         return cls.import_ini(ST_PARAMETERS, **kwargs)
 
     @classmethod
-    def import_ini(cls, ini_file, **kwargs):
+    def import_ini(cls, ini_file: str, **kwargs: Union[int, float]) -> STParams:
         """Initialize a :class:`STParams` object with an
         ini file.
 
@@ -160,7 +152,7 @@ class STParams(INIParser):
                 attr_dict[section][option] = kwargs[option]
         return cls(**attr_dict)
 
-    def update_seed(self, seed=None):
+    def update_seed(self, seed: Optional[int]=None) -> None:
         """Update seed used in pseudo-random number generation.
 
         Parameters
@@ -172,7 +164,7 @@ class STParams(INIParser):
             seed = np.random.default_rng().integers(0, np.iinfo(np.int_).max, endpoint=False)
         self.seed = seed
 
-    def update_threads(self, num_threads=None):
+    def update_threads(self, num_threads: Optional[int]=None) -> None:
         """Update number of threads used in calculcations.
 
         Parameters
@@ -184,7 +176,7 @@ class STParams(INIParser):
             num_threads = np.clip(1, 64, cpu_count())
         self.num_threads = num_threads
 
-    def x_wavefront_size(self):
+    def x_wavefront_size(self) -> int:
         r"""Return wavefront array size along the x axis, that
         satisfies the sampling condition.
 
@@ -208,15 +200,15 @@ class STParams(INIParser):
 
         .. math::
             N_x >= \frac{\Delta x_{sample} \Delta x_{det}}{\lambda d} =
-            \frac{2 a_x n_{fs} \Delta_{pix} df}{f \lambda d_{det}}
+            \frac{2 a_x n_{x} \Delta_{pix} df}{f \lambda d_{det}}
         """
         nx_ltos = int(4 * self.ap_x**2 * max(self.focus, np.abs(self.defocus)) \
                       / self.focus**2 / self.wl)
-        nx_stod = int(2 * self.fs_size * self.pix_size * self.ap_x * np.abs(self.defocus) \
+        nx_stod = int(2 * self.detx_size * self.pix_size * self.ap_x * np.abs(self.defocus) \
                       / self.focus / self.wl / self.det_dist)
         return max(nx_ltos, nx_stod)
 
-    def y_wavefront_size(self):
+    def y_wavefront_size(self) -> int:
         r"""Return wavefront array size along the y axis, that
         satisfies the sampling condition.
 
@@ -240,13 +232,14 @@ class STParams(INIParser):
 
         .. math::
             N_y >= \frac{\Delta y_{sample} \Delta y_{det}}{\lambda d} =
-            \frac{2 a_y n_{ss} \Delta_{pix}}{\lambda d_{det}}
+            \frac{2 a_y n_{y} \Delta_{pix}}{\lambda d_{det}}
         """
         ny_ltos = int(8 * self.ap_y**2 / (self.focus + self.defocus) / self.wl)
-        ny_stod = int(2 * self.ss_size * self.pix_size * self.ap_y / self.wl / self.det_dist)
+        ny_stod = int(2 * self.dety_size * self.pix_size * self.ap_y / self.wl / self.det_dist)
         return max(ny_ltos, ny_stod)
 
-    def lens_wavefronts(self, n_x=None, n_y=None, return_dxdy=False):
+    def lens_wavefronts(self, n_x: Optional[int]=None, n_y: Optional[int]=None,
+                        return_dxdy: bool=False) -> Tuple[Union[np.ndarray, float]]:
         r"""Return wavefields at the lens plane along x and y axes.
 
         Parameters
@@ -303,7 +296,7 @@ class STParams(INIParser):
         else:
             return u0_x, u0_y
 
-    def beam_span(self, dist):
+    def beam_span(self, dist: float) -> Tuple[float, float]:
         """Return beam span along the x axis at distance `dist`
         from the focal plane.
 
@@ -325,7 +318,7 @@ class STParams(INIParser):
                 3.75e8 * (self.ap_x / self.focus)**2 / dist
         return np.tan(th_lb) * dist, np.tan(th_ub) * dist
 
-    def bar_positions(self, dist, rnd_dev=True):
+    def bar_positions(self, dist: float, rnd_dev: bool=True) -> np.ndarray:
         """Generate a coordinate array of barcode's bar positions at
         distance `dist` from focal plane.
 
@@ -352,7 +345,7 @@ class STParams(INIParser):
                              x1=x1 + self.step_size * self.n_frames - self.offset,
                              seed=seed)
 
-    def sample_positions(self):
+    def sample_positions(self) -> np.ndarray:
         """Generate an array of sample's translations with random deviation.
 
         Returns
@@ -364,17 +357,20 @@ class STParams(INIParser):
         rnd_arr = 2 * self.step_rnd * (rng.random(self.n_frames) - 0.5)
         return self.step_size * (np.arange(self.n_frames) + rnd_arr)
 
-    def barcode_profile(self, x_arr, bars, num_threads=1):
+    def barcode_profile(self, x_arr: np.ndarray, dx: float, bars: np.ndarray,
+                        num_threads: int=1) -> np.ndarray:
         """Generate a barcode's transmission profile at `x_arr`
         coordinates.
 
         Parameters
         ----------
-        bar_pos : numpy.ndarray
-            Array of barcode's bar positions [um].
         x_arr : numpy.ndarray
             Array of the coordinates, where the transmission
             coefficients are calculated [um].
+        dx : float
+            Sampling interval of the coordinate array [um].
+        bars : numpy.ndarray
+            Array of barcode's bar positions [um].
         num_threads : int, optional
             Number of threads.
 
@@ -388,11 +384,15 @@ class STParams(INIParser):
         bin.barcode_profile : Full details of barcode's transmission
             profile generation algorithm.
         """
-        return barcode_profile(x_arr=x_arr, bars=bars, bulk_atn=self.bulk_atn,
-                               bar_atn=self.bar_atn, bar_sigma=self.bar_sigma,
-                               num_threads=num_threads)
+        b_prof = barcode_profile(x_arr=x_arr, bars=bars, bulk_atn=self.bulk_atn,
+                                 bar_atn=self.bar_atn, bar_sigma=0.0,
+                                 num_threads=num_threads)
+        sigmas = [self.bar_sigma / dx if n == b_prof.ndim - 1 else 0.0
+                  for n in range(b_prof.ndim)]
+        return gaussian_filter(b_prof, sigmas, num_threads=num_threads,
+                               mode='nearest')
 
-    def source_curve(self, dist, step):
+    def source_curve(self, dist: float, step: float) -> np.ndarray:
         """Return source's rocking curve profile at `dist` distance from
         the lens.
 

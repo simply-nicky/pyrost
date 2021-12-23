@@ -1,6 +1,7 @@
 """:class:`DataContainer` class implementation.
 """
-import numpy as np
+from __future__ import annotations
+from typing import Any, ItemsView, Iterable, KeysView, Optional, ValuesView
 
 class dict_to_object:
     def __init__(self, finstance):
@@ -21,12 +22,10 @@ class return_obj_method:
 
     def __call__(self, *args, **kwargs):
         dct = {}
-        for key, val in self.instance.items():
-            if isinstance(val, np.ndarray):
-                dct[key] = np.copy(val)
-            else:
-                dct[key] = val
         dct.update(self.__wrapped__(*args, **kwargs))
+        for key, val in self.instance.items():
+            if key not in dct:
+                dct[key] = val
         return self.cls(**dct)
 
     def inplace_update(self, *args, **kwargs):
@@ -56,42 +55,49 @@ class DataContainer:
         If an attribute specified in `attr_set` has not been provided.
     """
     attr_set, init_set = set(), set()
+    inits = {}
 
-    def __init__(self, **kwargs):
-        self.__dict__['attr_dict'] = {key: None for key in self.attr_set | self.init_set}
+    def __init__(self, **kwargs: Any):
+        self.attr_dict = {key: None for key in self.attr_set | self.init_set}
+
+        for attr, init_func in self.inits.items():
+            if kwargs.get(attr, None) is None:
+                kwargs[attr] = init_func(kwargs)
+
         for attr in self.attr_set:
-            if kwargs.get(attr) is None:
+            if kwargs.get(attr, None) is None:
                 raise ValueError('Attribute {:s} has not been provided'.format(attr))
             else:
                 self.__setattr__(attr, kwargs.get(attr))
+
         for attr in self.init_set:
             self.__setattr__(attr, kwargs.get(attr))
 
-    def __iter__(self):
+    def __iter__(self) -> Iterable:
         return self.attr_dict.__iter__()
 
-    def __contains__(self, attr):
-        return attr in self.attr_dict
+    def __contains__(self, attr: str) -> bool:
+        return attr in self.__dict__.get('attr_dict', {})
 
-    def __getattr__(self, attr):
+    def __getattr__(self, attr: str) -> Any:
         if attr in self:
             return self.attr_dict[attr]
         else:
             raise AttributeError(attr + " doesn't exist")
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return self.attr_dict.__repr__()
 
-    def __setattr__(self, attr, value):
-        if attr in self.attr_dict:
+    def __setattr__(self, attr: str, value: Any) -> None:
+        if attr in self.__dict__.get('attr_dict', {}):
             self.attr_dict[attr] = value
         else:
             super(DataContainer, self).__setattr__(attr, value)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.attr_dict.__str__()
 
-    def get(self, attr, value=None):
+    def get(self, attr: str, value: Optional[Any]=None) -> Any:
         """Retrieve a dataset, return `value` if the attribute is not found.
 
         Parameters
@@ -109,7 +115,7 @@ class DataContainer:
         """
         return self.attr_dict.get(attr, value)
 
-    def keys(self):
+    def keys(self) -> KeysView:
         """Return the list of attributes stored in the container.
 
         Returns
@@ -119,7 +125,7 @@ class DataContainer:
         """
         return self.attr_dict.keys()
 
-    def items(self):
+    def items(self) -> ItemsView:
         """Return (key, value) pairs of the datasets stored in the container.
 
         Returns
@@ -129,7 +135,7 @@ class DataContainer:
         """
         return self.attr_dict.items()
 
-    def values(self):
+    def values(self) -> ValuesView:
         """Return the attributes' data stored in the container.
 
         Returns

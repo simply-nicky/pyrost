@@ -137,7 +137,7 @@ For the speckle tracking update you've got two options to choose from:
     presence of high noise, you won't get accurate results. Moreover, you can change the
     pixel mapping post-update blurring (`blur`), which helps to prevent the noise amplification
     when you perform multiple number of iterations. **As a rule of thumb, `blur` should be several
-    times larger than `ls_pm`, and many iterations with small steps (`sw_ss`, `sw_fs`) are less
+    times larger than `ls_pm`, and many iterations with small steps (`sw_y`, `sw_x`) are less
     prone to noise than a few iterations with large steps**.
 
 .. note:: Apart from pixel mapping update you may try to perform sample shifts update if you've
@@ -147,15 +147,15 @@ For the speckle tracking update you've got two options to choose from:
 .. doctest::
 
     >>> st_obj = data.get_st()
-    >>> st_res = st_obj.iter_update(sw_fs=15, sw_ss=15, ls_pm=1.5,
+    >>> st_res = st_obj.iter_update(sw_x=15, sw_y=15, ls_pm=1.5,
     >>>                             ls_ri=0.7, verbose=True, n_iter=5)
 
     >>> fig, ax = plt.subplots(figsize=(10, 10)) # doctest: +SKIP
     >>> ax.imshow(st_res.reference_image[700:1200, 100:700], vmin=0.7, vmax=1.3,
     >>>           extent=[100, 700, 1200, 700]) # doctest: +SKIP
     >>> ax.set_title('Reference image', fontsize=20) # doctest: +SKIP
-    >>> ax.set_xlabel('fast axis', fontsize=15) # doctest: +SKIP
-    >>> ax.set_ylabel('slow axis', fontsize=15) # doctest: +SKIP
+    >>> ax.set_xlabel('horizontal axis', fontsize=15) # doctest: +SKIP
+    >>> ax.set_ylabel('vertical axis', fontsize=15) # doctest: +SKIP
     >>> ax.tick_params(labelsize=15) # doctest: +SKIP
     >>> plt.show() # doctest: +SKIP
 
@@ -183,8 +183,8 @@ which can be obtained with :func:`pyrost.STData.get_fit` method.
     >>> fig, ax = plt.subplots(figsize=(10, 10)) # doctest: +SKIP
     >>> ax.imshow(data.get('phase')) # doctest: +SKIP
     >>> ax.set_title('Phase', fontsize=20) # doctest: +SKIP
-    >>> ax.set_xlabel('fast axis', fontsize=15) # doctest: +SKIP
-    >>> ax.set_ylabel('slow axis', fontsize=15) # doctest: +SKIP
+    >>> ax.set_xlabel('horizontal axis', fontsize=15) # doctest: +SKIP
+    >>> ax.set_ylabel('vertical axis', fontsize=15) # doctest: +SKIP
     >>> ax.tick_params(labelsize=15) # doctest: +SKIP
     >>> plt.show() # doctest: +SKIP
 
@@ -198,11 +198,11 @@ which can be obtained with :func:`pyrost.STData.get_fit` method.
     >>> axes[0].plot(fit_obj_fs.pixels, fit_obj_fs.phase, label='Reconstructed profile') # doctest: +SKIP
     >>> axes[0].plot(fit_obj_fs.pixels, fit_obj_fs.model(fit_fs['ph_fit']), # doctest: +SKIP
                      label='Polynomial fit') # doctest: +SKIP
-    >>> axes[0].set_xlabel('fast axis', fontsize=15) # doctest: +SKIP
+    >>> axes[0].set_xlabel('horizontal axis', fontsize=15) # doctest: +SKIP
     >>> axes[1].plot(fit_obj_ss.pixels, fit_obj_ss.phase, label='Reconstructed profile') # doctest: +SKIP
     >>> axes[1].plot(fit_obj_ss.pixels, fit_obj_ss.model(fit_ss['ph_fit']), # doctest: +SKIP
     >>>              label='Polynomial fit') # doctest: +SKIP
-    >>> axes[1].set_xlabel('slow axis') # doctest: +SKIP
+    >>> axes[1].set_xlabel('vertical axis') # doctest: +SKIP
     >>> for ax in axes: # doctest: +SKIP
     >>>     ax.set_title('Phase', fontsize=20) # doctest: +SKIP
     >>>     ax.tick_params(labelsize=15) # doctest: +SKIP

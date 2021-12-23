@@ -2984,7 +2984,7 @@ AAAAAAAAAAAAAL5l/78AAwBWQMO76NQnfwAAAABJRU5ErkJggg==" transform="matrix(1 0 0 1 
 		</g>
 		<g>
 			<g>
-				<text transform="matrix(1 0 0 1 1870.5879 1063.377)" class="st15 st16">ss_size x fs_size pixels</text>
+				<text transform="matrix(1 0 0 1 1870.5879 1063.377)" class="st15 st16">dety_size x detx_size pixels</text>
 				<text transform="matrix(1 0 0 1 1870.5879 1120.9769)" class="st15 st16">pix_size pixel size</text>
 			</g>
 		</g>

@@ -24,7 +24,7 @@ Working with the data
 The function returns a :class:`pyrost.STData` data container,
 which has a set of utility routines (see :class:`pyrost.STData`). For
 instance, usually we work with one dimensional scans, so we can mask the bad
-pixels, integrate the measured frames along the slow axis, mirror the data,
+pixels, integrate the measured frames along the vertical axis, mirror the data,
 and crop it using a region of interest as follows:
 
 .. doctest::
@@ -37,7 +37,7 @@ and crop it using a region of interest as follows:
     >>> fig, ax = plt.subplots(figsize=(14, 6)) # doctest: +SKIP
     >>> ax.imshow(data.get('data')[:, 0]) # doctest: +SKIP
     >>> ax.set_title('Ptychograph', fontsize=20) # doctest: +SKIP
-    >>> ax.set_xlabel('fast axis', fontsize=15) # doctest: +SKIP
+    >>> ax.set_xlabel('horizontal axis', fontsize=15) # doctest: +SKIP
     >>> ax.set_ylabel('frames', fontsize=15) # doctest: +SKIP
     >>> ax.tick_params(labelsize=15) # doctest: +SKIP
     >>> plt.show() # doctest: +SKIP
@@ -88,7 +88,7 @@ Diatom dataset tutorial.
 .. doctest::
 
     >>> st_obj = data.get_st()
-    >>> st_res = st_obj.iter_update_gd(ls_ri=8., ls_pm=1.5, blur=12., sw_fs=5,
+    >>> st_res = st_obj.iter_update_gd(ls_ri=8., ls_pm=1.5, blur=12., sw_x=5,
     >>>                                n_iter=150, learning_rate=5e0)
     >>> data = data.update_phase(st_res)
 

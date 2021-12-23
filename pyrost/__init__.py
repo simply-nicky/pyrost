@@ -11,13 +11,9 @@ algorithm in the case of the high noise present in the measured data.
 """
 from __future__ import absolute_import
 
-from .data_processing import SpeckleTracking, STData
-from .aberrations_fit import AberrationsFit
-from .cxi_protocol import CXIProtocol, CXILoader
+from .cxi_protocol import CXIProtocol
 from .log_protocol import LogProtocol, cxi_converter_sigray, tilt_converter_sigray
+from .data_processing import STData, CXILoader
+from .rst_update import SpeckleTracking
+from .aberrations_fit import AberrationsFit
 from . import bin
-
-del locals()['cxi_protocol']
-del locals()['log_protocol']
-del locals()['data_processing']
-del locals()['aberrations_fit']
