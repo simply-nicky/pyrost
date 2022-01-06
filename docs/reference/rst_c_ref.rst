@@ -1,8 +1,8 @@
-pyrost Core Functions
-=====================
+Core functions
+==============
 
-Core functions of the rst data processing 
-pipeline. All the functions are written in `Cython`_ or C.
+Core functions of the robust speckle tracking reconstruction pipeline.
+All the functions are written in `Cython`_ or C.
 
 .. _Cython: https://cython.org
 
@@ -14,9 +14,11 @@ pipeline. All the functions are written in `Cython`_ or C.
     funcs/KR_reference
     funcs/LOWESS_reference
     funcs/pm_gsearch
+    funcs/pm_rsearch
+    funcs/pm_devolution
     funcs/tr_gsearch
-    funcs/mse_det_frame
-    funcs/mse_ref_frame
-    funcs/mse_total
+    funcs/pm_errors
+    funcs/pm_total_error
+    funcs/ref_errors
+    funcs/ref_total_error
     funcs/ct_integrate
-    funcs/fourier_basis

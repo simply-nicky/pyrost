@@ -1,13 +1,17 @@
-"""Examples
---------
-Generate the default built-in log protocol:
+"""Log protocol (:class:`pyrost.LogProtocol`) is a helper class to
+retrieve the data from the log files generated at the Sigray laboratory,
+which contain the readouts from the motors and other instruments
+during the speckle tracking scan.
 
->>> import pyrost as rst
->>> rst.LogProtocol()
-{'log_keys': {'det_dist': ['Session logged attributes', 'Z-LENSE-DOWN_det_dist'],
-'exposure': ['Type: Method', 'Exposure'], 'n_steps': ['Type: Scan', 'Points count'],
-'...': '...'}, 'datatypes': {'det_dist': 'float', 'exposure': 'float', 'n_steps':
-'int', '...': '...'}}
+Examples:
+    Generate the default built-in log protocol:
+
+    >>> import pyrost as rst
+    >>> rst.LogProtocol()
+    {'log_keys': {'det_dist': ['Session logged attributes', 'Z-LENSE-DOWN_det_dist'],
+    'exposure': ['Type: Method', 'Exposure'], 'n_steps': ['Type: Scan', 'Points count'],
+    '...': '...'}, 'datatypes': {'det_dist': 'float', 'exposure': 'float', 'n_steps':
+    'int', '...': '...'}}
 """
 from __future__ import annotations
 import os
@@ -25,32 +29,12 @@ class LogProtocol(INIParser):
     """Log file protocol class. Contains log file keys to retrieve
     and the data types of the corresponding values.
 
-    Parameters
-    ----------
-    datatypes : dict, optional
-        Dictionary with attributes' datatypes. 'float', 'int', 'bool',
-        or 'str' are allowed.
-    log_keys : dict, optional
-        Dictionary with attributes' log file keys.
-    part_keys : dict, optional
-        Dictionary with the part names inside the log file
-        where the attributes are stored.
-
-    Attributes
-    ----------
-    datatypes : dict
-        Dictionary with attributes' datatypes. 'float', 'int', 'bool',
-        or 'str' are allowed.
-    log_keys : dict
-        Dictionary with attributes' log file keys.
-    part_keys : dict
-        Dictionary with the part names inside the log file
-        where the attributes are stored.
-
-    See Also
-    --------
-    protocol : Full list of data attributes and configuration
-        parameters.
+    Attributes:
+        datatypes : Dictionary with attributes' datatypes. 'float', 'int',
+            'bool', or 'str' are allowed.
+        log_keys : Dictionary with attributes' log file keys.
+        part_keys : Dictionary with the part names inside the log file
+            where the attributes are stored.
     """
     attr_dict = {'datatypes': ('ALL',), 'log_keys': ('ALL',), 'part_keys': ('ALL',)}
     fmt_dict = {'datatypes': 'str', 'log_keys': 'str', 'part_keys': 'str'}
@@ -59,6 +43,14 @@ class LogProtocol(INIParser):
 
     def __init__(self, datatypes: Dict[str, str], log_keys: Dict[str, List[str]],
                  part_keys: Dict[str, str]) -> None:
+        """
+        Args:
+            datatypes : Dictionary with attributes' datatypes. 'float', 'int',
+                'bool', or 'str' are allowed.
+            log_keys : Dictionary with attributes' log file keys.
+            part_keys : Dictionary with the part names inside the log file
+                where the attributes are stored.
+        """
         log_keys = {attr: val for attr, val in log_keys.items() if attr in datatypes}
         datatypes = {attr: val for attr, val in datatypes.items() if attr in log_keys}
         super(LogProtocol, self).__init__(datatypes=datatypes, log_keys=log_keys,
@@ -71,25 +63,15 @@ class LogProtocol(INIParser):
         """Return the default :class:`LogProtocol` object. Extra arguments
         override the default values if provided.
 
-        Parameters
-        ----------
-        datatypes : dict, optional
-            Dictionary with attributes' datatypes. 'float', 'int', or 'bool'
-            are allowed.
-        log_keys : dict, optional
-            Dictionary with attributes' log file keys.
-        part_keys : dict, optional
-            Dictionary with the part names inside the log file
-            where the attributes are stored.
+        Args:
+            datatypes : Dictionary with attributes' datatypes. 'float', 'int',
+                or 'bool' are allowed.
+            log_keys : Dictionary with attributes' log file keys.
+            part_keys : Dictionary with the part names inside the log file
+                where the attributes are stored.
 
-        Returns
-        -------
-        LogProtocol
+        Returns:
             A :class:`LogProtocol` object with the default parameters.
-
-        See Also
-        --------
-        log_protocol : more details about the default CXI protocol.
         """
         return cls.import_ini(LOG_PROTOCOL, datatypes, log_keys, part_keys)
 
@@ -100,24 +82,17 @@ class LogProtocol(INIParser):
         """Initialize a :class:`LogProtocol` object class with an
         ini file.
 
-        Parameters
-        ----------
-        ini_file : str
-            Path to the ini file. Load the default log protocol if None.
-        datatypes : dict, optional
-            Dictionary with attributes' datatypes. 'float', 'int', or 'bool'
-            are allowed. Initialized with `ini_file` if None.
-        log_keys : dict, optional
-            Dictionary with attributes' log file keys. Initialized with
-            `ini_file` if None.
-        part_keys : dict, optional
-            Dictionary with the part names inside the log file
-            where the attributes are stored. Initialized with `ini_file`
-            if None.
+        Args:
+            ini_file : Path to the ini file. Load the default log protocol if None.
+            datatypes : Dictionary with attributes' datatypes. 'float', 'int',
+                or 'bool' are allowed. Initialized with `ini_file` if None.
+            log_keys : Dictionary with attributes' log file keys. Initialized with
+                `ini_file` if None.
+            part_keys : Dictionary with the part names inside the log file
+                where the attributes are stored. Initialized with `ini_file`
+                if None.
 
-        Returns
-        -------
-        LogProtocol
+        Returns:
             A :class:`LogProtocol` object with all the attributes imported
             from the ini file.
         """
@@ -153,14 +128,10 @@ class LogProtocol(INIParser):
         """Return attributes' values from a log file at
         the given `path`.
 
-        Parameters
-        ----------
-        path : str
-            Path to the log file.
+        Args:
+            path : Path to the log file.
 
-        Returns
-        -------
-        attr_dict : dict
+        Returns:
             Dictionary with the attributes retrieved from
             the log file.
         """
@@ -220,17 +191,12 @@ class LogProtocol(INIParser):
     def load_data(self, path: str, frame_indices: Optional[Iterable[int]]=None) -> Dict[str, np.ndarray]:
         """Retrieve the main data array from the log file.
 
-        Parameters
-        ----------
-        path : str
-            Path to the log file.
-        frame_indices : sequence of int, optional
-            Array of data indices to load. Loads info for all the frames
-            by default.
+        Args:
+            path : Path to the log file.
+            frame_indices : Array of data indices to load. Loads info for all
+                the frames by default.
 
-        Returns
-        -------
-        data : dict
+        Returns:
             Dictionary with data fields and their names retrieved
             from the log file.
         """
@@ -298,34 +264,33 @@ class LogProtocol(INIParser):
         data_dict['indices'] = frame_indices
         return data_dict
 
-def cxi_converter_sigray(scan_num, dir_path: str='/gpfs/cfel/group/cxi/labs/MLL-Sigray', target: str='Mo',
-                         distance: Optional[float]=None, lens: str='up',
+def cxi_converter_sigray(scan_num: int, dir_path: str='/gpfs/cfel/group/cxi/labs/MLL-Sigray',
+                         target: str='Mo', distance: Optional[float]=None, lens: str='up',
                          frame_indices: Optional[Iterable[int]]=None, **attributes: Any) -> STData:
     """Convert measured frames and log files from the
     Sigray laboratory to a :class:`pyrost.STData` data
     container.
 
-    Parameters
-    ----------
-    scan_num : int
-        Scan number.
-    target : {'Mo', 'Cu', 'Rh'}, optional
-        Sigray X-ray source target used.
-    distance : float, optional
-        Detector distance in meters.
-    lens : {'up', 'down'}, optional
-        Specify the lens mount. If specified, the lens-to-detector
-        distance will be automatically parsed from the log file.
-    frame_indices : sequence of int, optional
-        Array of data indices to load. Loads info for all the frames
-        by default.
-    **attributes : dict, optional
-        Dictionary of attribute values, that override the loaded
-        values.
+    Args:
+        scan_num : Scan number.
+        dir_path : Path to the root directory, where the data is located.
+        target : Sigray X-ray source target used. The following values are
+            accepted:
 
-    Returns
-    -------
-    STData
+            * 'Mo' : Mollibdenum.
+            * 'Cu' : Cuprum.
+            * 'Rh' : Rhodium.
+
+        distance : Detector distance in meters.
+        lens : Specify if the lens mounted in the upper holder ('up') or in
+            the lower holder ('down'). If specified, the lens-to-detector
+            distance will be automatically parsed from the log file.
+        frame_indices : Array of data indices to load. Loads info for all the
+            frames by default.
+        attributes : Dictionary of attribute values, that override the loaded
+            values.
+
+    Returns:
         Data container with the extracted data.
     """
     wl_dict = {'Mo': 7.092917530503447e-11, 'Cu': 1.5498024804150033e-10,
@@ -357,7 +322,8 @@ def cxi_converter_sigray(scan_num, dir_path: str='/gpfs/cfel/group/cxi/labs/MLL-
 
     with np.load(os.path.join(ROOT_PATH, 'data/sigray_mask.npz')) as mask_file:
         if mask_file['mask'].shape == data_dict['data'].shape[1:]:
-            data_dict['mask'] = mask_file['mask'][()]
+            data_dict['mask'] = np.tile(mask_file['mask'][None],
+                                        (data_dict['data'].shape[0], 1, 1))
 
     x_sample = log_attrs['Session logged attributes'].get('x_sample', 0.0)
     y_sample = log_attrs['Session logged attributes'].get('y_sample', 0.0)
@@ -385,24 +351,27 @@ def cxi_converter_sigray(scan_num, dir_path: str='/gpfs/cfel/group/cxi/labs/MLL-
 
     return STData(**data_dict)
 
-def tilt_converter_sigray(scan_num: int, out_path: str, dir_path: str='/gpfs/cfel/group/cxi/labs/MLL-Sigray',
-                          target: str='Mo', distance: float=2., frame_indices: Optional[Iterable[int]]=None) -> None:
+def tilt_converter_sigray(scan_num: int, out_path: str,
+                          dir_path: str='/gpfs/cfel/group/cxi/labs/MLL-Sigray',
+                          target: str='Mo', distance: float=2.,
+                          frame_indices: Optional[Iterable[int]]=None) -> None:
     """Save measured frames and log files from a tilt
     scan to a h5 file.
 
-    Parameters
-    ----------
-    scan_num : int
-        Scan number.
-    out_path : str
-        Path of the output file
-    target : {'Mo', 'Cu', 'Rh'}, optional
-        Sigray X-ray source target used.
-    distance : float, optional
-        Detector distance in meters.
-    frame_indices : sequence of int, optional
-        Array of data indices to load. Loads info for all the frames
-        by default.
+    Args:
+        scan_num : Scan number.
+        out_path : Path of the output file
+        dir_path : Path to the root directory, where the data is located.
+        target : Sigray X-ray source target used. The following values are
+            accepted:
+
+            * 'Mo' : Mollibdenum.
+            * 'Cu' : Cuprum.
+            * 'Rh' : Rhodium.
+
+        distance : Detector distance in meters.
+        frame_indices : Array of data indices to load. Loads info for all the
+            frames by default.
     """
     energy_dict = {'Mo': 17.48, 'Cu': 8.05, 'Rh': 20.2} # keV
     flip_dict={'Yaw-LENSE-UP': False, 'Pitch-LENSE-UP': False,
@@ -423,7 +392,7 @@ def tilt_converter_sigray(scan_num: int, out_path: str, dir_path: str='/gpfs/cfe
     data_dict = cxi_loader.load_to_dict(h5_files, frame_indices=log_data['indices'])
     data = data_dict['data']
     with np.load(os.path.join(ROOT_PATH, 'data/sigray_mask.npz')) as mask_file:
-        mask = np.tile(mask_file['mask'][None], (data.shape[0], 1, 1))
+        mask = np.tile(mask_file['mask'][None, ()], (data.shape[0], 1, 1))
 
     whitefield = median(data, mask, axis=0)
     db_coord = np.unravel_index(np.argmax(whitefield), whitefield.shape)

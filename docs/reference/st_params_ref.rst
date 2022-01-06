@@ -1,16 +1,18 @@
-st_sim Parameters
-=================
+.. _st-parameters:
+
+Simulation parameters
+=====================
 
 .. raw:: html
     :file: ../figures/st_sim_exp_geom.svg
 
 |
 
-Experimental parameters class(:class:`pyrost.simulation.STParams`) for the
+Simulation parameters class(:class:`pyrost.simulation.STParams`) for the
 one-dimenional Speckle Tracking scan stores all the parameters and provides
 additional methods necessary to perform the simulation. 
 
-List of experimental parameters:
+List of simulation parameters:
 
 * **Experimental geometry parameters**:
 
@@ -55,6 +57,7 @@ List of experimental parameters:
 * **System parameters**:
 
     * `seed` : Seed used in all the pseudo-random number generations.
+    * `num_threads` : Number of threads used in the calculations.
 
 .. note::
 
@@ -103,8 +106,10 @@ The parameters are given by:
 
 .. automodule:: pyrost.simulation.st_parameters
 
+Contents
+--------
+
 .. toctree::
     :maxdepth: 1
-    :caption: Contents
 
     classes/st_params

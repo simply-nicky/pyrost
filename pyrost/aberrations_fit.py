@@ -3,23 +3,20 @@ least-squares algorithm. :class:`pyrost.AberrationsFit` fit the
 lens' aberrations profile with the polynomial function
 using nonlinear least-squares algorithm.
 
-Examples
---------
-Generate a :class:`pyrost.AberrationsFit` object from
-:class:`pyrost.STData` container object `st_data` as follows:
+Examples:
+    Generate a :class:`pyrost.AberrationsFit` object from
+    :class:`pyrost.STData` container object `data` as follows:
 
->>> fit_obj = st_data.get_fit()
+    .. code-block:: python
 
-Fit a pixel aberrations profile with a third
-order polynomial:
-
->>> fit = fit_obj.fit(max_order=3)
->>> print(fit)
-{'c_3': -0.04718488324311934, 'c_4':  0.,
- 'fit': array([-9.03305155e-04,  2.14699128e+00, -1.17287983e+03]),
- 'ph_fit': array([-9.81298119e-07,  3.49854945e-03, -3.82244504e+00,  1.26179239e+03]),
- 'rel_err': array([0.02331385, 0.01966198, 0.01679612]),
- 'r_sq': 0.9923840802879347}
+        >>> fit_obj = data.get_fit()
+        >>> fit = fit_obj.fit(max_order=3)
+        >>> print(fit)
+        {'c_3': -0.04718488324311934, 'c_4':  0.,
+        'fit': array([-9.03305155e-04,  2.14699128e+00, -1.17287983e+03]),
+        'ph_fit': array([-9.81298119e-07,  3.49854945e-03, -3.82244504e+00,  1.26179239e+03]),
+        'rel_err': array([0.02331385, 0.01966198, 0.01679612]),
+        'r_sq': 0.9923840802879347}
 """
 from __future__ import annotations
 from weakref import ReferenceType
@@ -29,105 +26,86 @@ from scipy.optimize import least_squares
 from .data_container import DataContainer, dict_to_object
 
 class LeastSquares:
-    """Basic nonlinear least-squares fit class.
-    Based on :func:`scipy.optimize.least_squares`.
+    """Basic nonlinear least-squares fit class. Based on
+    :func:`scipy.optimize.least_squares`.
 
-    See Also
-    --------
-    :func:`scipy.optimize.least_squares` : Full nonlinear least-squares
+    See Also:
+        :func:`scipy.optimize.least_squares` : Full nonlinear least-squares
         algorithm description.
     """
     @classmethod
     def model(cls, fit: np.ndarray, x: np.ndarray, roi: Iterable) -> np.ndarray:
         """Return values of polynomial model function.
 
-        Parameters
-        ----------
-        fit : numpy.ndarray
-            Array of fit coefficients.
-        x : numpy.ndarray
-            Array of x coordinates.
-        roi : iterable
-            Region of interest in the detector plane.
+        Args:
+            fit : Array of fit coefficients.
+            x : Array of x coordinates.
+            roi : Region of interest in the detector plane.
 
-        Returns
-        -------
-        numpy.ndarray
+        Returns:
             Array of polynomial function values.
         """
         return np.polyval(fit, x[roi[0]:roi[1]])
 
     @classmethod
-    def errors(cls, fit: np.ndarray, x: np.ndarray, y: np.ndarray, roi: Iterable) -> np.ndarray:
+    def errors(cls, fit: np.ndarray, x: np.ndarray, y: np.ndarray,
+               roi: Iterable) -> np.ndarray:
         """Return an array of model residuals.
 
-        Parameters
-        ----------
-        fit : numpy.ndarray
-            Array of fit coefficients.
-        x : numpy.ndarray
-            Array of x coordinates.
-        y : numpy.ndarray
-            Array of y coordinates.
-        roi : iterable
-            Region of interest in the detector plane.
+        Args:
+            fit : Array of fit coefficients.
+            x : Array of x coordinates.
+            y : Array of y coordinates.
+            roi : Region of interest in the detector plane.
 
-        Returns
-        -------
-        numpy.ndarray
+        Returns:
             Array of model residuals.
         """
         return cls.model(fit, x, roi) - y[roi[0]:roi[1]]
 
     @classmethod
-    def fit(cls, x: np.ndarray, y: np.ndarray, max_order: int=2, xtol: float=1e-14, ftol: float=1e-14,
-            loss: str='cauchy', roi: Optional[Iterable]=None) -> Tuple[np.ndarray, np.ndarray, float]:
+    def fit(cls, x: np.ndarray, y: np.ndarray, max_order: int=2,
+            xtol: float=1e-14, ftol: float=1e-14, loss: str='cauchy',
+            roi: Optional[Iterable]=None) -> Tuple[np.ndarray, np.ndarray, float]:
         """Fit `x`, `y` with polynomial function using
         :func:`scipy.optimise.least_squares`.
 
-        Parameters
-        ----------
-        x : numpy.ndarray
-            Array of x coordinates.
-        y : numpy.ndarray
-            Array of y coordinates.
-        max_order : int, optional
-            Maximum order of the polynomial model function.
-        xtol : float, optional
-            Tolerance for termination by the change of the independent variables.
-        ftol : float, optional
-            Tolerance for termination by the change of the cost function.
-        loss : {'linear', 'soft_l1', 'huber', 'cauchy', 'arctan'}, optional
-            Determines the loss function. The following keyword values are
-            allowed:
+        Args:
+            x : Array of x coordinates.
+            y : Array of y coordinates.
+            max_order : Maximum order of the polynomial model function.
+            xtol : Tolerance for termination by the change of the independent variables.
+            ftol : Tolerance for termination by the change of the cost function.
+            loss : Determines the loss function. The following keyword values are
+                allowed:
 
-            * 'linear : ``rho(z) = z``. Gives a standard
-              least-squares problem.
-            * 'soft_l1' : ``rho(z) = 2 * ((1 + z)**0.5 - 1)``. The smooth
-              approximation of l1 (absolute value) loss. Usually a good
-              choice for robust least squares.
-            * 'huber' : ``rho(z) = z if z <= 1 else 2*z**0.5 - 1``. Works
-              similarly to 'soft_l1'.
-            * 'cauchy'' (default) : ``rho(z) = ln(1 + z)``. Severely weakens
-              outliers influence, but may cause difficulties in optimization
-              process.
-            * 'arctan' : ``rho(z) = arctan(z)``. Limits a maximum loss on
-              a single residual, has properties similar to 'cauchy'.
+                * 'linear : ``rho(z) = z``. Gives a standard
+                  least-squares problem.
+                * 'soft_l1' : ``rho(z) = 2 * ((1 + z)**0.5 - 1)``. The smooth
+                  approximation of l1 (absolute value) loss. Usually a good
+                  choice for robust least squares.
+                * 'huber' : ``rho(z) = z if z <= 1 else 2*z**0.5 - 1``. Works
+                  similarly to 'soft_l1'.
+                * 'cauchy'' (default) : ``rho(z) = ln(1 + z)``. Severely weakens
+                  outliers influence, but may cause difficulties in optimization
+                  process.
+                * 'arctan' : ``rho(z) = arctan(z)``. Limits a maximum loss on
+                  a single residual, has properties similar to 'cauchy'.
 
-        Returns
-        -------
-        fit : numpy.ndarray
-            Array of fit coefficients.
-        err : numpy.ndarray
-            Vector of errors of the `fit` fit coefficients.
-        r_sq : float
-            ``R**2`` goodness of fit.
+        Returns:
+            A tuple of three elements ('fit', 'err', 'r_sq'). The elements are the
+            following:
+
+            * 'fit' : Array of fit coefficients.
+            * 'err' : Vector of errors of the `fit` fit coefficients.
+            * 'r_sq' : ``R**2`` goodness of fit.
         """
         if roi is None:
             roi = (0, x.size)
         fit = least_squares(cls.errors, np.zeros(max_order + 1),
                             loss=loss, args=(x, y, roi), xtol=xtol, ftol=ftol)
-        r_sq = 1 - np.sum(cls.errors(fit.x, x, y, roi)**2) / np.sum((y[roi[0]:roi[1]].mean() - y[roi[0]:roi[1]])**2)
+        r_sq = 1 - np.sum(cls.errors(fit.x, x, y, roi)**2) / \
+               np.sum((y[roi[0]:roi[1]].mean() - y[roi[0]:roi[1]])**2)
         if np.linalg.det(fit.jac.T.dot(fit.jac)):
             cov = np.linalg.inv(fit.jac.T.dot(fit.jac))
             err = np.sqrt(np.sum(fit.fun**2) / (fit.fun.size - fit.x.size) * np.abs(np.diag(cov)))
@@ -141,82 +119,68 @@ class AberrationsFit(DataContainer):
     aberrations, deviation  angles, and phase profile with polynomial
     function. Based on :func:`scipy.optimise.least_squares`.
 
-    Parameters
-    ----------
-    parent : STData
-        The Speckle tracking data container, from which the object
-        is derived.
-    **kwargs : dict
-        Necessary and optional attributes specified in the notes
-        section.
+    Attributes:
+        kwargs : Necessary and optional attributes specified in the notes
+            section.
+        det_ap : Aperture angle of a single pixel in detector plane.
+        ref_ap : Aperture angle of a single pixel in reference plane.
 
-    Attributes
-    ----------
-    **kwargs : dict
-        Necessary and optional attributes specified in the notes
-        section.
-    det_ap : float
-        Aperture angle of a single pixel in detector plane.
-    ref_ap : float
-        Aperture angle of a single pixel in reference plane.
+    Notes:
+        **Necessary attributes**:
 
-    Raises
-    ------
-    ValueError
-        If any of the necessary attributes has not been provided.
+        * defocus : Defocus distance [m].
+        * distance : Sample-to-detector distance [m].
+        * pixels : Pixel coordinates [pixels].
+        * pixel_aberrations : Pixel aberrations profile [pixels].
+        * pixel_size : Pixel's size [m].
+        * wavelength : Incoming beam's wavelength [m].
 
-    Notes
-    -----
-    Necessary attributes:
+        **Optional attributes**:
 
-    * defocus : Defocus distance [m].
-    * distance : Sample-to-detector distance [m].
-    * pixels : Pixel coordinates [pixels].
-    * pixel_aberrations : Pixel aberrations profile [pixels].
-    * pixel_size : Pixel's size [m].
-    * wavelength : Incoming beam's wavelength [m].
+        * roi : Region of interest.
+        * thetas : Scattering angles [rad].
+        * theta_ab : angular displacement profile [rad].
+        * phase : aberrations phase profile [rad].
 
-    Optional attributes:
-
-    * roi : Region of interest.
-    * thetas : Scattering angles [rad].
-    * theta_ab : angular displacement profile [rad].
-    * phase : aberrations phase profile [rad].
-
-    See Also
-    --------
-    :func:`scipy.optimize.least_squares` : Full nonlinear
-        least-squares algorithm description.
+    See Also:
+        :func:`scipy.optimize.least_squares` : Full nonlinear least-squares
+        algorithm description.
     """
     attr_set = {'defocus', 'distance', 'parent', 'pixels', 'pixel_aberrations',
                 'pixel_size', 'wavelength'}
-    init_set = {'roi', 'thetas', 'theta_ab', 'phase'}
+    init_set = {'det_ap', 'phase', 'ref_ap', 'roi', 'thetas', 'theta_ab'}
     x_lookup = {'defocus': 'defocus_x', 'pixel_size': 'x_pixel_size'}
     y_lookup = {'defocus': 'defocus_y', 'pixel_size': 'y_pixel_size'}
-    inits = {'roi'      : lambda attrs: np.array([0, attrs['pixels'].size]),
-             'thetas'   : lambda attrs: attrs['pixels'] * np.abs(attrs['pixel_size'] / attrs['distance']),
-             'theta_ab' : lambda attrs: attrs['pixel_aberrations'] * np.abs(attrs['pixel_size'] * \
-                                        attrs['defocus'] / attrs['distance']**2),
-             'phase'    : lambda attrs: 2.0 * np.pi / attrs['wavelength'] * np.cumsum(attrs['theta_ab']),}
+
+    inits = {'det_ap'  : lambda obj: obj.pixel_size / obj.distance,
+             'ref_ap'  : lambda obj: np.abs(obj.det_ap * obj.defocus / obj.distance),
+             'roi'     : lambda obj: np.array([0, obj.pixels.size]),
+             'thetas'  : lambda obj: obj.pixels * obj.det_ap,
+             'theta_ab': lambda obj: obj.pixel_aberrations * obj.ref_ap,
+             'phase'   : lambda obj: 2.0 * np.pi / obj.wavelength * np.cumsum(obj.theta_ab)}
 
     def __init__(self, parent: ReferenceType, **kwargs: Union[float, np.ndarray]) -> None:
+        """
+        Args:
+            parent : The Speckle tracking data container, from which the object
+                is derived.
+            kwargs : Necessary and optional attributes specified in the notes
+                section.
+
+        Raises:
+            ValueError : If any of the necessary attributes has not been provided.
+        """
         super(AberrationsFit, self).__init__(parent=parent, **kwargs)
-        self.det_ap = self.pixel_size / self.distance
-        self.ref_ap = np.abs(self.det_ap * self.defocus / self.distance)
         self.phase -= self.phase.mean()
 
     @dict_to_object
     def crop_data(self, roi: Iterable) -> AberrationsFit:
         """Return a new :class:`AberrationsFit` object with the updated `roi`.
 
-        Parameters
-        ----------
-        roi : iterable
-            Region of interest in the detector plane.
+        Args:
+            roi : Region of interest in the detector plane.
 
-        Returns
-        -------
-        AberrationsFit
+        Returns:
             New :class:`AberrationsFit` object with the updated `roi`.
         """
         return {'st_data': self._reference, 'roi': np.asarray(roi, dtype=int)}
@@ -224,41 +188,34 @@ class AberrationsFit(DataContainer):
     @dict_to_object
     def remove_linear_term(self, fit: Optional[np.ndarray]=None, xtol: float=1e-14,
                            ftol: float=1e-14, loss: str='cauchy') -> AberrationsFit:
-        """Return a new :class:`AberrationsFit` object with the
-        linear term removed from `pixel_aberrations` profile.
+        """Return a new :class:`AberrationsFit` object with the linear term
+        removed from `pixel_aberrations` profile.
 
-        Parameters
-        ----------
-        fit : numpy.ndarray
-            Fit coefficients of a first order polynomial. Inferred from
-            `pixel_aberrations` by fitting a line if None.
-        xtol : float, optional
-            Tolerance for termination by the change of the independent
-            variables.
-        ftol : float, optional
-            Tolerance for termination by the change of the cost function.
-        loss : {'linear', 'soft_l1', 'huber', 'cauchy', 'arctan'}, optional
-            Determines the loss function. The following keyword values
-            are allowed:
+        Args:
+            fit : Fit coefficients of a first order polynomial. Inferred from
+                `pixel_aberrations` by fitting a line if None.
+            xtol : Tolerance for termination by the change of the independent
+                variables.
+            ftol : Tolerance for termination by the change of the cost function.
+            loss : Determines the loss function. The following keyword values
+                are allowed:
 
-            * 'linear' : ``rho(z) = z``. Gives a standard
-              least-squares problem.
-            * 'soft_l1' : ``rho(z) = 2 * ((1 + z)**0.5 - 1)``. The smooth
-              approximation of l1 (absolute value) loss. Usually a good
-              choice for robust least squares.
-            * 'huber' : ``rho(z) = z if z <= 1 else 2*z**0.5 - 1``. Works
-              similarly to 'soft_l1'.
-            * 'cauchy' (default) : ``rho(z) = ln(1 + z)``. Severely weakens
-              outliers influence, but may cause difficulties in optimization
-              process.
-            * 'arctan' : ``rho(z) = arctan(z)``. Limits a maximum loss on
-              a single residual, has properties similar to 'cauchy'.
+                * 'linear' : ``rho(z) = z``. Gives a standard
+                  least-squares problem.
+                * 'soft_l1' : ``rho(z) = 2 * ((1 + z)**0.5 - 1)``. The smooth
+                  approximation of l1 (absolute value) loss. Usually a good
+                  choice for robust least squares.
+                * 'huber' : ``rho(z) = z if z <= 1 else 2*z**0.5 - 1``. Works
+                  similarly to 'soft_l1'.
+                * 'cauchy' (default) : ``rho(z) = ln(1 + z)``. Severely weakens
+                  outliers influence, but may cause difficulties in optimization
+                  process.
+                * 'arctan' : ``rho(z) = arctan(z)``. Limits a maximum loss on
+                  a single residual, has properties similar to 'cauchy'.
 
-        Returns
-        -------
-        AberrationsFit
-            New :class:`AberrationsFit` object with the updated
-            `pixel_aberrations` and `phase`.
+        Returns:
+            New :class:`AberrationsFit` object with the updated `pixel_aberrations`
+            and `phase`.
         """
         if fit is None:
             fit = LeastSquares.fit(x=self.pixels, y=self.pixel_aberrations,
@@ -273,15 +230,11 @@ class AberrationsFit(DataContainer):
         """Return a new :class:`AberrationsFit` object with the pixels
         centered around `center`.
 
-        Parameters
-        ----------
-        center : float
-            Index of the zerro scattering angle or direct
-            beam pixel.
+        Args:
+            center : Index of the zerro scattering angle or direct
+                beam pixel.
 
-        Returns
-        -------
-        STData
+        Returns:
             New :class:`AberrationsFit` object with the updated `pixels`,
             `phase`, and `pixel_aberrations`.
         """
@@ -298,33 +251,25 @@ class AberrationsFit(DataContainer):
 
     @dict_to_object
     def update_phase(self) -> AberrationsFit:
-        """Return a new :class:`AberrationsFit` object with the updated
-        `phase`.
+        """Return a new :class:`AberrationsFit` object with the updated `phase`.
 
-        Returns
-        -------
-        AberrationsFit
+        Returns:
             New :class:`AberrationsFit` object with the updated `phase`.
         """
         return {'st_data': self._reference, 'theta_ab': None,
                 'phase': None}
 
     def get(self, attr: str, value: Optional[Any]=None) -> Any:
-        """Return a dataset with `mask` and `roi` applied.
-        Return `value` if the attribute is not found.
+        """Return a dataset with `mask` and `roi` applied. Return `value`
+        if the attribute is not found.
 
-        Parameters
-        ----------
-        attr : str
-            Attribute to fetch.
-        value : object, optional
-            Return if `attr` is not found.
+        Args:
+            attr : Attribute to fetch.
+            value : Return if `attr` is not found.
 
-        Returns
-        -------
-        numpy.ndarray or object
-            `attr` dataset with `mask` and `roi` applied.
-            `value` if `attr` is not found.
+        Returns:
+            `attr` dataset with `mask` and `roi` applied. `value` if
+            `attr` is not found.
         """
         if attr in self:
             val = super(AberrationsFit, self).get(attr)
@@ -336,33 +281,24 @@ class AberrationsFit(DataContainer):
             return value
 
     def model(self, fit: np.ndarray) -> np.ndarray:
-        """Return the polynomial function values of
-        lens' deviation angles fit.
+        """Return the polynomial function values of lens' deviation angles fit.
 
-        Parameters
-        ----------
-        fit : numpy.ndarray
-            Lens` pixel aberrations fit coefficients.
+        Args:
+            fit : Lens` pixel aberrations fit coefficients.
 
-        Returns
-        -------
-        numpy.ndarray
+        Returns:
             Array of polynomial function values.
         """
         return LeastSquares.model(fit, self.pixels, [0, self.pixels.size])
 
     def pix_to_phase(self, fit: np.ndarray) -> np.ndarray:
-        """Convert fit coefficients from pixel
-        aberrations fit to aberrations phase fit.
+        """Convert fit coefficients from pixel aberrations fit to aberrations
+        phase fit.
 
-        Parameters
-        ----------
-        fit : numpy.ndarray
-            Lens' pixel aberrations fit coefficients.
+        Args:
+            fit : Lens' pixel aberrations fit coefficients.
 
-        Returns
-        -------
-        numpy.ndarray
+        Returns:
             Lens` phase aberrations fit coefficients.
         """
         nfit = np.zeros(fit.size + 1)
@@ -372,17 +308,13 @@ class AberrationsFit(DataContainer):
         return nfit
 
     def phase_to_pix(self, ph_fit: np.ndarray) -> np.ndarray:
-        """Convert fit coefficients from pixel
-        aberrations fit to aberrations phase fit.
+        """Convert fit coefficients from pixel aberrations fit to aberrations
+        phase fit.
 
-        Parameters
-        ----------
-        ph_fit : numpy.ndarray
-            Lens` phase aberrations fit coefficients.
+        Args:
+            ph_fit : Lens` phase aberrations fit coefficients.
 
-        Returns
-        -------
-        numpy.ndarray
+        Returns:
             Lens' pixel aberrations fit coefficients.
         """
         fit = ph_fit[:-1] * self.wavelength / (2 * np.pi * self.ref_ap * self.pixel_size)
@@ -394,49 +326,42 @@ class AberrationsFit(DataContainer):
         """Fit lens' pixel aberrations with polynomial function using
         :func:`scipy.optimise.least_squares`.
 
-        Parameters
-        ----------
-        max_order : int, optional
-            Maximum order of the polynomial model function.
-        xtol : float, optional
-            Tolerance for termination by the change of the independent
-            variables.
-        ftol : float, optional
-            Tolerance for termination by the change of the cost function.
-        loss : {'linear', 'soft_l1', 'huber', 'cauchy', 'arctan'}, optional
-            Determines the loss function. The following keyword values
-            are allowed:
+        Args:
+            max_order : Maximum order of the polynomial model function.
+            xtol : Tolerance for termination by the change of the independent
+                variables.
+            ftol : Tolerance for termination by the change of the cost function.
+            loss : Determines the loss function. The following keyword values
+                are allowed:
 
-            * 'linear' : ``rho(z) = z``. Gives a standard
-              least-squares problem.
-            * 'soft_l1' : ``rho(z) = 2 * ((1 + z)**0.5 - 1)``. The smooth
-              approximation of l1 (absolute value) loss. Usually a good
-              choice for robust least squares.
-            * 'huber' : ``rho(z) = z if z <= 1 else 2*z**0.5 - 1``. Works
-              similarly to 'soft_l1'.
-            * 'cauchy' (default) : ``rho(z) = ln(1 + z)``. Severely weakens
-              outliers influence, but may cause difficulties in optimization
-              process.
-            * 'arctan' : ``rho(z) = arctan(z)``. Limits a maximum loss on
-              a single residual, has properties similar to 'cauchy'.
+                * 'linear' : ``rho(z) = z``. Gives a standard
+                  least-squares problem.
+                * 'soft_l1' : ``rho(z) = 2 * ((1 + z)**0.5 - 1)``. The smooth
+                  approximation of l1 (absolute value) loss. Usually a good
+                  choice for robust least squares.
+                * 'huber' : ``rho(z) = z if z <= 1 else 2*z**0.5 - 1``. Works
+                  similarly to 'soft_l1'.
+                * 'cauchy' (default) : ``rho(z) = ln(1 + z)``. Severely weakens
+                  outliers influence, but may cause difficulties in optimization
+                  process.
+                * 'arctan' : ``rho(z) = arctan(z)``. Limits a maximum loss on
+                  a single residual, has properties similar to 'cauchy'.
 
-        Returns
-        -------
-        dict
-            :class:`dict` with the following fields defined:
+        Returns:
+            A dictionary with the fitting information. The following elements are
+            defined inside:
 
-            * c_3 : Third order aberrations coefficient [rad / mrad^3].
-            * c_4 : Fourth order aberrations coefficient [rad / mrad^4].
-            * fit : Array of the polynomial function coefficients of the
+            * 'c_3' : Third order aberrations coefficient [rad / mrad^3].
+            * 'c_4' : Fourth order aberrations coefficient [rad / mrad^4].
+            * 'fit' : Array of the polynomial function coefficients of the
               pixel aberrations fit.
-            * ph_fit : Array of the polynomial function coefficients of
+            * 'ph_fit' : Array of the polynomial function coefficients of
               the phase aberrations fit.
-            * rel_err : Vector of relative errors of the fit coefficients.
-            * r_sq : ``R**2`` goodness of fit.
+            * 'rel_err' : Vector of relative errors of the fit coefficients.
+            * 'r_sq' : ``R**2`` goodness of fit.
 
-        See Also
-        --------
-        :func:`scipy.optimize.least_squares` : Full nonlinear least-squares
+        See Also:
+            :func:`scipy.optimize.least_squares` : Full nonlinear least-squares
             algorithm description.
         """
         fit, err, r_sq = LeastSquares.fit(x=self.pixels, y=self.pixel_aberrations,
@@ -456,49 +381,42 @@ class AberrationsFit(DataContainer):
         """Fit lens' phase aberrations with polynomial function using
         :func:`scipy.optimise.least_squares`.
 
-        Parameters
-        ----------
-        max_order : int, optional
-            Maximum order of the polynomial model function.
-        xtol : float, optional
-            Tolerance for termination by the change of the independent
-            variables.
-        ftol : float, optional
-            Tolerance for termination by the change of the cost function.
-        loss : {'linear', 'soft_l1', 'huber', 'cauchy', 'arctan'}, optional
-            Determines the loss function. The following keyword values
-            are allowed:
+        Args:
+            max_order : Maximum order of the polynomial model function.
+            xtol : Tolerance for termination by the change of the independent
+                variables.
+            ftol : Tolerance for termination by the change of the cost function.
+            loss : Determines the loss function. The following keyword values
+                are allowed:
 
-            * 'linear' : ``rho(z) = z``. Gives a standard
-              least-squares problem.
-            * 'soft_l1' : ``rho(z) = 2 * ((1 + z)**0.5 - 1)``. The smooth
-              approximation of l1 (absolute value) loss. Usually a good
-              choice for robust least squares.
-            * 'huber' : ``rho(z) = z if z <= 1 else 2*z**0.5 - 1``. Works
-              similarly to 'soft_l1'.
-            * 'cauchy' (default) : ``rho(z) = ln(1 + z)``. Severely weakens
-              outliers influence, but may cause difficulties in optimization
-              process.
-            * 'arctan' : ``rho(z) = arctan(z)``. Limits a maximum loss on
-              a single residual, has properties similar to 'cauchy'.
+                * 'linear' : ``rho(z) = z``. Gives a standard
+                  least-squares problem.
+                * 'soft_l1' : ``rho(z) = 2 * ((1 + z)**0.5 - 1)``. The smooth
+                  approximation of l1 (absolute value) loss. Usually a good
+                  choice for robust least squares.
+                * 'huber' : ``rho(z) = z if z <= 1 else 2*z**0.5 - 1``. Works
+                  similarly to 'soft_l1'.
+                * 'cauchy' (default) : ``rho(z) = ln(1 + z)``. Severely weakens
+                  outliers influence, but may cause difficulties in optimization
+                  process.
+                * 'arctan' : ``rho(z) = arctan(z)``. Limits a maximum loss on
+                  a single residual, has properties similar to 'cauchy'.
 
-        Returns
-        -------
-        dict
-            :class:`dict` with the following fields defined:
+        Returns:
+            A dictionary with the fitting information. The following elements are
+            defined inside:
 
-            * c_3 : Third order aberrations coefficient [rad / mrad^3].
-            * c_4 : Fourth order aberrations coefficient [rad / mrad^4].
-            * fit : Array of the polynomial function coefficients of the
+            * 'c_3' : Third order aberrations coefficient [rad / mrad^3].
+            * 'c_4' : Fourth order aberrations coefficient [rad / mrad^4].
+            * 'fit' : Array of the polynomial function coefficients of the
               pixel aberrations fit.
-            * ph_fit : Array of the polynomial function coefficients of
+            * 'ph_fit' : Array of the polynomial function coefficients of
               the phase aberrations fit.
-            * rel_err : Vector of relative errors of the fit coefficients.
-            * r_sq : ``R**2`` goodness of fit.
+            * 'rel_err' : Vector of relative errors of the fit coefficients.
+            * 'r_sq' : ``R**2`` goodness of fit.
 
-        See Also
-        --------
-        :func:`scipy.optimize.least_squares` : Full nonlinear least-squares
+        See Also:
+            :func:`scipy.optimize.least_squares` : Full nonlinear least-squares
             algorithm description.
         """
         ph_fit, err, r_sq = LeastSquares.fit(x=self.pixels, y=self.phase, roi=self.roi,

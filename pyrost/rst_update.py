@@ -1,5 +1,10 @@
+""":class:`pyrost.SpeckleTracking` provides an interface to perform the reference
+image and lens wavefront reconstruction and offers two methods
+(:func:`pyrost.SpeckleTracking.iter_update`, :func:`pyrost.SpeckleTracking.iter_update_gd`)
+to perform the iterative RST update until the error metric converges to a minimum.
+"""
 from __future__ import annotations
-from typing import Dict, Optional, Union
+from typing import Dict, List, Optional, Tuple, Union
 from weakref import ReferenceType
 from tqdm.auto import tqdm
 import numpy as np
@@ -11,75 +16,73 @@ from .bin import (gaussian_filter, KR_reference, LOWESS_reference, pm_gsearch,
 
 class SpeckleTracking(DataContainer):
     """Wrapper class for the  Robust Speckle Tracking algorithm.
-    Performs `reference_image` and `pixel_map` updates.
+    Provides an interface to perform the reference image and lens
+    wavefront reconstruction.
 
-    Parameters
-    ----------
-    parent : STData
-        The Speckle tracking data container, from which the
-        object is derived.
-    **kwargs : dict
-        Dictionary of the attributes' data specified in `attr_set`
-        and `init_set`.
+    Attributes:
+        attr_set : Set of attributes in the container which are necessary
+            to initialize in the constructor.
+        init_set : Set of optional data attributes.
 
-    Attributes
-    ----------
-    attr_set : set
-        Set of attributes in the container which are necessary
-        to initialize in the constructor.
-    init_set : set
-        Set of optional data attributes.
+    Notes:
+        **Necessary attributes**:
 
-    Raises
-    ------
-    ValueError
-        If an attribute specified in `attr_set` has not been provided.
+        * data : Measured frames.
+        * di_pix : The sample's translations along the vertical axis in
+          pixels.
+        * dj_pix : The sample's translations along the horizontal axis in
+          pixels.
+        * ds_y : `reference_image` sampling interval in pixels along
+          the vertical axis.
+        * ds_x : `reference_image` sampling interval in pixels along
+          the horizontal axis.
+        * num_threads : Specify number of threads that are used in all the
+          calculations.
+        * parent : The parent :class:`STData` container.
+        * pixel_map : The pixel mapping between the data at the detector's
+          plane and the reference image at the reference plane.
+        * sigma : Standard deviation of measured frames.
+        * whitefield : Measured frames' whitefield.
 
-    Notes
-    -----
-    Necessary attributes:
+        **Optional attributes**:
 
-    * data : Measured frames.
-    * di_pix : The sample's translations along the vertical axis in pixels.
-    * dj_pix : The sample's translations along the horizontal axis in pixels.
-    * whitefield : Measured frames' whitefield.
-    * pixel_map : The pixel mapping between the data at the detector's
-      plane and the reference image at the reference plane.
-    * ds_y : `reference_image` sampling interval in pixels along
-      the vertical axis.
-    * ds_x : `reference_image` sampling interval in pixels along
-      the horizontal axis.
-    * num_threads : Specify number of threads that are used in all the
-      calculations.
+        * error : Average MSE (mean-squared-error) of the reference image
+          and pixel mapping fit.
+        * hval : Smoothing kernel bandwidth used in `reference_image`
+          regression. The value is given in pixels.
+        * m0 : The lower bounds of the horizontal detector axis of
+          the reference image at the reference frame in pixels.
+        * n0 : The lower bounds of the vertical detector axis of
+          the reference image at the reference frame in pixels.
+        * reference_image : The unabberated reference image of the sample.
 
-    Optional attributes:
+    See Also:
 
-    * error : Average MSE (mean-squared-error) of the reference image
-      and pixel mapping fit.
-    * hval : Smoothing kernel bandwidth used in `reference_image`
-      regression. The value is given in pixels.
-    * m0 : The lower bounds of the horizontal detector axis of
-      the reference image at the reference frame in pixels.
-    * n0 : The lower bounds of the vertical detector axis of
-      the reference image at the reference frame in pixels.
-    * reference_image : The unabberated reference image of the sample.
-    * pm_updater: :class:`PixelMapUpdater` object
-    * sigma : Variance of :code:`data / whitefield`.
+        * :func:`pyrost.bin.KR_reference` : Full details of the `reference_image`
+          update using kernel regression.
+        * :func:`pyrost.bin.LOWESS_reference` : Full details of the `reference_image`
+          update using local weighted linear regression.
+        * :func:`pyrost.bin.pm_gsearch` : Full details of the `pixel_map` grid search
+          update.
 
-    See Also
-    --------
-    bin.KR_reference : Full details of the `reference_image` update
-        using kernel regression.
-    bin.LOWESS_reference : Full details of the `reference_image` update
-        using local weighted linear regression.
-    bin.pm_gsearch : Full details of the `pixel_map` grid search update.
     """
-    attr_set = {'ds_y', 'ds_x', 'data', 'dj_pix', 'di_pix', 'num_threads',
+    attr_set = {'data', 'dj_pix', 'di_pix', 'ds_y', 'ds_x', 'num_threads',
                 'parent', 'pixel_map', 'sigma', 'whitefield'}
-    init_set = {'error', 'hval', 'n0', 'm0', 'reference_image', 'pm_updater'}
+    init_set = {'error', 'hval', 'n0', 'm0', 'reference_image'}
     inits = {}
 
     def __init__(self, parent: ReferenceType, **kwargs: Union[int, float, np.ndarray]) -> None:
+        """
+        Args:
+            parent : The Speckle tracking data container, from which the
+                object is derived.
+            kwargs : Dictionary of the attributes' data specified in `attr_set`
+                and `init_set`.
+
+        Raises:
+            ValueError : If an attribute specified in `attr_set` has not been
+                provided.
+        """
         super(SpeckleTracking, self).__init__(parent=parent, **kwargs)
 
     def __repr__(self) -> str:
@@ -97,33 +100,25 @@ class SpeckleTracking(DataContainer):
         """Return a new :class:`SpeckleTracking` object
         with the updated `reference_image`.
 
-        Parameters
-        ----------
-        hval : float
-            Smoothing kernel bandwidth used in `reference_image`
-            regression. The value is given in pixels.
-        method : {'KerReg', 'LOWESS'}, optional
-            `reference_image` update algorithm. The following keyword
-            values are allowed:
+        Args:
+            hval : Smoothing kernel bandwidth used in `reference_image`
+                regression. The value is given in pixels.
+            method : `reference_image` update algorithm. The following keyword
+                values are allowed:
 
-            * 'KerReg' : Kernel regression algorithm.
-            * 'LOWESS' : Local weighted linear regression.
+                * 'KerReg' : Kernel regression algorithm.
+                * 'LOWESS' : Local weighted linear regression.
 
-        Returns
-        -------
-        SpeckleTracking
+        Returns:
             A new :class:`SpeckleTracking` object with the updated
             `reference_image`.
 
-        Raises
-        ------
-        ValueError
-            If `method` keyword value is not valid.
+        Raises:
+            ValueError : If `method` keyword value is not valid.
 
-        See Also
-        --------
-        bin.make_reference : Full details of the `reference_image` update
-            algorithm.
+        See Also:
+            :func:`pyrost.bin.make_reference` : Full details of the `reference_image`
+                update algorithm.
         """
         if method == 'KerReg':
             I0, n0, m0 = KR_reference(I_n=self.data, W=self.whitefield, u=self.pixel_map,
@@ -145,74 +140,68 @@ class SpeckleTracking(DataContainer):
         """Return a new :class:`SpeckleTracking` object with
         the updated `pixel_map`.
 
-        Parameters
-        ----------
-        sw_x : float
-            Search window size in pixels along the horizontal detector
-            axis.
-        sw_y : float, optional
-            Search window size in pixels along the vertical detector
-            axis.
-        blur : float, optional
-            Smoothing kernel bandwidth used in `pixel_map`
-            regularisation. The value is given in pixels.
-        integrate : bool, optional
-            Ensure that the updated pixel map is irrotational by integrating
-            and taking the derivative.
-        method : {'de', 'gsearch', 'rsearch'}, optional
-            `pixel_map` update algorithm. The following keyword
-            values are allowed:
+        Args:
+            sw_x : Search window size in pixels along the horizontal detector
+                axis.
+            sw_y : Search window size in pixels along the vertical detector
+                axis.
+            blur : Smoothing kernel bandwidth used in `pixel_map`
+                regularisation. The value is given in pixels.
+            integrate : Ensure that the updated pixel map is irrotational by integrating
+                and taking the derivative.
+            method : `pixel_map` update algorithm. The following keyword
+                values are allowed:
 
-            * 'gsearch' : Grid search algorithm.
-            * 'rsearch' : Random search algorithm.
-            * 'de'      : Differential evolution algorithm.
-        extra_args : dict, optional
-            Extra arguments for pixel map update methods. Accepts the
-            following keyword arguments:
+                * 'gsearch' : Grid search algorithm.
+                * 'rsearch' : Random search algorithm.
+                * 'de'      : Differential evolution algorithm.
 
-            * 'grid_size' : Grid size along one of the detector axes for
-              the 'gsearch' method. The grid shape is then (grid_size,
-              grid_size). The default value is :code:`int(0.5 * (sw_x + sw_y))`.
-            * 'n_trials' : Number of points generated at each  pixel in
-              the detector grid for the 'rsearch' method. The default value
-              is :code:`int(0.25 * (sw_x + sw_y)**2)`.
-            * 'n_iter' : The maximum number of generations over which the
-              entire population is evolved in the 'de' method. The default
-              value is 5.
-            * 'pop_size' : The total population size in the 'de' method.
-              Must be greater or equal to 4. The default value is
-              :code:`max(int(0.25 * (sw_x + sw_y)**2) / n_iter, 4)`.
-            * 'mutation' : The mutation constant in the 'de' method. It should
-              be in the range [0, 2]. The default value is 0.75.
-            * 'recombination' : The recombination constant  in the 'de' method,
-              should be in the range [0, 1]. The default value is 0.7.
-            * 'seed' : Specify seed for the random number generation.
-              Generated automatically if not provided.
-        loss : {'Epsilon', 'Huber', 'L1', 'L2'}, optional
-            Choose between the following loss functions:
+            extra_args : Extra arguments for pixel map update methods. Accepts the
+                following keyword arguments:
 
-            * 'Epsilon': Epsilon loss function (epsilon = 0.25)
-            * 'Huber' : Huber loss function (k = 1.345)
-            * 'L1' : L1 norm loss function.
-            * 'L2' : L2 norm loss function.
+                * 'grid_size' : Grid size along one of the detector axes for
+                  the 'gsearch' method. The grid shape is then (grid_size,
+                  grid_size). The default value is :code:`int(0.5 * (sw_x + sw_y))`.
+                * 'n_trials' : Number of points generated at each  pixel in
+                  the detector grid for the 'rsearch' method. The default value
+                  is :code:`int(0.25 * (sw_x + sw_y)**2)`.
+                * 'n_iter' : The maximum number of generations over which the
+                  entire population is evolved in the 'de' method. The default
+                  value is 5.
+                * 'pop_size' : The total population size in the 'de' method.
+                  Must be greater or equal to 4. The default value is
+                  :code:`max(int(0.25 * (sw_x + sw_y)**2) / n_iter, 4)`.
+                * 'mutation' : The mutation constant in the 'de' method. It should
+                  be in the range [0, 2]. The default value is 0.75.
+                * 'recombination' : The recombination constant  in the 'de' method,
+                  should be in the range [0, 1]. The default value is 0.7.
+                * 'seed' : Specify seed for the random number generation.
+                  Generated automatically if not provided.
 
-        Returns
-        -------
-        SpeckleTracking
+            loss : Choose between the following loss functions:
+
+                * 'Epsilon': Epsilon loss function (epsilon = 0.25)
+                * 'Huber' : Huber loss function (k = 1.345)
+                * 'L1' : L1 norm loss function.
+                * 'L2' : L2 norm loss function.
+
+        Returns:
             A new :class:`SpeckleTracking` object with the updated
             `pixel_map`.
 
-        Raises
-        ------
-        AttributeError
-            If `reference_image` was not generated beforehand.
-        ValueError
-            If `method` keyword value is not valid.
+        Raises:
+            AttributeError : If `reference_image` was not generated beforehand.
+            ValueError : If `method` keyword value is not valid.
 
-        See Also
-        --------
-        bin.pm_gsearch, PixelMapUpdater : Full details
-            of the `pixel_map` update methods.
+        See Also:
+
+            * :func:`pyrost.bin.pm_gsearch` : Full details of the grid search
+              update method.
+            * :func:`pyrost.bin.pm_rsearch` : Full details of the random search
+              update method.
+            * :func:`pyrost.bin.pm_devolution` : Full details of the differential
+              evolution update method.
+
         """
         if self.reference_image is None:
             raise AttributeError('The reference image has not been generated')
@@ -270,30 +259,27 @@ class SpeckleTracking(DataContainer):
         """Return a new :class:`SpeckleTracking` object with
         the updated mean residual `error`.
 
-        Parameters
-        ----------
-        loss : {'Epsilon', 'Huber', 'L1', 'L2'}, optional
-            Choose between the following loss functions:
+        Args:
+            loss : Choose between the following loss functions:
 
-            * 'Epsilon': Epsilon loss function (epsilon = 0.25)
-            * 'Huber' : Huber loss function (k = 1.345)
-            * 'L1' : L1 norm loss function.
-            * 'L2' : L2 norm loss function.
+                * 'Epsilon': Epsilon loss function (epsilon = 0.25)
+                * 'Huber' : Huber loss function (k = 1.345)
+                * 'L1' : L1 norm loss function.
+                * 'L2' : L2 norm loss function.
 
-        Returns
-        -------
-        SpeckleTracking
+        Returns:
             A new :class:`SpeckleTracking` object with the updated
             `error`.
 
-        Raises
-        ------
-        AttributeError
-            If `reference_image` was not generated beforehand.
+        Raises:
+            AttributeError : If `reference_image` was not generated
+                beforehand.
 
-        See Also
-        --------
-        bin.mse_total : Full details of the error metric.
+        See Also:
+            * :func:`pyrost.bin.ref_errors` : Full details of the reference
+              update error metric.
+            * :func:`pyrost.bin.pm_errors` : Full details of the pixel
+              mapping update error metric.
         """
         if self.reference_image is None:
             raise AttributeError('The reference image has not been generated')
@@ -305,45 +291,35 @@ class SpeckleTracking(DataContainer):
         return {'error': error}
 
     @dict_to_object
-    def update_translations(self, sw_x: float, sw_y: float=0.0, blur=0.0, loss: str='Huber') -> SpeckleTracking:
+    def update_translations(self, sw_x: float, sw_y: float=0.0, blur=0.0,
+                            loss: str='Huber') -> SpeckleTracking:
         """Return a new :class:`SpeckleTracking` object with
-        the updated sample pixel translations (`di_pix`,
-        `dj_pix`).
+        the updated sample pixel translations (`di_pix`, `dj_pix`).
 
-        Parameters
-        ----------
-        sw_x : float
-            Search window size in pixels along the horizontal detector
-            axis.
-        sw_y : float, optional
-            Search window size in pixels along the vertical detector
-            axis.
-        blur : float, optional
-            Smoothing kernel bandwidth used in `dj_pix` and `di_pix`
-            post-update. The value is given in pixels.
-        loss : {'Epsilon', 'Huber', 'L1', 'L2'}, optional
-            Choose between the following loss functions:
+        Args:
+            sw_x : Search window size in pixels along the horizontal detector
+                axis.
+            sw_y : Search window size in pixels along the vertical detector
+                axis.
+            blur : Smoothing kernel bandwidth used in `dj_pix` and `di_pix`
+                post-update. The value is given in pixels.
+            loss : Choose between the following loss functions:
 
-            * 'Epsilon': Epsilon loss function (epsilon = 0.25)
-            * 'Huber' : Huber loss function (k = 1.345)
-            * 'L1' : L1 norm loss function.
-            * 'L2' : L2 norm loss function.
+                * 'Epsilon': Epsilon loss function (epsilon = 0.25)
+                * 'Huber' : Huber loss function (k = 1.345)
+                * 'L1' : L1 norm loss function.
+                * 'L2' : L2 norm loss function.
 
-        Returns
-        -------
-        SpeckleTracking
+        Returns:
             A new :class:`SpeckleTracking` object with the updated
             `di_pix`, `dj_pix`.
 
-        Raises
-        ------
-        AttributeError
-            If `reference_image` was not generated beforehand.
+        Raises:
+            AttributeError : If `reference_image` was not generated beforehand.
 
-        See Also
-        --------
-        bin.tr_gsearch : Full details of the sample
-            translations update algorithm.
+        See Also:
+            :func:`pyrost.bin.tr_gsearch` : Full details of the sample translations
+                update algorithm.
         """
         if self.reference_image is None:
             raise AttributeError('The reference image has not been generated')
@@ -365,29 +341,21 @@ class SpeckleTracking(DataContainer):
     def error_profile(self, kind: str='pixel_map', loss: str='Huber') -> np.ndarray:
         """Return a residual profile.
 
-        Parameters
-        ----------
-        kind : {'pixel_map', 'reference'}, optional
-            Choose between the residuals of the pixel mapping or
-            reference image regression. Return a residual profile.
-        loss : {'Epsilon', 'Huber', 'L1', 'L2'}, optional
-            Choose between the following loss functions:
+        Args:
+            kind : Choose between generating the error metric of the pixel mapping
+                ('pixel_map') or reference image ('reference_image')update.
+            loss : Choose between the following loss functions:
 
-            * 'Epsilon': Epsilon loss function (epsilon = 0.25)
-            * 'Huber' : Huber loss function (k = 1.345)
-            * 'L1' : L1 norm loss function.
-            * 'L2' : L2 norm loss function.
+                * 'Epsilon': Epsilon loss function (epsilon = 0.25)
+                * 'Huber' : Huber loss function (k = 1.345)
+                * 'L1' : L1 norm loss function.
+                * 'L2' : L2 norm loss function.
 
-        Raises
-        ------
-        AttributeError
-            If `reference_image` was not generated beforehand.
-        ValueError
-            If `kind` keyword value is not valid.
+        Raises:
+            AttributeError : If `reference_image` was not generated beforehand.
+            ValueError : If `kind` keyword value is not valid.
 
-        Returns
-        -------
-        errors : np.ndarray
+        Returns:
             Residual profile.
         """
         if self.reference_image is None:
@@ -411,151 +379,146 @@ class SpeckleTracking(DataContainer):
                   epsilon: float=1e-4, verbose: bool=False) -> float:
         """Find the optimal kernel bandwidth using the BFGS algorithm.
 
-        Parameters
-        ----------
-        h0 : float, optional
-            Initial guess.
-        alpha : float, optional
-            Weight of the variance term.
-        method : {'KerReg', 'LOWESS'}, optional
-            `reference_image` update algorithm. The following keyword
-            values are allowed:
+        Args:
+            h0 : Initial guess of kernel bandwidth in pixels.
+            alpha : Weight of the variance term in the error metric.
+            method : `reference_image` update algorithm. The following
+                keyword values are allowed:
 
-            * 'KerReg' : Kernel regression algorithm.
-            * 'LOWESS' : Local weighted linear regression.
-        loss : {'Epsilon', 'Huber', 'L1', 'L2'}, optional
-            Choose between the following loss functions:
+                * 'KerReg' : Kernel regression algorithm.
+                * 'LOWESS' : Local weighted linear regression.
 
-            * 'Epsilon': Epsilon loss function (epsilon = 0.25).
-            * 'Huber' : Huber loss function (k = 1.345).
-            * 'L1' : L1 norm loss function.
-            * 'L2' : L2 norm loss function.
-        epsilon : float, optional
-            The step size used in the estimation of the fitness gradient.
-        verbose : bool, optional
-            Print convergence message if True.
+            loss : Choose between the following loss functions:
 
-        Returns
-        -------
-        hopt : float
+                * 'Epsilon': Epsilon loss function (epsilon = 0.25).
+                * 'Huber' : Huber loss function (k = 1.345).
+                * 'L1' : L1 norm loss function.
+                * 'L2' : L2 norm loss function.
+
+            epsilon : The step size used in the estimation of the fitness
+                gradient.
+            verbose : Print convergence message if True.
+
+        Returns:
             Optimal kernel bandwidth in pixels.
         """
         hopt = fmin_bfgs(self.ref_total_error, h0, disp=verbose, args=(alpha, method, loss),
                          epsilon=epsilon)
         return hopt.item()
 
-    def iter_update_gd(self, sw_x: float, sw_y: float=0.0, blur: float=0.0, h0: Optional[float]=None,
-                       n_iter: int=30, f_tol: float=0., ref_method: str='KerReg', pm_method: str='gsearch',
-                       pm_args: Dict[str, Union[bool, int, float, str]]={}, options: Dict[str, Union[bool, float, str]]={},
-                       verbose: bool=True) -> SpeckleTracking:
+    def iter_update_gd(self, sw_x: float, sw_y: float=0.0, blur: float=0.0,
+                       h0: Optional[float]=None, n_iter: int=30, f_tol: float=0.,
+                       ref_method: str='KerReg', pm_method: str='gsearch',
+                       pm_args: Dict[str, Union[bool, int, float, str]]={},
+                       options: Dict[str, Union[bool, float, str]]={},
+                       verbose: bool=True) -> Tuple[SpeckleTracking, Dict[str, List[float]]]:
         """Perform iterative Robust Speckle Tracking update. `h0` and
         `blur` define high frequency cut-off to supress the noise. `h0`
         is iteratively updated by dint of Gradient Descent. Iterative update
         terminates when the difference between total mean-squared-error (MSE)
         values of the two last iterations is less than `f_tol`.
 
-        Parameters
-        ----------
-        sw_x : float
-            Search window size in pixels along the horizontal detector
-            axis.
-        sw_y : float, optional
-            Search window size in pixels along the vertical detector
-            axis.
-        blur : float, optional
-            Smoothing kernel bandwidth used in `pixel_map`
-            regularisation. The value is given in pixels.
-        h0 : float, optional
-            Smoothing kernel bandwidth used in `reference_image`
-            estimation. The value is given in pixels. The value
-            is estimated using :func:`SpeckleTracking.find_hopt`
-            by default.
-        n_iter : int, optional
-            Maximum number of iterations.
-        f_tol : float, optional
-            Tolerance for termination by the change of the total MSE.
-        ref_method : {'KerReg', 'LOWESS'}, optional
-            `reference_image` update algorithm. The following keyword
-            values are allowed:
+        Args:
+            sw_x : Search window size in pixels along the horizontal
+                detector axis.
+            sw_y : Search window size in pixels along the vertical detector
+                axis.
+            blur : Smoothing kernel bandwidth used in `pixel_map`
+                regularisation. The value is given in pixels.
+            h0 : Smoothing kernel bandwidth used in `reference_image`
+                estimation. The value is given in pixels. The value
+                is estimated using :func:`SpeckleTracking.find_hopt`
+                by default.
+            n_iter : Maximum number of iterations.
+            f_tol : Tolerance for termination by the change of the total MSE.
+            ref_method : `reference_image` update algorithm. The following
+                keyword values are allowed:
 
-            * 'KerReg' : Kernel regression algorithm.
-            * 'LOWESS' : Local weighted linear regression.
-        pm_method : {'gs', 'de'}, optional
-            `pixel_map` update algorithm. The following keyword
-            values are allowed:
+                * 'KerReg' : Kernel regression algorithm.
+                * 'LOWESS' : Local weighted linear regression.
 
-            * 'gsearch' : Grid search algorithm.
-            * 'rsearch' : Random search algorithm.
-            * 'de'      : Differential evolution algorithm.
-        pm_args : dict, optional
-            Pixel map update options. Accepts the following keyword
-            arguments:
+            pm_method : `pixel_map` update algorithm. The following keyword
+                values are allowed:
 
-            * 'integrate' : Ensure that the updated pixel map is irrotational
-              by integrating and taking the derivative. False by default.
-            * 'grid_size' : Grid size along one of the detector axes for
-              the 'gsearch' method. The grid shape is then (grid_size,
-              grid_size). The default value is :code:`int(0.5 * (sw_x + sw_y))`.
-            * 'n_trials' : Number of points generated at each  pixel in
-              the detector grid for the 'rsearch' method. The default value
-              is :code:`int(0.25 * (sw_x + sw_y)**2)`.
-            * 'n_iter' : The maximum number of generations over which the
-              entire population is evolved in the 'de' method. The default
-              value is 5.
-            * 'pop_size' : The total population size in the 'de' method.
-              Must be greater or equal to 4. The default value is
-              :code:`max(int(0.25 * (sw_x + sw_y)**2) / n_iter, 4)`.
-            * 'mutation' : The mutation constant in the 'de' method. It should
-              be in the range [0, 2]. The default value is 0.75.
-            * 'recombination' : The recombination constant  in the 'de' method,
-              should be in the range [0, 1]. The default value is 0.7.
-            * 'seed' : Specify seed for the random number generation.
-              Generated automatically if not provided.
-            * 'loss': Choose between the following loss functions
-              for the target function of the pixel mapping
-              estimator:
+                * 'gsearch' : Grid search algorithm.
+                * 'rsearch' : Random search algorithm.
+                * 'de'      : Differential evolution algorithm.
 
-              * 'Epsilon': Epsilon loss function (epsilon = 0.25)
-              * 'Huber' : Huber loss function (k = 1.345)
-              * 'L1' : L1 norm loss function.
-              * 'L2' : L2 norm loss function.
-              The default value is 'Huber'.
-        options : dict, optional
-            Extra options. Accepts the following keyword arguments:
+            pm_args : Pixel map update options. Accepts the following keyword
+                arguments:
 
-            * 'alpha' : Weight of the variance term in kernel bandwidth
-              selector.
-            * 'h0' : Initial guess of the optimal bandwidth in
-              :func:`SpeckleTracking.find_hopt`. The value is used
-              if `h0` is None.
-            * 'loss': Choose between the following loss functions
-              for the target function of the reference image
-              estimator:
+                * 'integrate' : Ensure that the updated pixel map is irrotational
+                  by integrating and taking the derivative. False by default.
+                * 'grid_size' : Grid size along one of the detector axes for
+                  the 'gsearch' method. The grid shape is then (grid_size,
+                  grid_size). The default value is :code:`int(0.5 * (sw_x + sw_y))`.
+                * 'n_trials' : Number of points generated at each  pixel in
+                  the detector grid for the 'rsearch' method. The default value
+                  is :code:`int(0.25 * (sw_x + sw_y)**2)`.
+                * 'n_iter' : The maximum number of generations over which the
+                  entire population is evolved in the 'de' method. The default
+                  value is 5.
+                * 'pop_size' : The total population size in the 'de' method.
+                  Must be greater or equal to 4. The default value is
+                  :code:`max(int(0.25 * (sw_x + sw_y)**2) / n_iter, 4)`.
+                * 'mutation' : The mutation constant in the 'de' method. It should
+                  be in the range [0, 2]. The default value is 0.75.
+                * 'recombination' : The recombination constant  in the 'de' method,
+                  should be in the range [0, 1]. The default value is 0.7.
+                * 'seed' : Specify seed for the random number generation.
+                  Generated automatically if not provided.
+                * 'loss': Choose between the following loss functions
+                  for the target function of the pixel mapping
+                  estimator:
 
-              * 'Epsilon': Epsilon loss function (epsilon = 0.25)
-              * 'Huber' : Huber loss function (k = 1.345)
-              * 'L1' : L1 norm loss function.
-              * 'L2' : L2 norm loss function.
-              The default value is 'Epsilon'.
-            * 'epsilon' : Increment to `h0` to use for determining the
-              function gradient for `h0` update algorithm. The default
-              value is 1.4901161193847656e-08.
-            * 'update_translations' : Update sample pixel translations
-              if True. The default value is False.
-            * 'return_extra' : Return errors and `h0` array if True.
-              The default value is False.
-        verbose : bool, optional
-            Set verbosity of the computation process.
+                  * 'Epsilon': Epsilon loss function (epsilon = 0.25)
+                  * 'Huber' : Huber loss function (k = 1.345)
+                  * 'L1' : L1 norm loss function.
+                  * 'L2' : L2 norm loss function.
 
-        Returns
-        -------
-        SpeckleTracking
-            A new :class:`SpeckleTracking` object with the updated
-            `pixel_map` and `reference_image`. `di_pix` and `dj_pix`
-            are also updated if `update_translations` is True.
-        list
-            List of total MSE values for each iteration.  Only if
-            `return_errors` is True.
+                  The default value is 'Huber'.
+
+            options : Extra options. Accepts the following keyword arguments:
+
+                * 'alpha' : Weight of the variance term in kernel bandwidth
+                  selector.
+                * 'h0' : Initial guess of the optimal bandwidth in
+                  :func:`SpeckleTracking.find_hopt`. The value is used
+                  if `h0` is None.
+                * 'loss': Choose between the following loss functions
+                  for the target function of the reference image
+                  estimator:
+
+                  * 'Epsilon': Epsilon loss function (epsilon = 0.25)
+                  * 'Huber' : Huber loss function (k = 1.345)
+                  * 'L1' : L1 norm loss function.
+                  * 'L2' : L2 norm loss function.
+
+                  The default value is 'Epsilon'.
+                * 'epsilon' : Increment to `h0` to use for determining the
+                  function gradient for `h0` update algorithm. The default
+                  value is 1.4901161193847656e-08.
+                * 'update_translations' : Update sample pixel translations
+                  if True. The default value is False.
+                * 'return_extra' : Return errors and `h0` array if True.
+                  The default value is False.
+
+            verbose : Set verbosity of the computation process.
+
+        Returns:
+            A tuple of two items ('st_obj', 'extra'). The elements of the tuple
+            are as follows:
+
+            * 'st_obj' : A new :class:`SpeckleTracking` object with the
+              updated `pixel_map` and `reference_image`. `di_pix` and `dj_pix`
+              are also updated if `update_translations` is True.
+
+            * 'extra': A dictionary with the given parameters:
+
+              * 'errors' : List of total MSE values for each iteration.
+              * 'hvals' : List of kernel bandwidths for each iteration.
+
+              Only if `return_extra` is True.
         """
         integrate = pm_args.get('integrate', False)
         pm_loss = pm_args.get('loss', 'Huber')
@@ -653,111 +616,110 @@ class SpeckleTracking(DataContainer):
             return obj, extra
         return obj
 
-    def iter_update(self, sw_x: float, sw_y: float=0.0, blur: float=0.0, h0: Optional[float]=None,
-                    n_iter: int=30, f_tol: float=0., ref_method: str='KerReg', pm_method: str='gsearch',
-                    pm_args: Dict[str, Union[bool, int, float, str]]={}, options: Dict[str, Union[bool, float, str]]={},
-                    verbose: bool=True) -> SpeckleTracking:
+    def iter_update(self, sw_x: float, sw_y: float=0.0, blur: float=0.0,
+                    h0: Optional[float]=None, n_iter: int=30, f_tol: float=0.,
+                    ref_method: str='KerReg', pm_method: str='gsearch',
+                    pm_args: Dict[str, Union[bool, int, float, str]]={},
+                    options: Dict[str, Union[bool, float, str]]={},
+                    verbose: bool=True) -> Tuple[SpeckleTracking, List[float]]:
         """Perform iterative Robust Speckle Tracking update. `h0` and
         `blur` define high frequency cut-off to supress the noise and stay
         constant during the update. Iterative update terminates when
         the difference between total mean-squared-error (MSE) values
         of the two last iterations is less than `f_tol`.
 
-        Parameters
-        ----------
-        sw_x : float
-            Search window size in pixels along the horizontal detector
-            axis.
-        sw_y : float, optional
-            Search window size in pixels along the vertical detector
-            axis.
-        blur : float, optional
-            Smoothing kernel bandwidth used in `pixel_map`
-            regularisation. The value is given in pixels.
-        h0 : float, optional
-            Smoothing kernel bandwidth used in `reference_image`
-            regression. The value is given in pixels.
-        n_iter : int, optional
-            Maximum number of iterations.
-        f_tol : float, optional
-            Tolerance for termination by the change of the total MSE.
-        ref_method : {'KerReg', 'LOWESS'}, optional
-            `reference_image` update algorithm. The following keyword
-            values are allowed:
+        Args:
+            sw_x : Search window size in pixels along the horizontal detector
+                axis.
+            sw_y : Search window size in pixels along the vertical detector
+                axis.
+            blur : Smoothing kernel bandwidth used in `pixel_map`
+                regularisation. The value is given in pixels.
+            h0 : Smoothing kernel bandwidth used in `reference_image`
+                regression. The value is given in pixels.
+            n_iter : Maximum number of iterations.
+            f_tol : Tolerance for termination by the change of the total MSE.
+            ref_method : `reference_image` update algorithm. The following keyword
+                values are allowed:
 
-            * 'KerReg' : Kernel regression algorithm.
-            * 'LOWESS' : Local weighted linear regression.
-        pm_method : {'gs', 'de'}, optional
-            `pixel_map` update algorithm. The following keyword
-            values are allowed:
+                * 'KerReg' : Kernel regression algorithm.
+                * 'LOWESS' : Local weighted linear regression.
 
-            * 'gs' : Grid search algorithm.
-            * 'de' : Differential evolution algorithm.
-        pm_args : dict, optional
-            Pixel map update options. Accepts the following keyword
-            arguments:
+            pm_method : `pixel_map` update algorithm. The following keyword
+                values are allowed:
 
-            * 'integrate' : Ensure that the updated pixel map is irrotational
-              by integrating and taking the derivative. False by default.
-            * 'grid_size' : Grid size along one of the detector axes for
-              the 'gsearch' method. The grid shape is then (grid_size,
-              grid_size). The default value is :code:`int(0.5 * (sw_x + sw_y))`.
-            * 'n_trials' : Number of points generated at each  pixel in
-              the detector grid for the 'rsearch' method. The default value
-              is :code:`int(0.25 * (sw_x + sw_y)**2)`.
-            * 'n_iter' : The maximum number of generations over which the
-              entire population is evolved in the 'de' method. The default
-              value is 5.
-            * 'pop_size' : The total population size in the 'de' method.
-              Must be greater or equal to 4. The default value is
-              :code:`max(int(0.25 * (sw_x + sw_y)**2) / n_iter, 4)`.
-            * 'mutation' : The mutation constant in the 'de' method. It should
-              be in the range [0, 2]. The default value is 0.75.
-            * 'recombination' : The recombination constant  in the 'de' method,
-              should be in the range [0, 1]. The default value is 0.7.
-            * 'seed' : Specify seed for the random number generation.
-              Generated automatically if not provided.
-            * 'loss': Choose between the following loss functions
-              for the target function of the pixel mapping
-              estimator:
+                * 'gsearch' : Grid search algorithm.
+                * 'rsearch' : Random search algorithm.
+                * 'de'      : Differential evolution algorithm.
 
-              * 'Epsilon': Epsilon loss function (epsilon = 0.25)
-              * 'Huber' : Huber loss function (k = 1.345)
-              * 'L1' : L1 norm loss function.
-              * 'L2' : L2 norm loss function.
-              The default value is 'Huber'.
-        options : dict, optional
-            Extra options. Accepts the following keyword arguments:
+            pm_args : Pixel map update options. Accepts the following keyword
+                arguments:
 
-            * 'loss': Choose between the following loss functions
-              for the target function of the reference image
-              estimator:
+                * 'integrate' : Ensure that the updated pixel map is irrotational
+                  by integrating and taking the derivative. False by default.
+                * 'grid_size' : Grid size along one of the detector axes for
+                  the 'gsearch' method. The grid shape is then (grid_size,
+                  grid_size). The default value is :code:`int(0.5 * (sw_x + sw_y))`.
+                * 'n_trials' : Number of points generated at each  pixel in
+                  the detector grid for the 'rsearch' method. The default value
+                  is :code:`int(0.25 * (sw_x + sw_y)**2)`.
+                * 'n_iter' : The maximum number of generations over which the
+                  entire population is evolved in the 'de' method. The default
+                  value is 5.
+                * 'pop_size' : The total population size in the 'de' method.
+                  Must be greater or equal to 4. The default value is
+                  :code:`max(int(0.25 * (sw_x + sw_y)**2) / n_iter, 4)`.
+                * 'mutation' : The mutation constant in the 'de' method. It should
+                  be in the range [0, 2]. The default value is 0.75.
+                * 'recombination' : The recombination constant  in the 'de' method,
+                  should be in the range [0, 1]. The default value is 0.7.
+                * 'seed' : Specify seed for the random number generation.
+                  Generated automatically if not provided.
+                * 'loss': Choose between the following loss functions
+                  for the target function of the pixel mapping
+                  estimator:
 
-              * 'Epsilon': Epsilon loss function (epsilon = 0.25)
-              * 'Huber' : Huber loss function (k = 1.345)
-              * 'L1' : L1 norm loss function.
-              * 'L2' : L2 norm loss function.
-              The default value is 'Epsilon'.
-            * 'epsilon' : Increment to `h0` to use for determining the
-              function gradient for `h0` update algorithm. The default
-              value is 1.4901161193847656e-08.
-            * 'update_translations' : Update sample pixel translations
-              if True. The default value is False.
-            * 'return_extra' : Return errors at each iteration if True.
-              The default value is False.
-        verbose : bool, optional
-            Set verbosity of the computation process.
+                  * 'Epsilon': Epsilon loss function (epsilon = 0.25)
+                  * 'Huber' : Huber loss function (k = 1.345)
+                  * 'L1' : L1 norm loss function.
+                  * 'L2' : L2 norm loss function.
 
-        Returns
-        -------
-        SpeckleTracking
-            A new :class:`SpeckleTracking` object with the updated
-            `pixel_map` and `reference_image`. `di_pix` and `dj_pix`
-            are also updated if 'update_translations' in `options`
-            is True.
-        list
-            List of total MSE values for each iteration.  Only if
-            'return_extra' in `options` is True.
+                  The default value is 'Huber'.
+
+            options : Extra options. Accepts the following keyword arguments:
+
+                * 'loss': Choose between the following loss functions
+                  for the target function of the reference image
+                  estimator:
+
+                  * 'Epsilon': Epsilon loss function (epsilon = 0.25)
+                  * 'Huber' : Huber loss function (k = 1.345)
+                  * 'L1' : L1 norm loss function.
+                  * 'L2' : L2 norm loss function.
+
+                  The default value is 'Epsilon'.
+                * 'epsilon' : Increment to `h0` to use for determining the
+                  function gradient for `h0` update algorithm. The default
+                  value is 1.4901161193847656e-08.
+                * 'update_translations' : Update sample pixel translations
+                  if True. The default value is False.
+                * 'return_extra' : Return errors at each iteration if True.
+                  The default value is False.
+
+            verbose : bool, optional
+                Set verbosity of the computation process.
+
+        Returns:
+            A tuple of two items ('st_obj', 'errors'). The elements of the tuple
+            are as follows:
+
+            * 'st_obj' : A new :class:`SpeckleTracking` object with the updated
+              `pixel_map` and `reference_image`. `di_pix` and `dj_pix`
+              are also updated if 'update_translations' in `options`
+              is True.
+
+            * 'errors' : List of total MSE values for each iteration. Only if
+              'return_extra' in `options` is True.
         """
         integrate = pm_args.get('integrate', False)
         pm_loss = pm_args.get('loss', 'Huber')
@@ -819,37 +781,29 @@ class SpeckleTracking(DataContainer):
         """Generate a reference image with the given kernel
         bandwidth `h` and return a mean residual.
 
-        Parameters
-        ----------
-        hval : float
-            `reference_image` kernel bandwidths in pixels.
-        method : {'KerReg', 'LOWESS'}, optional
-            `reference_image` update algorithm. The following keyword
-            values are allowed:
+        Args:
+            hval : `reference_image` kernel bandwidths in pixels.
+            method : `reference_image` update algorithm. The following keyword
+                values are allowed:
 
-            * 'KerReg' : Kernel regression algorithm.
-            * 'LOWESS' : Local weighted linear regression.
-        loss : {'Epsilon', 'Huber', 'L1', 'L2'}, optional
-            Choose between the following loss functions:
+                * 'KerReg' : Kernel regression algorithm.
+                * 'LOWESS' : Local weighted linear regression.
 
-            * 'Epsilon': Epsilon loss function (epsilon = 0.25)
-            * 'Huber' : Huber loss function (k = 1.345)
-            * 'L1' : L1 norm loss function.
-            * 'L2' : L2 norm loss function.
+            loss : Choose between the following loss functions:
 
-        Returns
-        -------
-        float
-            Mean residual.
+                * 'Epsilon': Epsilon loss function (epsilon = 0.25)
+                * 'Huber' : Huber loss function (k = 1.345)
+                * 'L1' : L1 norm loss function.
+                * 'L2' : L2 norm loss function.
 
-        Raises
-        ------
-        ValueError
-            If `method` keyword value is not valid.
+        Returns:
+            Mean residual value.
 
-        See Also
-        --------
-        bin.ref_total_error : Full details of the error metric.
+        Raises:
+            ValueError : If `method` keyword value is not valid.
+
+        See Also:
+            :func:`pyrost.bin.ref_total_error` : Full details of the error metric.
         """
         if alpha < 0.0 or alpha > 1.0:
             raise ValueError('alpha must be in the [0.0, 1.0] interval.')
@@ -873,32 +827,26 @@ class SpeckleTracking(DataContainer):
                         loss: str='Epsilon') -> np.ndarray:
         """Return a mean-squared-error (MSE) survace.
 
-        Parameters
-        ----------
-        harr : numpy.ndarray
-            Set of `reference_image` kernel bandwidths in pixels.
-        method : {'KerReg', 'LOWESS'}, optional
-            `reference_image` update algorithm. The following keyword
-            values are allowed:
+        Args:
+            harr : Set of `reference_image` kernel bandwidths in pixels.
+            alpha : Weight of the variance term in the error metric.
+            method : `reference_image` update algorithm. The following keyword
+                values are allowed:
 
-            * 'KerReg' : Kernel regression algorithm.
-            * 'LOWESS' : Local weighted linear regression.
-        loss : {'Epsilon', 'Huber', 'L1', 'L2'}, optional
-            Choose between the following loss functions:
+                * 'KerReg' : Kernel regression algorithm.
+                * 'LOWESS' : Local weighted linear regression.
+            loss : Choose between the following loss functions:
 
-            * 'Epsilon': Epsilon loss function (epsilon = 0.25)
-            * 'Huber' : Huber loss function (k = 1.345)
-            * 'L1' : L1 norm loss function.
-            * 'L2' : L2 norm loss function.
+                * 'Epsilon': Epsilon loss function (epsilon = 0.25)
+                * 'Huber' : Huber loss function (k = 1.345)
+                * 'L1' : L1 norm loss function.
+                * 'L2' : L2 norm loss function.
 
-        Returns
-        -------
-        numpy.ndarray
+        Returns:
             A mean-squared-error (MSE) surface.
 
-        See Also
-        --------
-        bin.ref_total_error : Full details of the error metric.
+        See Also:
+            :func:`pyrost.bin.ref_total_error` : Full details of the error metric.
         """
         mse_list = []
         for hval in np.array(harr, ndmin=1):

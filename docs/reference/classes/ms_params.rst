@@ -1,6 +1,6 @@
 MSParams
 ========
 
-.. autoclass:: pyrost.simulation.MSParams
+.. autoclass:: pyrost.multislice.MSParams
     :members:
     :inherited-members:

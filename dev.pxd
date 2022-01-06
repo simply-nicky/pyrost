@@ -2,19 +2,29 @@
 cdef extern from "Python.h":
     int Py_AtExit(void(*func)())
 
-ctypedef int (*convolve_func)(double*, double*, int, unsigned long*, double*,
-                              unsigned long, int, int, double, unsigned)
+ctypedef int (*rconvolve_func)(double*, double*, int, unsigned long*, double*,
+                               unsigned long, int, int, double, unsigned)
+ctypedef int (*cconvolve_func)(double complex*, double complex*, int, unsigned long*, double complex*,
+                               unsigned long, int, int, double complex, unsigned)
 
 cdef extern from "pocket_fft.h":
     unsigned long next_fast_len_fftw(unsigned long target) nogil
     unsigned long good_size(unsigned long n) nogil
 
 cdef extern from "fft_functions.h":
-    int fft_convolve_fftw(double *out, double *inp, int ndim, unsigned long* dims, double *krn,
+    int rfft_convolve_fftw(double *out, double *inp, int ndim, unsigned long* dims, double *krn,
+                           unsigned long ksize, int axis, int mode, double cval, unsigned threads) nogil
+
+    int cfft_convolve_fftw(double complex *out, double complex *inp, int ndim, unsigned long* dims,
+                           double complex *krn, unsigned long ksize, int axis, int mode, double complex cval,
+                           unsigned threads) nogil
+
+    int rfft_convolve_np(double *out, double *inp, int ndim, unsigned long* dims, double *krn,
                           unsigned long ksize, int axis, int mode, double cval, unsigned threads) nogil
 
-    int fft_convolve_np(double *out, double *inp, int ndim, unsigned long* dims, double *krn,
-                          unsigned long ksize, int axis, int mode, double cval, unsigned threads) nogil
+    int cfft_convolve_np(double complex *out, double complex *inp, int ndim, unsigned long* dims,
+                         double complex *krn, unsigned long ksize, int axis, int mode, double complex cval,
+                         unsigned threads) nogil
 
     int rsc_np(double complex *out, double complex *inp, int ndim, unsigned long *dims,
                int axis, double dx0, double dx, double z, double wl, unsigned threads) nogil
@@ -28,15 +38,23 @@ cdef extern from "fft_functions.h":
     int fraunhofer_fftw(double complex *out, double complex *inp, int ndim, unsigned long *dims, int axis,
                         double dx0, double dx, double z, double wl, unsigned threads) nogil
 
-    int gauss_kernel1d(double *out, double sigma, unsigned order, unsigned long ksize) nogil
+    int gauss_kernel1d(double *out, double sigma, unsigned order, unsigned long ksize, int step) nogil
 
-    int gauss_filter(double *out, double *inp, int ndim, unsigned long *dims, double *sigma,
-                     unsigned *order, int mode, double cval, double truncate, unsigned threads,
-                     convolve_func fft_convolve) nogil
+    int gauss_filter_r(double *out, double *inp, int ndim, unsigned long *dims, double *sigma,
+                       unsigned *order, int mode, double cval, double truncate, unsigned threads,
+                       rconvolve_func fft_convolve) nogil
 
-    int gauss_grad_mag(double *out, double *inp, int ndim, unsigned long *dims, double *sigma,
-                       int mode, double cval, double truncate, unsigned threads,
-                       convolve_func fft_convolve) nogil
+    int gauss_filter_c(double complex *out, double complex *inp, int ndim, unsigned long *dims,
+                       double *sigma, unsigned *order, int mode, double complex cval, double truncate,
+                       unsigned threads, cconvolve_func fft_convolve) nogil
+
+    int gauss_grad_mag_r(double *out, double *inp, int ndim, unsigned long *dims, double *sigma,
+                         int mode, double cval, double truncate, unsigned threads,
+                         rconvolve_func fft_convolve) nogil
+
+    int gauss_grad_mag_c(double *out, double complex *inp, int ndim, unsigned long *dims,
+                         double *sigma, int mode, double complex cval, double truncate, unsigned threads,
+                         cconvolve_func fft_convolve) nogil
 
 cdef extern from "routines.h":
     ctypedef struct line:

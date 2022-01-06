@@ -38,7 +38,7 @@ if USE_CYTHON:
                                                 'boundscheck': False,
                                                 'wraparound': False,
                                                 'binding': True,
-                                                'embedsignature': True})
+                                                'embedsignature': False})
 
 with open('README.md', 'r') as readme:
     long_description = readme.read()

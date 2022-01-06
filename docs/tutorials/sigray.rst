@@ -1,15 +1,18 @@
-Speckle Tracking at the Sigray Lab
-==================================
+Processing a wavefront metrology experiment
+===========================================
 
-Converting raw data
--------------------
+Converting raw data at the Sigray lab
+-------------------------------------
+
+**For the experiments at the Sigray lab only**
+
 All we need to convert the raw experimental data are a scan
 number, X-ray target used during the measurements (Molybdenum,
 Cupper or Rhodium), and the distance between a MLL lens and
 the detector in meters. We parse it to
 :func:`pyrost.cxi_converter_sigray` function as follows:
 
-.. doctest::
+.. code-block:: python
 
     >>> import pyrost as rst
     >>> data = rst.cxi_converter_sigray(scan_num=2989, target='Mo', distance=2.)
@@ -23,24 +26,24 @@ Working with the data
 ---------------------
 The function returns a :class:`pyrost.STData` data container,
 which has a set of utility routines (see :class:`pyrost.STData`). For
-instance, usually we work with one dimensional scans, so we can mask the bad
-pixels, integrate the measured frames along the vertical axis, mirror the data,
-and crop it using a region of interest as follows:
+instance, since we work with one dimensional scans, we can mask the bad
+pixels, integrate the measured frames along the vertical axis, mirror
+the data, and crop it using a region of interest as follows:
 
-.. doctest::
+.. code-block:: python
 
     >>> data = data.update_mask(pmax=99.999, update='multiply')
     >>> data = data.integrate_data(axis=0)
     >>> data = data.crop_data(roi=(0, 1, 200, 1240))
     >>> data = data.mirror_data(axis=0)
 
-    >>> fig, ax = plt.subplots(figsize=(14, 6)) # doctest: +SKIP
-    >>> ax.imshow(data.get('data')[:, 0]) # doctest: +SKIP
-    >>> ax.set_title('Ptychograph', fontsize=20) # doctest: +SKIP
-    >>> ax.set_xlabel('horizontal axis', fontsize=15) # doctest: +SKIP
-    >>> ax.set_ylabel('frames', fontsize=15) # doctest: +SKIP
-    >>> ax.tick_params(labelsize=15) # doctest: +SKIP
-    >>> plt.show() # doctest: +SKIP
+    >>> fig, ax = plt.subplots(figsize=(14, 6))
+    >>> ax.imshow(data.get('data')[:, 0])
+    >>> ax.set_title('Ptychograph', fontsize=20)
+    >>> ax.set_xlabel('horizontal axis', fontsize=15)
+    >>> ax.set_ylabel('frames', fontsize=15)
+    >>> ax.tick_params(labelsize=15)
+    >>> plt.show()
 
 .. image:: ../figures/sigray_ptychograph.png
     :width: 100 %
@@ -53,20 +56,20 @@ of the local variance (:math:`\left< R[i, j] \right>`, see
 :func:`pyrost.STData.defocus_sweep`), which characterizes the reference image's
 contrast (the higher is the value the sharper is the reference profile).
 
-.. doctest::
+.. code-block:: python
 
-    >>> defoci = np.linspace(5e-5, 3e-4, 50) # doctest: +SKIP
-    >>> sweep_scan = data.defocus_sweep(defoci)
-    >>> defocus = defoci[np.argmax(sweep_scan)] # doctest: +SKIP
-    >>> print(defocus) # doctest: +SKIP
+    >>> defoci = np.linspace(5e-5, 3e-4, 50)
+    >>> sweep_scan = data.defocus_sweep(defoci, size=50, extra_args={'hval': 30})
+    >>> defocus = defoci[np.argmax(sweep_scan)]
+    >>> print(defocus)
     0.00015204081632653058
 
-    >>> fig, ax = plt.subplots(figsize=(12, 6)) # doctest: +SKIP
-    >>> ax.plot(defoci * 1e3, sweep_scan) # doctest: +SKIP
-    >>> ax.set_xlabel('Defocus distance, [mm]', fontsize=20) # doctest: +SKIP
-    >>> ax.set_title('Average gradient magnitude squared', fontsize=20) # doctest: +SKIP
-    >>> ax.tick_params(labelsize=15) # doctest: +SKIP
-    >>> plt.show() # doctest: +SKIP
+    >>> fig, ax = plt.subplots(figsize=(12, 6))
+    >>> ax.plot(defoci * 1e3, sweep_scan)
+    >>> ax.set_xlabel('Defocus distance, [mm]', fontsize=20)
+    >>> ax.set_title('Average gradient magnitude squared', fontsize=20)
+    >>> ax.tick_params(labelsize=15)
+    >>> plt.show()
 
 .. image:: ../figures/sweep_scan_sigray.png
     :width: 100 %
@@ -74,7 +77,7 @@ contrast (the higher is the value the sharper is the reference profile).
 
 Let's update the data container with the defocus distance we got. 
 
-    .. doctest::
+    .. code-block:: python
     
         >>> data = data.update_defocus(defocus)
 
@@ -83,25 +86,24 @@ Speckle Tracking update
 Now we’re ready to generate a pyrost.SpeckleTracking object, which is able to perform the
 speckle tracking procedure with :func:`pyrost.SpeckleTracking.iter_update_gd` method.
 For more information about the parameters see the section :ref:`diatom-st-update` in the
-Diatom dataset tutorial.
+2d dataset tutorial.
 
-.. doctest::
+.. code-block:: python
 
     >>> st_obj = data.get_st()
-    >>> st_res = st_obj.iter_update_gd(ls_ri=8., ls_pm=1.5, blur=12., sw_x=5,
-    >>>                                n_iter=150, learning_rate=5e0)
+    >>> st_res = st_obj.iter_update_gd(hval=8., blur=12., sw_x=5, n_iter=150)
     >>> data = data.update_phase(st_res)
 
-    >>> fig, axes = plt.subplots(1, 2, figsize=(16, 6)) # doctest: +SKIP
-    >>> axes[0].plot(np.arange(st_res.reference_image.shape[1]) - st_res.m0, # doctest: +SKIP
-    >>>              st_res.reference_image[0]) # doctest: +SKIP
-    >>> axes[0].set_title('Reference image', fontsize=20) # doctest: +SKIP
-    >>> axes[1].plot((st_res.pixel_map - st_obj.pixel_map)[1, 0]) # doctest: +SKIP
-    >>> axes[1].set_title('Pixel mapping', fontsize=20) # doctest: +SKIP
-    >>> for ax in axes: # doctest: +SKIP
-    >>>     ax.tick_params(labelsize=15) # doctest: +SKIP
-    >>>     ax.set_xlabel('Fast axis, pixels', fontsize=15) # doctest: +SKIP
-    >>> plt.show() # doctest: +SKIP
+    >>> fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+    >>> axes[0].plot(np.arange(st_res.reference_image.shape[1]) - st_res.m0,
+    >>>              st_res.reference_image[0])
+    >>> axes[0].set_title('Reference image', fontsize=20)
+    >>> axes[1].plot((st_res.pixel_map - st_obj.pixel_map)[1, 0])
+    >>> axes[1].set_title('Pixel mapping', fontsize=20)
+    >>> for ax in axes:
+    >>>     ax.tick_params(labelsize=15)
+    >>>     ax.set_xlabel('Fast axis, pixels', fontsize=15)
+    >>> plt.show()
 
 .. image:: ../figures/sigray_res.png
     :width: 100 %
@@ -115,7 +117,7 @@ find the fit to the profile with a polynomial. All of it could be done with
 :func:`pyrost.STData.get_fit` method. We may parse the direct beam coordinate
 in pixels to center the scattering angles aroung the direction of the direct beam:
 
-.. doctest::
+.. code-block:: python
 
     >>> fit_obj = data.get_fit(axis=1, center=20)
     
@@ -125,26 +127,26 @@ characterizes the beam's defocus and is of no interest to us. After that, you
 can obtain the best fit to the displacement profile with :func:`pyrost.AberrationsFit.fit`
 and to the phase profile with :func:`pyrost.AberrationsFit.fit_phase`:
 
-.. doctest::
+.. code-block:: python
 
     >>> fit_obj = fit_obj.remove_linear_term()
     >>> fit = fit_obj.fit(max_order=3)
 
-    >>> fig, axes = plt.subplots(1, 2, figsize=(12, 4)) # doctest: +SKIP
-    >>> axes[0].plot(fit_obj.thetas, fit_obj.theta_aberrations * 1e9, 'b') # doctest: +SKIP
-    >>> axes[0].plot(fit_obj.thetas, fit_obj.model(fit['fit']) * fit_obj.ref_ap * 1e9, # doctest: +SKIP
-    >>>              'b--', label=fr"RST $c_4 = {fit['c_4']:.4f} rad/mrad^4$") # doctest: +SKIP
-    >>> axes[0].set_title('Angular displacements, nrad', fontsize=20) # doctest: +SKIP
-    >>>  # doctest: +SKIP
-    >>> axes[1].plot(fit_obj.thetas, fit_obj.phase, 'b') # doctest: +SKIP
-    >>> axes[1].plot(fit_obj.thetas, fit_obj.model(fit['ph_fit']), 'b--', # doctest: +SKIP
-    >>>              label=fr"RST $c_4={fit['c_4']:.4f} rad/mrad^4$") # doctest: +SKIP
-    >>> axes[1].set_title('Phase, rad', fontsize=20) # doctest: +SKIP
-    >>> for ax in axes: # doctest: +SKIP
-    >>>     ax.legend(fontsize=15) # doctest: +SKIP
-    >>>     ax.tick_params(labelsize=15) # doctest: +SKIP
-    >>>     ax.set_xlabel('Scattering angles, rad', fontsize=15) # doctest: +SKIP
-    >>> plt.show()  # doctest: +SKIP
+    >>> fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+    >>> axes[0].plot(fit_obj.thetas, fit_obj.theta_aberrations * 1e9, 'b')
+    >>> axes[0].plot(fit_obj.thetas, fit_obj.model(fit['fit']) * fit_obj.ref_ap * 1e9,
+    >>>              'b--', label=fr"RST $c_4 = {fit['c_4']:.4f} rad/mrad^4$")
+    >>> axes[0].set_title('Angular displacements, nrad', fontsize=20)
+    >>> 
+    >>> axes[1].plot(fit_obj.thetas, fit_obj.phase, 'b')
+    >>> axes[1].plot(fit_obj.thetas, fit_obj.model(fit['ph_fit']), 'b--',
+    >>>              label=fr"RST $c_4={fit['c_4']:.4f} rad/mrad^4$")
+    >>> axes[1].set_title('Phase, rad', fontsize=20)
+    >>> for ax in axes:
+    >>>     ax.legend(fontsize=15)
+    >>>     ax.tick_params(labelsize=15)
+    >>>     ax.set_xlabel('Scattering angles, rad', fontsize=15)
+    >>> plt.show() 
 
 .. image:: ../figures/sigray_fits.png
     :width: 100 %

@@ -25,12 +25,18 @@ cdef int extend_mode_to_code(str mode) except -1:
         raise RuntimeError('boundary mode not supported')
 
 cdef np.ndarray check_array(np.ndarray array, int type_num):
+    cdef np.ndarray out
+    cdef int tn = np.PyArray_TYPE(array)
     if not np.PyArray_IS_C_CONTIGUOUS(array):
         array = np.PyArray_GETCONTIGUOUS(array)
-    cdef int tn = np.PyArray_TYPE(array)
+
     if tn != type_num:
-        array = np.PyArray_Cast(array, type_num)
-    return array
+        out = np.PyArray_SimpleNew(array.ndim, <np.npy_intp *>array.shape, type_num)
+        np.PyArray_CastTo(out, array)
+    else:
+        out = array
+
+    return out
 
 cdef np.ndarray number_to_array(object num, np.npy_intp rank, int type_num):
     cdef np.npy_intp *dims = [rank,]
@@ -44,25 +50,32 @@ cdef np.ndarray normalize_sequence(object inp, np.npy_intp rank, int type_num):
     # If input is a scalar, create a sequence of length equal to the
     # rank by duplicating the input. If input is a sequence,
     # check if its length is equal to the length of array.
-    cdef np.ndarray arr
+    cdef np.ndarray array, out
     cdef int tn
     if np.PyArray_IsAnyScalar(inp):
-        arr = number_to_array(inp, rank, type_num)
+        out = number_to_array(inp, rank, type_num)
+
     elif np.PyArray_Check(inp):
-        arr = <np.ndarray>inp
-        tn = np.PyArray_TYPE(arr)
+        array = <np.ndarray>inp
+        tn = np.PyArray_TYPE(array)
         if tn != type_num:
-            arr = <np.ndarray>np.PyArray_Cast(arr, type_num)
+            out = np.PyArray_SimpleNew(array.ndim, <np.npy_intp *>array.shape, type_num)
+            np.PyArray_CastTo(out, array)
+        else:
+            out = array
+
     elif isinstance(inp, (list, tuple)):
-        arr = <np.ndarray>np.PyArray_FROM_OTF(inp, type_num, np.NPY_ARRAY_C_CONTIGUOUS)
+        out = <np.ndarray>np.PyArray_FROM_OTF(inp, type_num, np.NPY_ARRAY_C_CONTIGUOUS)
+
     else:
         raise ValueError("Wrong sequence argument type")
-    cdef np.npy_intp size = np.PyArray_SIZE(arr)
+
+    cdef np.npy_intp size = np.PyArray_SIZE(out)
     if size != rank:
         raise ValueError("Sequence argument must have length equal to input rank")
-    return arr
+    return out
 
-def next_fast_len(target: cython.uint, backend: str='numpy') -> cython.uint:
+def next_fast_len(unsigned target, str backend='numpy'):
     r"""Find the next fast size of input data to fft, for zero-padding, etc.
     FFT algorithms gain their speed by a recursive divide and conquer strategy.
     This relies on efficient functions for small prime factors of the input length.
@@ -71,18 +84,13 @@ def next_fast_len(target: cython.uint, backend: str='numpy') -> cython.uint:
     then the result will be a number x >= target with only prime factors < n. (Also
     known as n-smooth numbers)
 
-    Parameters
-    ----------
-    target : int
-        Length to start searching from. Must be a positive integer.
-    backend : {'fftw', 'numpy'}, optional
-        Find n-smooth number for the FFT implementation from the specified
-        library.
+    Args:
+        target (int) : Length to start searching from. Must be a positive integer.
+        backend (str) : Find n-smooth number for the FFT implementation from the numpy
+            ('numpy') or FFTW ('fftw') library.
 
-    Returns
-    -------
-    n : int
-        The smallest fast length greater than or equal to `target`.
+    Returns:
+        int : The smallest fast length greater than or equal to `target`.
     """
     if target < 0:
         raise ValueError('Target length must be positive')
@@ -93,54 +101,44 @@ def next_fast_len(target: cython.uint, backend: str='numpy') -> cython.uint:
     else:
         raise ValueError('{:s} is invalid backend'.format(backend))
 
-def fft_convolve(array not None: np.ndarray, kernel not None: np.ndarray, axis: cython.int=-1,
-                 mode: str='constant', cval: cython.double=0.0, backend: str='numpy',
-                 num_threads: cython.uint=1) -> np.ndarray:
+def fft_convolve(np.ndarray array not None, np.ndarray kernel not None, int axis=-1,
+                 str mode='constant', double cval=0.0, str backend='numpy',
+                 unsigned num_threads=1):
     """Convolve a multi-dimensional `array` with one-dimensional `kernel` along the
     `axis` by means of FFT. Output has the same size as `array`.
 
-    Parameters
-    ----------
-    array : numpy.ndarray
-        Input array.
-    kernel : numpy.ndarray
-        Kernel array.
-    axis : int, optional
-        Array axis along which convolution is performed.
-    mode : {'constant', 'nearest', 'mirror', 'reflect', 'wrap'}, optional
-        The mode parameter determines how the input array is extended when the filter
-        overlaps a border. Default value is 'constant'. The valid values and their behavior
-        is as follows:
+    Args:
+        array (numpy.ndarray) : Input array.
+        kernel (numpy.ndarray) : Kernel array.
+        axis (int) : Array axis along which convolution is performed.
+        mode (str) : The mode parameter determines how the input array is extended
+            when the filter overlaps a border. Default value is 'constant'. The
+            valid values and their behavior is as follows:
 
-        * 'constant', (k k k k | a b c d | k k k k) : The input is extended by filling all
-          values beyond the edge with the same constant value, defined by the `cval`
-          parameter.
-        * 'nearest', (a a a a | a b c d | d d d d) : The input is extended by replicating
-          the last pixel.
-        * 'mirror', (c d c b | a b c d | c b a b) : The input is extended by reflecting
-          about the center of the last pixel. This mode is also sometimes referred to as
-          whole-sample symmetric.
-        * 'reflect', (d c b a | a b c d | d c b a) : The input is extended by reflecting
-          about the edge of the last pixel. This mode is also sometimes referred to as
-          half-sample symmetric.
-        * 'wrap', (a b c d | a b c d | a b c d) : The input is extended by wrapping around
-          to the opposite edge.
-    cval : float, optional
-        Value to fill past edges of input if mode is ‘constant’. Default is 0.0.
-    backend : {'fftw', 'numpy'}, optional
-        Choose backend library for the FFT implementation.
-    num_threads : int, optional
-        Number of threads.
+            * 'constant', (k k k k | a b c d | k k k k) : The input is extended by
+              filling all values beyond the edge with the same constant value, defined
+              by the `cval` parameter.
+            * 'nearest', (a a a a | a b c d | d d d d) : The input is extended by
+              replicating the last pixel.
+            * 'mirror', (c d c b | a b c d | c b a b) : The input is extended by
+              reflecting about the center of the last pixel. This mode is also sometimes
+              referred to as whole-sample symmetric.
+            * 'reflect', (d c b a | a b c d | d c b a) : The input is extended by
+              reflecting about the edge of the last pixel. This mode is also sometimes
+              referred to as half-sample symmetric.
+            * 'wrap', (a b c d | a b c d | a b c d) : The input is extended by wrapping
+              around to the opposite edge.
 
-    Returns
-    -------
-    out : numpy.ndarray
-        A multi-dimensional array containing the discrete linear
+        cval (float) :  Value to fill past edges of input if mode is 'constant'. Default
+            is 0.0.
+        backend (str) : Choose between numpy ('numpy') or FFTW ('fftw') library for the FFT
+            implementation.
+        num_threads (int) : Number of threads used in the calculations.
+
+    Returns:
+        numpy.ndarray : A multi-dimensional array containing the discrete linear
         convolution of `array` with `kernel`.
     """
-    array = check_array(array, np.NPY_FLOAT64)
-    kernel = check_array(kernel, np.NPY_FLOAT64)
-
     cdef int fail = 0
     cdef int ndim = array.ndim
     axis = axis if axis >= 0 else ndim + axis
@@ -150,81 +148,97 @@ def fft_convolve(array not None: np.ndarray, kernel not None: np.ndarray, axis: 
     cdef np.npy_intp *dims = array.shape
     cdef unsigned long *_dims = <unsigned long *>dims
 
-    cdef np.ndarray out = <np.ndarray>np.PyArray_SimpleNew(ndim, dims, np.NPY_FLOAT64)
-    cdef double *_out = <double *>np.PyArray_DATA(out)
-    cdef double *_inp = <double *>np.PyArray_DATA(array)
-    cdef double *_krn = <double *>np.PyArray_DATA(kernel)
-    with nogil:
-        if backend == 'fftw':
-            fail = fft_convolve_fftw(_out, _inp, ndim, _dims, _krn, ksize, axis, _mode, cval, num_threads)
-        elif backend == 'numpy':
-            fail = fft_convolve_np(_out, _inp, ndim, _dims, _krn, ksize, axis, _mode, cval, num_threads)
-        else:
-            raise ValueError('{:s} is invalid backend'.format(backend))
+    cdef int type_num
+    if np.PyArray_ISCOMPLEX(array) or np.PyArray_ISCOMPLEX(kernel):
+        type_num = np.NPY_COMPLEX128
+    else:
+        type_num = np.NPY_FLOAT64
+
+    cdef np.ndarray out = <np.ndarray>np.PyArray_SimpleNew(ndim, dims, type_num)
+    cdef void *_out = np.PyArray_DATA(out)
+    cdef void *_inp
+    cdef void *_krn
+
+    if np.PyArray_ISCOMPLEX(array) or np.PyArray_ISCOMPLEX(kernel):
+        array = check_array(array, np.NPY_COMPLEX128)
+        kernel = check_array(kernel, np.NPY_COMPLEX128)
+
+        _inp = np.PyArray_DATA(array)
+        _krn = np.PyArray_DATA(kernel)
+
+        with nogil:
+            if backend == 'fftw':
+                fail = cfft_convolve_fftw(<double complex *>_out, <double complex *>_inp, ndim,
+                                          _dims, <double complex *>_krn, ksize, axis, _mode,
+                                          <double complex>cval, num_threads)
+            elif backend == 'numpy':
+                fail = cfft_convolve_np(<double complex *>_out, <double complex *>_inp, ndim,
+                                        _dims, <double complex *>_krn, ksize, axis, _mode,
+                                        <double complex>cval, num_threads)
+            else:
+                raise ValueError('{:s} is invalid backend'.format(backend))
+    else:
+        array = check_array(array, np.NPY_FLOAT64)
+        kernel = check_array(kernel, np.NPY_FLOAT64)
+
+        _inp = np.PyArray_DATA(array)
+        _krn = np.PyArray_DATA(kernel)
+
+        with nogil:
+            if backend == 'fftw':
+                fail = rfft_convolve_fftw(<double *>_out, <double *>_inp, ndim, _dims,
+                                          <double *>_krn, ksize, axis, _mode, cval, num_threads)
+            elif backend == 'numpy':
+                fail = rfft_convolve_np(<double *>_out, <double *>_inp, ndim, _dims,
+                                        <double *>_krn, ksize, axis, _mode, cval, num_threads)
+            else:
+                raise ValueError('{:s} is invalid backend'.format(backend))
+
     if fail:
         raise RuntimeError('C backend exited with error.')
     return out
 
-def rsc_wp(wft not None: np.ndarray, dx0: cython.double, dx: cython.double, z: cython.double,
-           wl: cython.double, axis: cython.int=-1, backend: str='numpy',
-           num_threads: cython.uint=1) -> np.ndarray:
+def rsc_wp(np.ndarray wft not None, double dx0, double dx, double z,
+           double wl, int axis=-1, str backend='numpy', unsigned num_threads=1):
     r"""Wavefront propagator based on Rayleigh-Sommerfeld convolution
-    method [RSC]_. Propagates a wavefront `wft` by `z` distance
-    downstream. You can choose between 'fftw' and 'numpy' backends for FFT
-    calculations. 'fftw' backend supports multiprocessing.
+    method [RSC]_. Propagates a wavefront `wft` by `z` distance downstream.
+    You can choose between 'fftw' and 'numpy' backends for FFT calculations.
 
-    Parameters
-    ----------
-    wft : numpy.ndarray
-        Initial wavefront.
-    dx0 : float
-        Sampling interval at the plane upstream [um].
-    dx : float
-        Sampling interval at the plane downstream [um].
-    z : float
-        Propagation distance [um].
-    wl : float
-        Incoming beam's wavelength [um].
-    axis : int, optional
-        Axis of `wft` array along which the calculation is
-        performed.
-    backend : {'fftw', 'numpy'}, optional
-        Choose backend library for the FFT implementation.
-    num_threads: int, optional
-        Number of threads used in calculation. Only 'fftw' backend
-        supports it.
+    Args: 
+        wft (numpy.ndarray) : Initial wavefront.
+        dx0 (float) : Sampling interval at the plane upstream [um].
+        dx (float) : Sampling interval at the plane downstream [um].
+        z (float) : Propagation distance [um].
+        wl (float) : Incoming beam's wavelength [um].
+        axis (int) : Axis of `wft` array along which the calculation is performed.
+        backend (str) : Choose between numpy ('numpy') or FFTW ('fftw') library
+            for the FFT  implementation.
+        num_threads (int) : Number of threads used in the calculations.
 
-    Returns
-    -------
-    out : numpy.ndarray
-        Propagated wavefront.
+    Returns:
+        numpy.ndarray : Propagated wavefront.
 
-    Raises
-    ------
-    RuntimeError
-        If 'numpy' backend exits with eror during the calculation.
-    ValueError
-        If `backend` option is invalid.
+    Raises:
+        RuntimeError : If 'numpy' backend exits with eror during the calculation.
+        ValueError : If `backend` option is invalid.
 
-    Notes
-    -----
-    The Rayleigh–Sommerfeld diffraction integral transform is defined as:
+    Notes:
+        The Rayleigh-Sommerfeld diffraction integral transform is defined as:
 
-    .. math::
-        u^{\prime}(x^{\prime}) = \frac{z}{j \sqrt{\lambda}} \int_{-\infty}^{+\infty}
-        u(x) \mathrm{exp} \left[-j k r(x, x^{\prime}) \right] dx
-    
-    with
+        .. math::
+            u^{\prime}(x^{\prime}) = \frac{z}{j \sqrt{\lambda}} \int_{-\infty}^{+\infty}
+            u(x) \mathrm{exp} \left[-j k r(x, x^{\prime}) \right] dx
+        
+        with
 
-    .. math::
-        r(x, x^{\prime}) = \left[ (x - x^{\prime})^2 + z^2 \right]^{1 / 2}
+        .. math::
+            r(x, x^{\prime}) = \left[ (x - x^{\prime})^2 + z^2 \right]^{1 / 2}
 
-    References
-    ----------
-    .. [RSC] V. Nascov and P. C. Logofătu, "Fast computation algorithm
-             for the Rayleigh-Sommerfeld diffraction formula using
-             a type of scaled convolution," Appl. Opt. 48, 4310-4319
-             (2009).
+    References:
+        .. [RSC] V. Nascov and P. C. Logofătu, "Fast computation algorithm
+                for the Rayleigh-Sommerfeld diffraction formula using
+                a type of scaled convolution," Appl. Opt. 48, 4310-4319
+                (2009).
     """
     wft = check_array(wft, np.NPY_COMPLEX128)
 
@@ -249,54 +263,37 @@ def rsc_wp(wft not None: np.ndarray, dx0: cython.double, dx: cython.double, z: c
         raise RuntimeError('C backend exited with error.')
     return out
 
-def fraunhofer_wp(wft not None: np.ndarray, dx0: cython.double, dx: cython.double,
-                  z: cython.double, wl: cython.double, axis: cython.int=-1,
-                  backend: str='numpy', num_threads: cython.uint=1) -> np.ndarray:
-    r"""Fraunhofer diffraction propagator. Propagates a wavefront `wft` by
-    `z` distance downstream. You can choose between 'fftw' and 'numpy'
-    backends for FFT calculations. 'fftw' backend supports multiprocessing.
+def fraunhofer_wp(np.ndarray wft not None, double dx0, double dx, double z,
+                  double wl, int axis=-1, str backend='numpy', unsigned num_threads=1):
+    r"""Fraunhofer diffraction propagator. Propagates a wavefront `wft` by `z`
+    distance downstream. You can choose between 'fftw' and 'numpy' backends for
+    FFT calculations.
 
-    Parameters
-    ----------
-    wft : numpy.ndarray
-        Initial wavefront.
-    dx0 : float
-        Sampling interval at the plane upstream [um].
-    dx : float
-        Sampling interval at the plane downstream [um].
-    z : float
-        Propagation distance [um].
-    wl : float
-        Incoming beam's wavelength [um].
-    axis : int, optional
-        Axis of `wft` array along which the calculation is
-        performed.
-    backend : {'fftw', 'numpy'}, optional
-        Choose backend library for the FFT implementation.
-    num_threads: int, optional
-        Number of threads used in calculation. Only 'fftw' backend
-        supports it.
+    Args: 
+        wft (numpy.ndarray) : Initial wavefront.
+        dx0 (float) : Sampling interval at the plane upstream [um].
+        dx (float) : Sampling interval at the plane downstream [um].
+        z (float) : Propagation distance [um].
+        wl (float) : Incoming beam's wavelength [um].
+        axis (int) : Axis of `wft` array along which the calculation is performed.
+        backend (str) : Choose between numpy ('numpy') or FFTW ('fftw') library
+            for the FFT  implementation.
+        num_threads (int) : Number of threads used in the calculations.
 
-    Returns
-    -------
-    out : numpy.ndarray
-        Propagated wavefront.
+    Returns:
+        numpy.ndarray : Propagated wavefront.
 
-    Raises
-    ------
-    RuntimeError
-        If 'numpy' backend exits with eror during the calculation.
-    ValueError
-        If `backend` option is invalid.
+    Raises:
+        RuntimeError : If 'numpy' backend exits with eror during the calculation.
+        ValueError : If `backend` option is invalid.
 
-    Notes
-    -----
-    The Fraunhofer integral transform is defined as:
+    Notes:
+        The Fraunhofer integral transform is defined as:
 
-    .. math::
-        u^{\prime}(x^{\prime}) = \frac{e^{-j k z}}{j \sqrt{\lambda z}}
-        e^{-\frac{j k}{2 z} x^{\prime 2}} \int_{-\infty}^{+\infty} u(x)
-        e^{j\frac{2 \pi}{\lambda z} x x^{\prime}} dx
+        .. math::
+            u^{\prime}(x^{\prime}) = \frac{e^{-j k z}}{j \sqrt{\lambda z}}
+            e^{-\frac{j k}{2 z} x^{\prime 2}} \int_{-\infty}^{+\infty} u(x)
+            e^{j\frac{2 \pi}{\lambda z} x x^{\prime}} dx
     """
     wft = check_array(wft, np.NPY_COMPLEX128)
 
@@ -321,88 +318,76 @@ def fraunhofer_wp(wft not None: np.ndarray, dx0: cython.double, dx: cython.doubl
         raise RuntimeError('C backend exited with error.')
     return out
 
-def gaussian_kernel(sigma: double, order: cython.uint=0, truncate: cython.double=4.) -> np.ndarray:
+def gaussian_kernel(double sigma, unsigned order=0, double truncate=4.):
     """Discrete Gaussian kernel.
     
-    Parameters
-    ----------
-    sigma : float
-        Standard deviation for Gaussian kernel.
-    order : int, optional
-        The order of the filter. An order of 0 corresponds to convolution with a
-        Gaussian kernel. A positive order corresponds to convolution with that
-        derivative of a Gaussian. Default is 0.
-    truncate : float, optional
-        Truncate the filter at this many standard deviations. Default is 4.0.
+    Parameters:
+        sigma (float) : Standard deviation for Gaussian kernel.
+        order (int) : The order of the filter. An order of 0 corresponds to
+            convolution with a Gaussian kernel. A positive order corresponds
+            to convolution with that derivative of a Gaussian. Default is 0.
+        truncate (float) : Truncate the filter at this many standard deviations.
+            Default is 4.0.
     
-    Returns
-    -------
-    krn : np.ndarray
-        Gaussian kernel.
+    Returns:
+        numpy.ndarray : Gaussian kernel.
     """
     cdef np.npy_intp radius = <np.npy_intp>(sigma * truncate)
     cdef np.npy_intp *dims = [2 * radius + 1,]
     cdef np.ndarray out = <np.ndarray>np.PyArray_SimpleNew(1, dims, np.NPY_FLOAT64)
     cdef double *_out = <double *>np.PyArray_DATA(out)
     with nogil:
-        gauss_kernel1d(_out, sigma, order, dims[0])
+        gauss_kernel1d(_out, sigma, order, dims[0], 1)
     return out
 
-def gaussian_filter(inp not None: np.ndarray, sigma: object, order not None: object=0, mode: str='reflect',
-                    cval: cython.double=0., truncate: cython.double=4., backend: str='numpy',
-                    num_threads: cython.uint=1) -> np.ndarray:
+def gaussian_filter(np.ndarray inp not None, object sigma, object order not None=0,
+                    str mode='reflect', double cval=0., double truncate=4., str backend='numpy',
+                    unsigned num_threads=1):
     r"""Multidimensional Gaussian filter. The multidimensional filter is implemented as
     a sequence of 1-D FFT convolutions.
 
-    Parameters
-    ----------
-    inp : np.ndarray
-        The input array.
-    sigma : float or list of floats
-        Standard deviation for Gaussian kernel. The standard deviations of the Gaussian
-        filter are given for each axis as a sequence, or as a single number, in which case
-        it is equal for all axes.
-    order : int or list of ints, optional
-        The order of the filter along each axis is given as a sequence of integers, or as
-        a single number. An order of 0 corresponds to convolution with a Gaussian kernel.
-        A positive order corresponds to convolution with that derivative of a Gaussian.
-    mode : {'constant', 'nearest', 'mirror', 'reflect', 'wrap'}, optional
-        The mode parameter determines how the input array is extended when the filter
-        overlaps a border. Default value is 'reflect'. The valid values and their behavior
-        is as follows:
+    Args:
+        inp (numpy.ndarray) : The input array.
+        sigma (Union[float, List[float]]): Standard deviation for Gaussian kernel. The standard
+            deviations of the Gaussian filter are given for each axis as a sequence, or as a
+            single number, in which case it is equal for all axes.
+        order (Union[int, List[int]]): The order of the filter along each axis is given as a
+            sequence of integers, or as a single number. An order of 0 corresponds to convolution
+            with a Gaussian kernel. A positive order corresponds to convolution with that
+            derivative of a Gaussian.
+        mode (str) : The mode parameter determines how the input array is extended when the
+            filter overlaps a border. Default value is 'reflect'. The valid values and their
+            behavior is as follows:
 
-        * 'constant', (k k k k | a b c d | k k k k) : The input is extended by filling all
-          values beyond the edge with the same constant value, defined by the `cval`
-          parameter.
-        * 'nearest', (a a a a | a b c d | d d d d) : The input is extended by replicating
-          the last pixel.
-        * 'mirror', (c d c b | a b c d | c b a b) : The input is extended by reflecting
-          about the center of the last pixel. This mode is also sometimes referred to as
-          whole-sample symmetric.
-        * 'reflect', (d c b a | a b c d | d c b a) : The input is extended by reflecting
-          about the edge of the last pixel. This mode is also sometimes referred to as
-          half-sample symmetric.
-        * 'wrap', (a b c d | a b c d | a b c d) : The input is extended by wrapping around
-          to the opposite edge.
-    cval : float, optional
-        Value to fill past edges of input if mode is ‘constant’. Default is 0.0.
-    truncate : float, optional
-        Truncate the filter at this many standard deviations. Default is 4.0.
-    backend : {'fftw', 'numpy'}, optional
-        Choose backend library for the FFT implementation.
-    num_threads : int, optional
-        Number of threads.
+            * 'constant', (k k k k | a b c d | k k k k) : The input is extended by filling all
+              values beyond the edge with the same constant value, defined by the `cval`
+              parameter.
+            * 'nearest', (a a a a | a b c d | d d d d) : The input is extended by replicating
+              the last pixel.
+            * 'mirror', (c d c b | a b c d | c b a b) : The input is extended by reflecting
+              about the center of the last pixel. This mode is also sometimes referred to as
+              whole-sample symmetric.
+            * 'reflect', (d c b a | a b c d | d c b a) : The input is extended by reflecting
+              about the edge of the last pixel. This mode is also sometimes referred to as
+              half-sample symmetric.
+            * 'wrap', (a b c d | a b c d | a b c d) : The input is extended by wrapping around
+              to the opposite edge.
+
+        cval (float) : Value to fill past edges of input if mode is 'constant'. Default is 0.0.
+        truncate (float) : Truncate the filter at this many standard deviations. Default is 4.0.
+        backend (str) : Choose between numpy ('numpy') or FFTW ('fftw') backend library for the
+            FFT implementation.
+        num_threads (int) : Number of threads.
     
-    Returns
-    -------
-    out : np.ndarray
-        Returned array of same shape as `input`.
+    Returns:
+        numpy.ndarray : Returned array of the same shape as `input`.
     """
-    inp = check_array(inp, np.NPY_FLOAT64)
 
     cdef int ndim = inp.ndim
     cdef np.ndarray sigmas = normalize_sequence(sigma, ndim, np.NPY_FLOAT64)
     cdef np.ndarray orders = normalize_sequence(order, ndim, np.NPY_UINT32)
+    cdef double *_sig = <double *>np.PyArray_DATA(sigmas)
+    cdef unsigned *_ord = <unsigned *>np.PyArray_DATA(orders)
 
     cdef int n
     for n in range(ndim):
@@ -410,69 +395,95 @@ def gaussian_filter(inp not None: np.ndarray, sigma: object, order not None: obj
             sigmas[n] = 0.0
 
     cdef int fail = 0
-    cdef np.npy_intp *dims = inp.shape
-    cdef np.ndarray out = <np.ndarray>np.PyArray_SimpleNew(ndim, dims, np.NPY_FLOAT64)
-    cdef double *_out = <double *>np.PyArray_DATA(out)
-    cdef double *_inp = <double *>np.PyArray_DATA(inp)
-    cdef unsigned long *_dims = <unsigned long *>dims
-    cdef double *_sig = <double *>np.PyArray_DATA(sigmas)
-    cdef unsigned *_ord = <unsigned *>np.PyArray_DATA(orders)
     cdef int _mode = extend_mode_to_code(mode)
-    with nogil:
-        if backend == 'fftw':
-            fail = gauss_filter(_out, _inp, ndim, _dims, _sig, _ord, _mode, cval, truncate, num_threads, fft_convolve_fftw)
-        elif backend == 'numpy':
-            fail = gauss_filter(_out, _inp, ndim, _dims, _sig, _ord, _mode, cval, truncate, num_threads, fft_convolve_np)
-        else:
-            raise ValueError('{:s} is invalid backend'.format(backend))
+    cdef np.npy_intp *dims = inp.shape
+    cdef unsigned long *_dims = <unsigned long *>dims
+
+    cdef int type_num
+    if np.PyArray_ISCOMPLEX(inp):
+        type_num = np.NPY_COMPLEX128
+    else:
+        type_num = np.NPY_FLOAT64
+
+    cdef np.ndarray out = <np.ndarray>np.PyArray_SimpleNew(ndim, dims, type_num)
+    cdef void *_out = np.PyArray_DATA(out)
+
+    cdef void *_inp
+    if np.PyArray_ISCOMPLEX(inp):
+        inp = check_array(inp, np.NPY_COMPLEX128)
+        _inp = <double *>np.PyArray_DATA(inp)
+
+        with nogil:
+            if backend == 'fftw':
+                fail = gauss_filter_c(<double complex *>_out, <double complex *>_inp,
+                                      ndim, _dims, _sig, _ord, _mode, <double complex>cval,
+                                      truncate, num_threads, cfft_convolve_fftw)
+            elif backend == 'numpy':
+                fail = gauss_filter_c(<double complex *>_out, <double complex *>_inp,
+                                      ndim, _dims, _sig, _ord, _mode, <double complex>cval,
+                                      truncate, num_threads, cfft_convolve_np)
+            else:
+                raise ValueError('{:s} is invalid backend'.format(backend))
+
+    else:
+        inp = check_array(inp, np.NPY_FLOAT64)
+        _inp = <double *>np.PyArray_DATA(inp)
+
+        with nogil:
+            if backend == 'fftw':
+                fail = gauss_filter_r(<double *>_out, <double *>_inp, ndim, _dims, _sig,
+                                      _ord, _mode, cval, truncate, num_threads, rfft_convolve_fftw)
+            elif backend == 'numpy':
+                fail = gauss_filter_r(<double *>_out, <double *>_inp, ndim, _dims, _sig,
+                                      _ord, _mode, cval, truncate, num_threads, rfft_convolve_np)
+            else:
+                raise ValueError('{:s} is invalid backend'.format(backend))
+
     if fail:
         raise RuntimeError('C backend exited with error.')
     return out
 
-def gaussian_gradient_magnitude(inp not None: np.ndarray, sigma not None: object, mode: str='reflect',
-                                cval: cython.double=0., truncate: cython.double=4.,
-                                backend: str='numpy', num_threads: cython.uint=1) -> np.ndarray:
+def gaussian_gradient_magnitude(np.ndarray inp not None, object sigma not None, str mode='reflect',
+                                double cval=0.0, double truncate=4.0, str backend='numpy',
+                                unsigned num_threads=1):
     r"""Multidimensional gradient magnitude using Gaussian derivatives. The multidimensional
     filter is implemented as a sequence of 1-D FFT convolutions.
 
-    Parameters
-    ----------
-    inp : np.ndarray
-        The input array.
-    sigma : float or list of floats
-        The standard deviations of the Gaussian filter are given for each axis as a sequence,
-        or as a single number, in which case it is equal for all axes.
-    mode : {'constant', 'nearest', 'mirror', 'reflect', 'wrap'}, optional
-        The mode parameter determines how the input array is extended when the filter
-        overlaps a border. Default value is 'reflect'. The valid values and their behavior
-        is as follows:
+    Args:
+        inp (numpy.ndarray) : The input array.
+        sigma (Union[float, List[float]]): Standard deviation for Gaussian kernel. The standard
+            deviations of the Gaussian filter are given for each axis as a sequence, or as a
+            single number, in which case it is equal for all axes.
+        mode (str) : The mode parameter determines how the input array is extended when the
+            filter overlaps a border. Default value is 'reflect'. The valid values and their
+            behavior is as follows:
 
-        * 'constant', (k k k k | a b c d | k k k k) : The input is extended by filling all
-          values beyond the edge with the same constant value, defined by the `cval`
-          parameter.
-        * 'nearest', (a a a a | a b c d | d d d d) : The input is extended by replicating
-          the last pixel.
-        * 'mirror', (c d c b | a b c d | c b a b) : The input is extended by reflecting
-          about the center of the last pixel. This mode is also sometimes referred to as
-          whole-sample symmetric.
-        * 'reflect', (d c b a | a b c d | d c b a) : The input is extended by reflecting
-          about the edge of the last pixel. This mode is also sometimes referred to as
-          half-sample symmetric.
-        * 'wrap', (a b c d | a b c d | a b c d) : The input is extended by wrapping around
-          to the opposite edge.
-    cval : float, optional
-        Value to fill past edges of input if mode is ‘constant’. Default is 0.0.
-    truncate : float, optional
-        Truncate the filter at this many standard deviations. Default is 4.0.
-    backend : {'fftw', 'numpy'}, optional
-        Choose backend library for the FFT implementation.
-    num_threads : int, optional
-        Number of threads.
+            * 'constant', (k k k k | a b c d | k k k k) : The input is extended by filling all
+              values beyond the edge with the same constant value, defined by the `cval`
+              parameter.
+            * 'nearest', (a a a a | a b c d | d d d d) : The input is extended by replicating
+              the last pixel.
+            * 'mirror', (c d c b | a b c d | c b a b) : The input is extended by reflecting
+              about the center of the last pixel. This mode is also sometimes referred to as
+              whole-sample symmetric.
+            * 'reflect', (d c b a | a b c d | d c b a) : The input is extended by reflecting
+              about the edge of the last pixel. This mode is also sometimes referred to as
+              half-sample symmetric.
+            * 'wrap', (a b c d | a b c d | a b c d) : The input is extended by wrapping around
+              to the opposite edge.
+
+        cval (float) : Value to fill past edges of input if mode is ‘constant’. Default is 0.0.
+        truncate (float) : Truncate the filter at this many standard deviations. Default is 4.0.
+        backend (str) : Choose between numpy ('numpy') or FFTW ('fftw') backend library for the
+            FFT implementation.
+        num_threads (int) : Number of threads.
+
+    Returns:
+        numpy.ndarray : Gaussian gradient magnitude array. The array is the same shape as `input`.
     """
-    inp = check_array(inp, np.NPY_FLOAT64)
-
     cdef int ndim = inp.ndim
     cdef np.ndarray sigmas = normalize_sequence(sigma, ndim, np.NPY_FLOAT64)
+    cdef double *_sig = <double *>np.PyArray_DATA(sigmas)
 
     cdef int n
     for n in range(ndim):
@@ -480,45 +491,60 @@ def gaussian_gradient_magnitude(inp not None: np.ndarray, sigma not None: object
             sigmas[n] = 0.0
 
     cdef int fail = 0
+    cdef int _mode = extend_mode_to_code(mode)
     cdef np.npy_intp *dims = inp.shape
+    cdef unsigned long *_dims = <unsigned long *>dims
+
     cdef np.ndarray out = <np.ndarray>np.PyArray_SimpleNew(ndim, dims, np.NPY_FLOAT64)
     cdef double *_out = <double *>np.PyArray_DATA(out)
-    cdef double *_inp = <double *>np.PyArray_DATA(inp)
-    cdef unsigned long *_dims = <unsigned long *>dims
-    cdef double *_sig = <double *>np.PyArray_DATA(sigmas)
-    cdef int _mode = extend_mode_to_code(mode)
-    with nogil:
-        if backend == 'fftw':
-            fail = gauss_grad_mag(_out, _inp, ndim, _dims, _sig, _mode, cval, truncate, num_threads, fft_convolve_fftw)
-        elif backend == 'numpy':
-            fail = gauss_grad_mag(_out, _inp, ndim, _dims, _sig, _mode, cval, truncate, num_threads, fft_convolve_np)
-        else:
-            raise ValueError('{:s} is invalid backend'.format(backend))
+
+    cdef void *_inp
+    if np.PyArray_ISCOMPLEX(inp):
+        inp = check_array(inp, np.NPY_COMPLEX128)
+        _inp = <double *>np.PyArray_DATA(inp)
+
+        with nogil:
+            if backend == 'fftw':
+                fail = gauss_grad_mag_c(_out, <double complex *>_inp, ndim, _dims, _sig,
+                                        _mode, <double complex>cval, truncate, num_threads,
+                                        cfft_convolve_fftw)
+            elif backend == 'numpy':
+                fail = gauss_grad_mag_c(_out, <double complex *>_inp, ndim, _dims, _sig,
+                                        _mode, <double complex>cval, truncate, num_threads,
+                                        cfft_convolve_np)
+            else:
+                raise ValueError('{:s} is invalid backend'.format(backend))
+
+    else:
+        inp = check_array(inp, np.NPY_FLOAT64)
+        _inp = <double *>np.PyArray_DATA(inp)
+
+        with nogil:
+            if backend == 'fftw':
+                fail = gauss_grad_mag_r(_out, <double *>_inp, ndim, _dims, _sig, _mode,
+                                        cval, truncate, num_threads, rfft_convolve_fftw)
+            elif backend == 'numpy':
+                fail = gauss_grad_mag_r(_out, <double *>_inp, ndim, _dims, _sig, _mode,
+                                        cval, truncate, num_threads, rfft_convolve_np)
+            else:
+                raise ValueError('{:s} is invalid backend'.format(backend))
+    
     if fail:
         raise RuntimeError('C backend exited with error.')
     return out
 
-def bar_positions(x0: cython.double, x1: cython.double, b_dx: cython.double,
-                  rd: cython.double, seed: cython.ulong) -> np.ndarray:
+def bar_positions(double x0, double x1, double b_dx, double rd, long seed):
     """Generate a coordinate array of randomized barcode's bar positions.
 
-    Parameters
-    ----------
-    x0 : float
-        Barcode's lower bound along the x axis [um].
-    x1 : float
-        Barcode's upper bound along the x axis [um].
-    b_dx : float
-        Average bar's size [um].
-    rd : float
-        Random deviation of barcode's bar positions (0.0 - 1.0).
-    seed : int
-        Seed used for pseudo random number generation.
+    Args:
+        x0 (float) : Barcode's lower bound along the x axis [um].
+        x1 (float) : Barcode's upper bound along the x axis [um].
+        b_dx (float) : Average bar's size [um].
+        rd (float) : Random deviation of barcode's bar positions (0.0 - 1.0).
+        seed (int) : Seed used for pseudo random number generation.
 
-    Returns
-    -------
-    bx_arr : numpy.ndarray
-        Array of barcode's bar coordinates.
+    Returns:
+        numpy.ndarray : Array of barcode's bar coordinates.
     """
     cdef np.npy_intp size = 2 * (<np.npy_intp>((x1 - x0) / 2 / b_dx) + 1) if x1 > x0 else 0
     cdef np.npy_intp *dims = [size,]
@@ -550,134 +576,103 @@ cdef np.ndarray ml_profile_wrapper(np.ndarray x_arr, np.ndarray layers, complex 
         raise RuntimeError('C backend exited with error.')
     return out
 
-def barcode_profile(x_arr not None: np.ndarray, bars not None: np.ndarray, bulk_atn: cython.double,
-                    bar_atn: cython.double, bar_sigma: cython.double,
-                    num_threads: cython.uint) -> np.ndarray:
+def barcode_profile(np.ndarray x_arr not None, np.ndarray bars not None, double bulk_atn,
+                    double bar_atn, double bar_sigma, unsigned num_threads=1):
     r"""Return an array of barcode's transmission profile calculated
     at `x_arr` coordinates.
 
-    Parameters
-    ----------
-    x_arr : numpy.ndarray
-        Array of the coordinates, where the transmission coefficients
-        are calculated [um].    
-    bars : numpy.ndarray
-        Coordinates of barcode's bar positions [um].
-    bulk_atn : float
-        Barcode's bulk attenuation coefficient (0.0 - 1.0).
-    bar_atn : float
-        Barcode's bar attenuation coefficient (0.0 - 1.0).
-    bar_sigma : float
-        Bar's blurriness width [um].
-    num_threads : int, optional
-        Number of threads.
+    Args:
+        x_arr (numpy.ndarray) : Array of the coordinates, where the transmission
+            coefficients are calculated [um].    
+        bars (numpy.ndarray) : Coordinates of barcode's bar positions [um].
+        bulk_atn (float) : Barcode's bulk attenuation coefficient (0.0 - 1.0).
+        bar_atn (float) : Barcode's bar attenuation coefficient (0.0 - 1.0).
+        bar_sigma (float) : Bar's blurriness width [um].
+        num_threads (int) : Number of threads used in the calculations.
     
-    Returns
-    -------
-    bar_profile : numpy.ndarray
-        Array of barcode's transmission profiles.
+    Returns:
+        numpy.ndarray : Array of barcode's transmission profiles.
 
-    Notes
-    -----
-    Barcode's transmission profile is simulated with a set
-    of error functions:
-    
-    .. math::
-        \begin{multline}
-            T_{b}(x) = 1 - \frac{T_{bulk}}{2} \left\{
-            \mathrm{erf}\left[ \frac{x - x_{bar}[0]}{\sqrt{2} \sigma} \right] +
-            \mathrm{erf}\left[ \frac{x_{bar}[n - 1] - x}{\sqrt{2} \sigma} \right]
-            \right\} -\\
-            \frac{T_{bar}}{4} \sum_{i = 1}^{n - 2} \left\{
-            2 \mathrm{erf}\left[ \frac{x - x_{bar}[i]}{\sqrt{2} \sigma} \right] -
-            \mathrm{erf}\left[ \frac{x - x_{bar}[i - 1]}{\sqrt{2} \sigma} \right] -
-            \mathrm{erf}\left[ \frac{x - x_{bar}[i + 1]}{\sqrt{2} \sigma} \right]
-            \right\}
-        \end{multline}
-    
-    where :math:`x_{bar}` is an array of bar coordinates.
+    Notes:
+        Barcode's transmission profile is simulated with a set
+        of error functions:
+        
+        .. math::
+            \begin{multline}
+                T_{b}(x) = 1 - \frac{T_{bulk}}{2} \left\{
+                \mathrm{erf}\left[ \frac{x - x_{bar}[0]}{\sqrt{2} \sigma} \right] +
+                \mathrm{erf}\left[ \frac{x_{bar}[n - 1] - x}{\sqrt{2} \sigma} \right]
+                \right\} -\\
+                \frac{T_{bar}}{4} \sum_{i = 1}^{n - 2} \left\{
+                2 \mathrm{erf}\left[ \frac{x - x_{bar}[i]}{\sqrt{2} \sigma} \right] -
+                \mathrm{erf}\left[ \frac{x - x_{bar}[i - 1]}{\sqrt{2} \sigma} \right] -
+                \mathrm{erf}\left[ \frac{x - x_{bar}[i + 1]}{\sqrt{2} \sigma} \right]
+                \right\}
+            \end{multline}
+        
+        where :math:`x_{bar}` is an array of bar coordinates.
     """
     cdef complex mt0 = -1j * log(1 - bulk_atn)
     cdef complex mt1 = -1j * log(1 - bar_atn)
     return ml_profile_wrapper(x_arr, bars, mt0, mt1, 0., bar_sigma, num_threads)
 
-def mll_profile(x_arr not None: np.ndarray, layers not None: np.ndarray, complex mt0,
-                complex mt1, sigma: cython.double, num_threads: cython.uint) -> np.ndarray:
+def mll_profile(np.ndarray x_arr not None, np.ndarray layers not None, complex mt0,
+                complex mt1, double sigma, unsigned num_threads=1):
     r"""Return an array of MLL's transmission profile calculated
     at `x_arr` coordinates.
 
-    Parameters
-    ----------
-    x_arr : numpy.ndarray
-        Array of the coordinates, where the transmission coefficients
-        are calculated [um].    
-    layers : numpy.ndarray
-        Coordinates of MLL's layers positions [um].
-    mt0 : complex
-        Fresnel transmission coefficient for the first material of MLL's
-        bilayer.
-    mt1 : complex
-        Fresnel transmission coefficient for the first material of MLL's
-        bilayer.
-    sigma : float
-        Interdiffusion length [um].
-    num_threads : int, optional
-        Number of threads.
+    Args:
+        x_arr (numpy.ndarray) : Array of the coordinates, where the transmission
+            coefficients are calculated [um].    
+        layers (numpy.ndarray) : Coordinates of MLL's layers positions [um].
+        mt0 (complex) : Fresnel transmission coefficient for the first material of
+            MLL's bilayer.
+        mt1 (complex) : Fresnel transmission coefficient for the first material of
+            MLL's bilayer.
+        sigma (float) : Interdiffusion length [um].
+        num_threads (int) : Number of threads used in the calculations.
     
-    Returns
-    -------
-    bar_profile : numpy.ndarray
-        Array of barcode's transmission profiles.
+    Returns:
+        numpy.ndarray : Array of barcode's transmission profiles.
 
-    Notes
-    -----
-    MLL's transmission profile is simulated with a set
-    of error functions:
-    
-    .. math::
-        \begin{multline}
-            T_{b}(x) = 1 - \frac{T_{bulk}}{2} \left\{
-            \mathrm{erf}\left[ \frac{x - x_{lyr}[0]}{\sqrt{2} \sigma} \right] +
-            \mathrm{erf}\left[ \frac{x_{lyr}[n - 1] - x}{\sqrt{2} \sigma} \right]
-            \right\} -\\
-            \frac{T_{bar}}{4} \sum_{i = 1}^{n - 2} \left\{
-            2 \mathrm{erf}\left[ \frac{x - x_{lyr}[i]}{\sqrt{2} \sigma} \right] -
-            \mathrm{erf}\left[ \frac{x - x_{lyr}[i - 1]}{\sqrt{2} \sigma} \right] -
-            \mathrm{erf}\left[ \frac{x - x_{lyr}[i + 1]}{\sqrt{2} \sigma} \right]
-            \right\}
-        \end{multline}
-    
-    where :math:`x_{lyr}` is an array of MLL's layer coordinates.
+    Notes:
+        MLL's transmission profile is simulated with a set
+        of error functions:
+        
+        .. math::
+            \begin{multline}
+                T_{b}(x) = 1 - \frac{T_{bulk}}{2} \left\{
+                \mathrm{erf}\left[ \frac{x - x_{lyr}[0]}{\sqrt{2} \sigma} \right] +
+                \mathrm{erf}\left[ \frac{x_{lyr}[n - 1] - x}{\sqrt{2} \sigma} \right]
+                \right\} -\\
+                \frac{T_{bar}}{4} \sum_{i = 1}^{n - 2} \left\{
+                2 \mathrm{erf}\left[ \frac{x - x_{lyr}[i]}{\sqrt{2} \sigma} \right] -
+                \mathrm{erf}\left[ \frac{x - x_{lyr}[i - 1]}{\sqrt{2} \sigma} \right] -
+                \mathrm{erf}\left[ \frac{x - x_{lyr}[i + 1]}{\sqrt{2} \sigma} \right]
+                \right\}
+            \end{multline}
+        
+        where :math:`x_{lyr}` is an array of MLL's layer coordinates.
     """
     return ml_profile_wrapper(x_arr, layers, 0., mt0, mt1, sigma, num_threads)
 
-def make_frames(pfx not None: np.ndarray, pfy not None: np.ndarray, dx: cython.double, dy: cython.double,
-                shape: tuple, seed: cython.long, num_threads: cython.uint) -> np.ndarray:
+def make_frames(np.ndarray pfx not None, np.ndarray pfy not None, double dx, double dy,
+                tuple shape, long seed, unsigned num_threads=1):
     """Generate intensity frames from one-dimensional intensity profiles (`pfx`,
     `pfy`) and whitefield profiles (`wfx`, `wfy`). Intensity profiles resized into
     the shape of a frame. Poisson noise is applied if `seed` is non-negative.
 
-    Parameters
-    ----------
-    pfx : numpy.ndarray
-        Intensity profile along the x axis.
-    pfy : numpy.ndarray
-        Intensity profile along the y axis.
-    dx : float
-        Sampling interval along the x axis [um].
-    dy : float
-        Sampling interval along the y axis [um].
-    shape : tuple
-        Shape of the detector array.
-    seed : int, optional
-        Seed for pseudo-random number generation.
-    num_threads : int, optional
-        Number of threads.
+    Args:
+        pfx (numpy.ndarray) : Intensity profile along the x axis.
+        pfy (numpy.ndarray) : Intensity profile along the y axis.
+        dx (float) : Sampling interval along the x axis [um].
+        dy (float) : Sampling interval along the y axis [um].
+        shape (Tuple[int, int]) : Shape of the detector array.
+        seed (int) : Seed for pseudo-random number generation.
+        num_threads (int) : Number of threads used in the calculations.
 
-    Returns
-    -------
-    frames : numpy.ndarray
-        Intensity frames.
+    Returns:
+        numpy.ndarray : Intensity frames.
     """
     pfx = check_array(pfx, np.NPY_FLOAT64)
     pfy = check_array(pfy, np.NPY_FLOAT64)
@@ -697,25 +692,17 @@ def make_frames(pfx not None: np.ndarray, pfy not None: np.ndarray, dx: cython.d
         raise RuntimeError('C backend exited with error.')
     return out
 
-def median(data not None: np.ndarray, mask: np.ndarray=None, axis: cython.int=0,
-           num_threads: cython.uint=1) -> np.ndarray:
+def median(np.ndarray data not None, np.ndarray mask=None, int axis=0, unsigned num_threads=1):
     """Calculate a median along the `axis`.
 
-    Parameters
-    ----------
-    data : numpy.ndarray
-        Intensity frames.
-    mask : numpy.ndarray, optional
-        Bad pixel mask.
-    axis : int, optional
-        Array axis along which median values are calculated.
-    num_threads : int, optional
-        Number of threads.
+    Args:
+        data (numpy.ndarray) : Intensity frames.
+        mask (numpy.ndarray) : Bad pixel mask.
+        axis (int) : Array axis along which median values are calculated.
+        num_threads (int) : Number of threads used in the calculations.
 
-    Returns
-    -------
-    wfield : numpy.ndarray
-        Whitefield.
+    Returns:
+        numpy.ndarray : Array of medians along the given axis.
     """
     if not np.PyArray_IS_C_CONTIGUOUS(data):
         data = np.PyArray_GETCONTIGUOUS(data)
@@ -768,48 +755,39 @@ def median(data not None: np.ndarray, mask: np.ndarray=None, axis: cython.int=0,
     free(odims)
     return out
 
-def median_filter(data not None: np.ndarray, size not None: object, mask: np.ndarray=None, mode: str='reflect', cval: cython.double=0.,
-                  num_threads: cython.uint=1) -> np.ndarray:
+def median_filter(np.ndarray data not None, object size not None, np.ndarray mask=None,
+                  str mode='reflect', double cval=0.0, unsigned num_threads=1):
     """Calculate a median along the `axis`.
 
-    Parameters
-    ----------
-    data : numpy.ndarray
-        Intensity frames.
-    size : numpy.ndarray
-        Gives the shape that is taken from the input array, at every element position, to
-        define the input to the filter function. We adjust size to the number of dimensions
-        of the input array, so that, if the input array is shape (10,10,10), and size is 2,
-        then the actual size used is (2,2,2).
-    mask : numpy.ndarray, optional
-        Bad pixel mask.
-    mode : {'constant', 'nearest', 'mirror', 'reflect', 'wrap'}, optional
-        The mode parameter determines how the input array is extended when the filter
-        overlaps a border. Default value is 'reflect'. The valid values and their behavior
-        is as follows:
+    Args:
+        data (numpy.ndarray) : Intensity frames.
+        size (numpy.ndarray) : Gives the shape that is taken from the input array, at every
+            element position, to define the input to the filter function. We adjust size to
+            the number of dimensions of the input array, so that, if the input array is shape
+            (10,10,10), and size is 2, then the actual size used is (2,2,2).
+        mask (Optional[numpy.ndarray]) : Bad pixel mask.
+        mode (str) : The mode parameter determines how the input array is extended when the
+            filter overlaps a border. Default value is 'reflect'. The valid values and their
+            behavior is as follows:
 
-        * 'constant', (k k k k | a b c d | k k k k) : The input is extended by filling all
-          values beyond the edge with the same constant value, defined by the `cval`
-          parameter.
-        * 'nearest', (a a a a | a b c d | d d d d) : The input is extended by replicating
-          the last pixel.
-        * 'mirror', (c d c b | a b c d | c b a b) : The input is extended by reflecting
-          about the center of the last pixel. This mode is also sometimes referred to as
-          whole-sample symmetric.
-        * 'reflect', (d c b a | a b c d | d c b a) : The input is extended by reflecting
-          about the edge of the last pixel. This mode is also sometimes referred to as
-          half-sample symmetric.
-        * 'wrap', (a b c d | a b c d | a b c d) : The input is extended by wrapping around
-          to the opposite edge.
-    cval : float, optional
-        Value to fill past edges of input if mode is ‘constant’. Default is 0.0.
-    num_threads : int, optional
-        Number of threads.
+            * 'constant', (k k k k | a b c d | k k k k) : The input is extended by filling all
+              values beyond the edge with the same constant value, defined by the `cval`
+              parameter.
+            * 'nearest', (a a a a | a b c d | d d d d) : The input is extended by replicating
+              the last pixel.
+            * 'mirror', (c d c b | a b c d | c b a b) : The input is extended by reflecting
+              about the center of the last pixel. This mode is also sometimes referred to as
+              whole-sample symmetric.
+            * 'reflect', (d c b a | a b c d | d c b a) : The input is extended by reflecting
+              about the edge of the last pixel. This mode is also sometimes referred to as
+              half-sample symmetric.
+            * 'wrap', (a b c d | a b c d | a b c d) : The input is extended by wrapping around
+              to the opposite edge.
+        cval (float) : Value to fill past edges of input if mode is 'constant'. Default is 0.0.
+        num_threads (int) : Number of threads used in the calculations.
 
-    Returns
-    -------
-    wfield : numpy.ndarray
-        Whitefield.
+    Returns:
+        numpy.ndarray : Filtered array. Has the same shape as `input`.
     """
     if not np.PyArray_IS_C_CONTIGUOUS(data):
         data = np.PyArray_GETCONTIGUOUS(data)

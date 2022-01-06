@@ -30,15 +30,15 @@ def loader(request):
     """
     Return the default loader.
     """
-    protocol = rst.CXIProtocol(float_precision=request.param)
-    return rst.CXILoader(protocol=protocol)
+    protocol = rst.CXIProtocol.import_default(float_precision=request.param)
+    return rst.CXILoader.import_default(protocol=protocol)
 
 @pytest.fixture(params=['float32', 'float64'])
 def converter(request):
     """
     Return the default loader.
     """
-    protocol = rst.CXIProtocol(float_precision=request.param)
+    protocol = rst.CXIProtocol.import_default(float_precision=request.param)
     return st_sim.STConverter(protocol=protocol)
 
 @pytest.fixture(scope='session')
@@ -77,49 +77,48 @@ def test_save_and_load_sim(converter, loader, ptych, sim_obj, temp_dir):
     converter.save_sim(ptych, sim_obj, temp_dir)
     cxi_path = os.path.join(temp_dir, 'data.cxi')
     assert os.path.isfile(cxi_path)
-    data_dict = loader.load_to_dict(paths=cxi_path)
+    data_dict = loader.load_to_dict(data_files=cxi_path)
     for attr in rst.STData.attr_set:
-        assert not data_dict[attr] is None
+        if attr != 'protocol':
+            assert not data_dict[attr] is None
 
 @pytest.mark.rst
-def test_st_update_sim(converter, ptych , sim_obj):
+def test_st_update_sim(converter, ptych, sim_obj):
     st_data = converter.export_data(ptych, sim_obj)
-    assert st_data.data.dtype == converter.protocol.known_types['float']
+    assert st_data.data.dtype == converter.protocol.get_dtype('data')
     st_obj = st_data.get_st()
     pixel_map0 = st_obj.pixel_map.copy()
-    st_obj.iter_update(sw_x=10, ls_pm=2.5, ls_ri=15,
-                       verbose=True, n_iter=10)
+    st_obj.iter_update(sw_x=10, h0=15, verbose=True, n_iter=10)
     assert (st_obj.pixel_map == pixel_map0).all()
-    assert st_obj.pixel_map.dtype == converter.protocol.known_types['float']
+    assert st_obj.pixel_map.dtype == converter.protocol.get_dtype('pixel_map')
 
 @pytest.mark.rst
 def test_load_exp(path, roi, defocus, loader):
     assert os.path.isfile(path)
-    data_dict = loader.load_to_dict(paths=path, roi=roi, defocus=defocus)
+    data_dict = loader.load_to_dict(data_files=path, roi=roi, defocus=defocus)
     for attr in rst.STData.attr_set:
-        assert not data_dict[attr] is None
+        if attr != 'protocol':
+            assert not data_dict[attr] is None
 
 @pytest.mark.rst
 def test_st_update_exp(path, roi, defocus, loader):
     assert os.path.isfile(path)
-    data = loader.load(path=path, roi=roi, defocus=defocus)
-    assert data.data.dtype == loader.known_types['float']
+    data = loader.load(data_files=path, roi=roi, defocus=defocus)
+    assert data.data.dtype == loader.get_dtype('data')
     st_obj = data.get_st()
     pixel_map0 = st_obj.pixel_map.copy()
-    st_obj.iter_update_gd(sw_x=10, ls_pm=2.5, ls_ri=30,
-                          verbose=True, n_iter=10)
+    st_obj.iter_update_gd(sw_x=10, h0=30, verbose=True, n_iter=10)
     assert (st_obj.pixel_map == pixel_map0).all()
-    assert st_obj.pixel_map.dtype == loader.known_types['float']
+    assert st_obj.pixel_map.dtype == loader.get_dtype('pixel_map')
 
 @pytest.mark.standalone
 def test_full(converter, ptych, sim_obj):
     data = converter.export_data(ptych, sim_obj)
-    assert data.data.dtype == converter.protocol.known_types['float']
+    assert data.data.dtype == converter.protocol.get_dtype('data')
     st_obj = data.get_st()
-    st_res = st_obj.iter_update_gd(sw_x=10, ls_pm=2.5, ls_ri=15,
-                                   verbose=True, n_iter=10)
-    data = data.update_phase(st_res)
+    st_res = st_obj.iter_update_gd(sw_x=10, h0=15, verbose=True, n_iter=10)
+    data.update_phase(st_res)
     fit = data.fit_phase(axis=1)
     assert (st_obj.pixel_map != st_res.pixel_map).any()
-    assert st_res.pixel_map.dtype == converter.protocol.known_types['float']
+    assert st_res.pixel_map.dtype == converter.protocol.get_dtype('pixel_map')
     assert not fit is None

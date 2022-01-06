@@ -1,8 +1,8 @@
-Working with CXI Files
+Working with CXI files
 ======================
 
-CXIProtocol
------------
+:class:`CXIProtocol <pyrost.CXIProtocol>`
+-----------------------------------------
 
 CXI protocol (:class:`pyrost.CXIProtocol`) is a helper class for a :class:`pyrost.STData`
 data container, which tells it where to look for the necessary data fields in a CXI
@@ -16,7 +16,7 @@ data field (`data`, `whitefield`, etc.):
 
 .. note::
     Attribute is of data type if the data array is 2- or 3-dimensional and
-    has the shape identical to the 'data' attribute.
+    has the shape identical to the detector pixel grid.
 
 .. note::
 
@@ -34,13 +34,12 @@ is given by:
     [datatypes]
     basis_vectors = float
     data = uint
-    defocus = float
     defocus_x = float
     defocus_y = float
     distance = float
     energy = float
     error_frame = float
-    flatfields = float
+    flatfields = uint
     good_frames = uint
     m0 = int
     mask = bool
@@ -60,9 +59,8 @@ is given by:
     [default_paths]
     basis_vectors = /speckle_tracking/basis_vectors
     data = /entry/data/data
-    defocus = /speckle_tracking/defocus
-    defocus_x = /speckle_tracking/dfs
-    defocus_y = /speckle_tracking/dss
+    defocus_x = /speckle_tracking/defocus_x
+    defocus_y = /speckle_tracking/defocus_y
     distance = /entry/instrument/detector/distance
     energy = /entry/instrument/source/energy
     error_frame = /speckle_tracking/error_frame
@@ -86,7 +84,6 @@ is given by:
     [is_data]
     basis_vectors = False
     data = True
-    defocus = False
     defocus_x = False
     defocus_y = False
     distance = False
@@ -97,20 +94,20 @@ is given by:
     m0 = False
     mask = True
     n0 = False
-    phase = False
-    pixel_aberrations = False
-    pixel_map = False
+    phase = True
+    pixel_aberrations = True
+    pixel_map = True
     pixel_translations = False
     reference_image = False
     roi = False
     translations = False
     wavelength = False
-    whitefield = False
+    whitefield = True
     x_pixel_size = False
     y_pixel_size = False
 
-CXILoader
----------
+:class:`CXILoader <pyrost.CXILoader>`
+-------------------------------------
 
 CXI file loader class (:class:`pyrost.CXILoader`) uses a protocol to
 automatically load all the necessary data fields from a CXI file. Other than
@@ -135,6 +132,8 @@ is given by:
     [load_paths]
     basis_vectors = [/entry_1/instrument_1/detector_1/basis_vectors, /entry/instrument/detector/basis_vectors]
     data = [/entry/instrument/detector/data, /entry_1/instrument_1/detector_1/data, /entry_1/data_1/data]
+    defocus_y = [/speckle_tracking/defocus_ss]
+    defocus_x = [/speckle_tracking/defocus_fs, /speckle_tracking/defocus]
     distance = [/entry_1/instrument_1/detector_1/distance,]
     energy = [/entry_1/instrument_1/detector_1/distance,]
     good_frames = [/frame_selector/good_frames, /process_3/good_frames]
@@ -148,7 +147,6 @@ is given by:
     [policy]
     basis_vectors = True
     data = True
-    defocus = True
     defocus_x = True
     defocus_y = True
     distance = True
@@ -167,7 +165,7 @@ is given by:
     roi = True
     translations = True
     wavelength = True
-    whitefield = False
+    whitefield = True
     x_pixel_size = True
     y_pixel_size = True
 

@@ -1,7 +1,7 @@
-Simulating a 1D Speckle Tracking Scan
+Generating a speckle tracking dataset
 =====================================
 
-You can simulate an one-dimensional Speckle Tracking scan either using
+You can simulate an one-dimensional speckle tracking scan either using
 Python interface or Terminal.
 
 Python interface
@@ -22,10 +22,7 @@ with :func:`pyrost.simulation.STParams.import_default`.
 .. doctest::
 
     >>> import pyrost.simulation as st_sim
-    >>> params = st_sim.STParams.import_default(bar_size=0.7, bar_sigma=0.12, bar_atn=0.18,
-    >>>                                         bulk_atn=0.2, p0 = 5e4, th_s=8e-5, n_frames=100,
-    >>>                                         offset=2.0, step_size=0.1, defocus=150, alpha=0.05,
-    >>>                                         ab_cnt=0.7, bar_rnd=0.8)
+    >>> params = st_sim.STParams.import_default(bar_size=0.7, bar_sigma=0.12, bar_atn=0.18, bulk_atn=0.2, p0=5e4, th_s=8e-5, n_frames=100, offset=2.0, step_size=0.1, defocus=150, alpha=0.05, ab_cnt=0.7, bar_rnd=0.8)
 
 Performing the simulation
 ^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -35,12 +32,17 @@ wavefronts, :class:`pyrost.simulation.STSim` will post it's status during the pr
 either generate a stack of frames or a ptychograph. :class:`pyrost.simulation.STConverter`
 saves the results to a CXI file using the provided CXI protocol.
 
-.. doctest::
+.. testsetup:: [st_simulation]
+
+    import pyrost.simulation as st_sim
+    params = st_sim.STParams.import_default()
+
+.. doctest:: [st_simulation]
 
     >>> sim_obj = st_sim.STSim(params)
     >>> ptych = sim_obj.ptychograph()
     >>> st_conv = st_sim.STConverter()
-    >>> st_conv.save_sim(ptych, sim_obj, 'results/sim_results')
+    >>> st_conv.save_sim(ptych, sim_obj, 'results/sim_results') # doctest: +SKIP
 
     >>> fig, ax = plt.subplots(figsize=(14, 6)) # doctest: +SKIP
     >>> ax.imshow(ptych[:, 0, 500:1480]) # doctest: +SKIP
@@ -52,9 +54,9 @@ saves the results to a CXI file using the provided CXI protocol.
     :width: 100 %
     :alt: Ptychograph.
 
-Or you can directly generate an :class:`pyrost.STData` data container to perform the Speckle Tracking algorithm.
+Or you can directly generate an :class:`pyrost.STData` data container to perform the speckle tracking algorithm.
 
-.. doctest::
+.. doctest:: [st_simulation]
 
     >>> sim_obj = st_sim.STSim(params)
     >>> ptych = sim_obj.ptychograph()

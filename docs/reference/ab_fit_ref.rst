@@ -1,10 +1,12 @@
-Fitting Aberration Profiles
-===========================
+Fitting lens aberration profiles
+================================
 
 .. automodule:: pyrost.aberrations_fit
 
+Contents
+--------
+
 .. toctree::
     :maxdepth: 1
-    :caption: Contents
 
     classes/aberrations_fit

@@ -1,7 +1,7 @@
 MLL
 ===
 
-.. autoclass:: pyrost.simulation.MLL
+.. autoclass:: pyrost.multislice.MLL
     :members:
     :exclude-members: update_interdiffusion, update_materials
 

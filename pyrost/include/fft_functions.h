@@ -3,12 +3,20 @@
 #include "include.h"
 #include "array.h"
 
-int fft_convolve_np(double *out, double *inp, int ndim, size_t *dims,
+int rfft_convolve_np(double *out, double *inp, int ndim, size_t *dims,
     double *krn, size_t ksize, int axis, EXTEND_MODE mode, double cval,
     unsigned threads);
 
-int fft_convolve_fftw(double *out, double *inp, int ndim, size_t *dims,
+int cfft_convolve_np(double complex *out, double complex *inp, int ndim, size_t *dims,
+    double complex *krn, size_t ksize, int axis, EXTEND_MODE mode, double complex cval,
+    unsigned threads);
+
+int rfft_convolve_fftw(double *out, double *inp, int ndim, size_t *dims,
     double *krn, size_t ksize, int axis, EXTEND_MODE mode, double cval,
+    unsigned threads);
+
+int cfft_convolve_fftw(double complex *out, double complex *inp, int ndim, size_t *dims,
+    double complex *krn, size_t ksize, int axis, EXTEND_MODE mode, double complex cval,
     unsigned threads);
 
 int rsc_np(double complex *out, double complex *inp, int ndim, size_t *dims,
@@ -23,17 +31,28 @@ int fraunhofer_np(double complex *out, double complex *inp, int ndim, size_t *di
 int fraunhofer_fftw(double complex *out, double complex *inp, int ndim, size_t *dims, int axis,
     double dx0, double dx, double z, double wl, unsigned threads);
 
-typedef int (*convolve_func)(double*, double*, int, size_t*, double*,
+typedef int (*rconvolve_func)(double*, double*, int, size_t*, double*,
     size_t, int, EXTEND_MODE, double, unsigned);
 
-int gauss_kernel1d(double *out, double sigma, unsigned order, size_t ksize);
+typedef int (*cconvolve_func)(double complex*, double complex*, int, size_t*, double complex*,
+    size_t, int, EXTEND_MODE, double complex, unsigned);
 
-int gauss_filter(double *out, double *inp, int ndim, size_t *dims, double *sigma,
+int gauss_kernel1d(double *out, double sigma, unsigned order, size_t ksize, int step);
+
+int gauss_filter_r(double *out, double *inp, int ndim, size_t *dims, double *sigma,
     unsigned *order, EXTEND_MODE mode, double cval, double truncate, unsigned threads,
-    convolve_func fft_convolve);
+    rconvolve_func fft_convolve);
 
-int gauss_grad_mag(double *out, double *inp, int ndim, size_t *dims, double *sigma,
+int gauss_filter_c(double complex *out, double complex *inp, int ndim, size_t *dims, double *sigma,
+    unsigned *order, EXTEND_MODE mode, double complex cval, double truncate, unsigned threads,
+    cconvolve_func fft_convolve);
+
+int gauss_grad_mag_r(double *out, double *inp, int ndim, size_t *dims, double *sigma,
     EXTEND_MODE mode, double cval, double truncate, unsigned threads,
-    convolve_func fft_convolve);
+    rconvolve_func fft_convolve);
+
+int gauss_grad_mag_c(double *out, double complex *inp, int ndim, size_t *dims, double *sigma,
+    EXTEND_MODE mode, double complex cval, double truncate, unsigned threads,
+    cconvolve_func fft_convolve);
 
 #endif

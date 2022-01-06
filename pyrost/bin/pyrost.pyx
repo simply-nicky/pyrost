@@ -139,74 +139,59 @@ cdef void KR_frame_2d(float_t[:, ::1] I0, float_t[:, ::1] w0, uint_t[:, ::1] I_n
 def KR_reference(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None, float_t[:, :, ::1] u not None,
                  float_t[::1] di not None, float_t[::1] dj not None, double ds_y, double ds_x, double h,
                  bint return_nm0=True, unsigned num_threads=1):
-    r"""Generate an unabberated reference image of the sample
-    based on the pixel mapping `u` and the measured data `I_n`
-    using the Kernel regression.
+    r"""Generate an unabberated reference image of the sample based on the pixel
+    mapping `u` and the measured data `I_n` using the Kernel regression.
 
-    Parameters
-    ----------
-    I_n : numpy.ndarray
-        Measured intensity frames.
-    W : numpy.ndarray
-        Measured frames' whitefield.
-    u : numpy.ndarray
-        The pixel mapping between the data at
-        the detector plane and the reference image at
-        the reference plane.
-    di : numpy.ndarray
-        Sample's translations along the vertical detector axis
-        in pixels.
-    dj : numpy.ndarray
-        Sample's translations along the fast detector axis
-        in pixels.
-    ds_y : float
-        Sampling interval in pixels along the vertical axis.
-    ds_x : float
-        Sampling interval in pixels along the horizontal axis.
-    h : float
-        Gaussian kernel bandwidth in pixels.
-    return_nm0 : bool
-        If True, also returns the lower bounds (`n0`, `m0`)
-        of the reference image in pixels.
-    num_threads : int, optional
-        Number of threads.
+    Args:
+        I_n (numpy.ndarray) : Measured intensity frames.
+        W (numpy.ndarray) : Measured frames' whitefield.
+        u (numpy.ndarray) : The discrete geometrical mapping of the detector
+            plane to the reference image.
+        di (numpy.ndarray) : Initial sample's translations along the vertical
+            detector axis in pixels.
+        dj (numpy.ndarray) : Initial sample's translations along the horizontal
+            detector axis in pixels.
+        ds_y (float) : Sampling interval of reference image in pixels along the
+            vertical axis.
+        ds_x (float) : Sampling interval of reference image in pixels along the
+            horizontal axis.
+        h (float) : Gaussian kernel bandwidth in pixels.
+        return_nm0 (bool) : If True, also returns the lower bounds (`n0`, `m0`)
+            of the reference image in pixels.
+        num_threads (int) : Number of threads.
 
-    Returns
-    -------
-    I0 : numpy.ndarray
-        Reference image array.
-    n0 : int, optional
-        The lower bounds of the vertical detector axis of
-        the reference image at the reference frame in pixels.
-        Only provided if `return_nm0` is True.
-    m0 : int, optional
-        The lower bounds of the fast detector axis of
-        the reference image at the reference frame in pixels.
-        Only provided if `return_nm0` is True.
+    Returns:
+        Tuple[numpy.ndarray, int, int] : A tuple of three elements ('I0', 'n0',
+        'm0'). The elements are the following:
 
-    Notes
-    -----
-    Reference image update algorithm the detector plane to the
-    reference plane using the pixel mapping `u`:
+        * 'I0' : Reference image array.
+        * 'n0' : The lower bounds of the vertical detector axis of the reference
+          image at the reference frame in pixels. Only provided if `return_nm0` is
+          True.
+        * 'm0' : The lower bounds of the horizontal detector axis of the reference
+          image at the reference frame in pixels. Only provided if `return_nm0` is
+          True.
 
-    .. math::
-        ii_{0}, jj_{0} = u[0, i, j] - di[n], u[1, i, j] - dj[n]
+    Notes:
+        The pixel mapping `u` maps the intensity measurements from the detector
+        plane to the reference plane as follows:
 
-    Whereupon it generates a smoothed sample profile using
-    kernel regression approach with the gaussian kernel :math:`\phi`:
+        .. math::
+            i_{ref}[n, i, j] = u[0, i, j] + di[n], \; j_{ref}[n, i, j] = u[1, i, j] + dj[n]
 
-    .. math::
+        The reference image profile :math:`I_{ref}[ii, jj]` is obtained with the
+        kernel regression extimator as follows:
 
-        I_{ref}[ii, jj] = \frac{\sum_{n, i, j} I_n[i, j] W[i, j]
-        \phi[ii - u[0, i, j] + di[n], jj - u[1, i, j] + dj[n]]}
-        {\sum_{n, i, j} W[i, j]^2 \phi[ii - u[0, i, j] + di[n],
-        jj - u[1, i, j] + dj[n]]}
+        .. math::
 
-    .. math::
+            I_{ref}[i, j] = \frac{\sum_{n, i^{\prime}, j^{\prime}} K[i - i_{ref}[n,
+            i^{\prime}, j^{\prime}], j - j_{ref}[n, i^{\prime}, j^{\prime}], h]
+            \; W[i^{\prime}, j^{\prime}] I[n, i^{\prime}, j^{\prime}]}
+            {\sum_{n, i^{\prime}, j^{\prime}} K[i - i_{ref}[n, i^{\prime}, j^{\prime}], 
+            j - j_{ref}[n, i^{\prime}, j^{\prime}], h] \; W^2[i^{\prime}, j^{\prime}]}
 
-        \phi [\Delta ii_{ref}, \Delta jj_{ref}] = 
-        \exp\left[{-\frac{(\Delta ii_{ref})^2 + 
-        (\Delta jj_{ref})^2}{ls^2}}\right]
+        where :math:`K[i, j, h] = \frac{1}{\sqrt{2 \pi}} \exp(-\frac{i^2 + j^2}{h})`
+        is the Gaussian kernel.
     """
     if ds_y <= 0.0 or ds_x <= 0.0:
         raise ValueError('Sampling intervals must be positive')
@@ -321,50 +306,77 @@ cdef void LOWESS_frame_2d(float_t[:, ::1] W_sum, float_t[:, :, ::1] M_mat, float
 def LOWESS_reference(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None, float_t[:, :, ::1] u not None,
                      float_t[::1] di not None, float_t[::1] dj not None, double ds_y, double ds_x, double h,
                      bint return_nm0=True, unsigned num_threads=1):
-    r"""Generate an unabberated reference image of the sample
-    based on the pixel mapping `u` and the measured data `I_n`
-    using the Local Weighted Linear Regression (LOWESS).
+    r"""Generate an unabberated reference image of the sample based on the
+    pixel mapping `u` and the measured data `I_n` using the Local Weighted
+    Linear Regression (LOWESS).
 
-    Parameters
-    ----------
-    I_n : numpy.ndarray
-        Measured intensity frames.
-    W : numpy.ndarray
-        Measured frames' whitefield.
-    u : numpy.ndarray
-        The pixel mapping between the data at
-        the detector plane and the reference image at
-        the reference plane.
-    di : numpy.ndarray
-        Sample's translations along the vertical detector axis
-        in pixels.
-    dj : numpy.ndarray
-        Sample's translations along the fast detector axis
-        in pixels.
-    ds_y : float
-        Sampling interval in pixels along the vertical axis.
-    ds_x : float
-        Sampling interval in pixels along the horizontal axis.
-    h : float
-        Gaussian kernel bandwidth in pixels.
-    return_nm0 : bool
-        If True, also returns the lower bounds (`n0`, `m0`)
-        of the reference image in pixels.
-    num_threads : int, optional
-        Number of threads.
+    Args:
+        I_n (numpy.ndarray) : Measured intensity frames.
+        W (numpy.ndarray) : Measured frames' whitefield.
+        u (numpy.ndarray) : The discrete geometrical mapping of the detector
+            plane to the reference image.
+        di (numpy.ndarray) : Initial sample's translations along the vertical
+            detector axis in pixels.
+        dj (numpy.ndarray) : Initial sample's translations along the horizontal
+            detector axis in pixels.
+        ds_y (float) : Sampling interval of reference image in pixels along the
+            vertical axis.
+        ds_x (float) : Sampling interval of reference image in pixels along the
+            horizontal axis.
+        h (float) : Gaussian kernel bandwidth in pixels.
+        return_nm0 (bool) : If True, also returns the lower bounds (`n0`, `m0`)
+            of the reference image in pixels.
+        num_threads (int) : Number of threads.
 
-    Returns
-    -------
-    I0 : numpy.ndarray
-        Reference image array.
-    n0 : int, optional
-        The lower bounds of the vertical detector axis of
-        the reference image at the reference frame in pixels.
-        Only provided if `return_nm0` is True.
-    m0 : int, optional
-        The lower bounds of the fast detector axis of
-        the reference image at the reference frame in pixels.
-        Only provided if `return_nm0` is True.
+    Returns:
+        Tuple[numpy.ndarray, int, int] : A tuple of three elements ('I0', 'n0',
+        'm0'). The elements are the following:
+
+        * 'I0' : Reference image array.
+        * 'n0' : The lower bounds of the vertical detector axis of the reference
+          image at the reference frame in pixels. Only provided if `return_nm0` is
+          True.
+        * 'm0' : The lower bounds of the horizontal detector axis of the reference
+          image at the reference frame in pixels. Only provided if `return_nm0` is
+          True.
+
+    Notes:
+        The pixel mapping `u` maps the intensity measurements from the
+        detector plane to the reference plane as follows:
+
+        .. math::
+            i_{ref}[n, i, j] = u[0, i, j] + di[n], \; j_{ref}[n, i, j] = u[1, i, j] + dj[n]
+
+        The reference image profile :math:`I_{ref}[ii, jj]` is obtained
+        with the LOWESS regression extimator as follows:
+
+        .. math::
+
+            I_{ref}[i, j] = \frac{\sum_{n, i^{\prime}, j^{\prime}} K[i - i_{ref}[n,
+            i^{\prime}, j^{\prime}], j - j_{ref}[n, i^{\prime}, j^{\prime}], h]
+            \; r_{IW}[n, a^{IW}, b^{IW}_i, b^{IW}_j]}
+            {\sum_{n, i^{\prime}, j^{\prime}} K[i - i_{ref}[n, i^{\prime}, j^{\prime}], 
+            j - j_{ref}[n, i^{\prime}, j^{\prime}], h] \;
+            r_{WW}[n, a^{WW}, b^{WW}_i, b^{WW}_j]}
+
+        where :math:`r_{IW}[n, a, b_i, b_j]` and :math:`r_{WW}[n, a, b_i, b_j]`
+        are the residuals at the pixel :math:`i, j` with linear coefficients
+        defined with the least squares approach:
+
+        .. math::
+
+            r_{IW}[n, a, b_i, b_j] = I[n, i^{\prime}, j^{\prime}] W[i^{\prime}, j^{\prime}]
+            - a - b_i (i - i_{ref}[n, i^{\prime}, j^{\prime}) - b_j
+            (j - j_{ref}[n, i^{\prime}, j^{\prime})
+
+        .. math::
+
+            r_{WW}[n, a, b_i, b_j] = W^2[i^{\prime}, j^{\prime}]
+            - a - b_i (i - i_{ref}[n, i^{\prime}, j^{\prime}) - b_j
+            (j - j_{ref}[n, i^{\prime}, j^{\prime})
+
+        and :math:`K[i, j, h] = \frac{1}{\sqrt{2 \pi}} \exp(-\frac{i^2 + j^2}{h})`
+        is the Gaussian kernel.
     """
     if ds_y <= 0.0 or ds_x <= 0.0:
         raise ValueError('Sampling intervals must be positive')
@@ -585,53 +597,55 @@ def pm_gsearch(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None, float
     `sw_x` size along the vertical and fast axes accordingly in order to
     minimize the MSE at each point of the detector grid separately.
 
-    Parameters
-    ----------
-    I_n : numpy.ndarray
-        Measured intensity frames.
-    W : numpy.ndarray
-        Measured frames' whitefield.
-    I0 : numpy.ndarray
-        Reference image of the sample.
-    u0 : numpy.ndarray
-        Initial pixel mapping.
-    di : numpy.ndarray
-        Sample's translations along the vertical detector axis
-        in pixels.
-    dj : numpy.ndarray
-        Sample's translations along the fast detector axis
-        in pixels.
-    sw_y : float
-        Search window size in pixels along the vertical detector
-        axis.
-    sw_x : float
-        Search window size in pixels along the fast detector
-        axis.
-    grid_size : int
-        Grid size along one of the detector axes. The grid shape is
-        then (grid_size, grid_size).
-    ds_y : float
-        Sampling interval of reference image in pixels along the vertical axis.
-    ds_x : float
-        Sampling interval of reference image in pixels along the horizontal axis.
-    sigma : float
-        The standard deviation of :code:`I_n`.
-    loss : {'Epsilon', 'Huber', 'L1', 'L2'}, optional
-        Choose between the following loss functions:
+    Args:
+        I_n (numpy.ndarray) : Measured intensity frames.
+        W (numpy.ndarray) : Measured frames' whitefield.
+        I0 (numpy.ndarray) : Reference image of the sample.
+        u (numpy.ndarray) : The discrete geometrical mapping of the detector
+            plane to the reference image.
+        di (numpy.ndarray) : Initial sample's translations along the vertical
+            detector axis in pixels.
+        dj (numpy.ndarray) : Initial sample's translations along the horizontal
+            detector axis in pixels.
+        sw_y (float) : Search window size in pixels along the vertical detector
+            axis.
+        sw_x (float) : Search window size in pixels along the horizontal detector
+            axis.
+        grid_size (int) :  Grid size along one of the detector axes. The grid
+            shape is then (grid_size, grid_size).
+        ds_y (float) : Sampling interval of reference image in pixels along the
+            vertical axis.
+        ds_x (float) : Sampling interval of reference image in pixels along the
+            horizontal axis.
+        sigma (float) : The standard deviation of `I_n`.
+        loss (str) : Choose between the following loss functions:
 
-        * 'Epsilon': Epsilon loss function (epsilon = 0.5)
-        * 'Huber' : Huber loss function (k = 1.345)
-        * 'L1' : L1 norm loss function.
-        * 'L2' : L2 norm loss function.
-    num_threads : int, optional
-        Number of threads.
+            * 'Epsilon': Epsilon loss function (epsilon = 0.5)
+            * 'Huber' : Huber loss function (k = 1.345)
+            * 'L1' : L1 norm loss function.
+            * 'L2' : L2 norm loss function.
 
-    Returns
-    -------
-    u : numpy.ndarray
-        Updated pixel mapping array.
-    derr : numpy.ndarray
-        Error decrease for each pixel in the detector grid.
+        num_threads (int) : Number of threads.
+
+    Returns:
+        Tuple[numpy.ndarray, numpy.ndarray] : A tuple of two elements ('u', 'derr').
+        The elements are the following:
+
+        * 'u' : Updated pixel mapping array.
+        * 'derr' : Error decrease for each pixel in the detector grid.
+
+    Notes:
+        The error metric as a function of pixel mapping displacements
+        is given by:
+
+        .. math::
+
+            \varepsilon_{pm}[i, j, i^{\prime}, j^{\prime}] = \frac{1}{N}
+            \sum_{n = 0}^N f\left( \frac{I[n, i, j] - W[i, j]
+            I_{ref}[u[0, i, j] + i^{\prime} - di[n],
+            u[1, i, j] + j^{\prime} - dj[n]]}{\sigma} \right)
+
+        where :math:`f(x)` is L1 norm, L2 norm or Huber loss function.
     """
     if ds_y <= 0.0 or ds_x <= 0.0:
         raise ValueError('Sampling intervals must be positive')
@@ -681,59 +695,60 @@ def pm_rsearch(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None, float
                float_t[:, :, ::1] u0 not None, float_t[::1] di not None, float_t[::1] dj not None,
                double sw_y, double sw_x, unsigned n_trials, unsigned long seed, double ds_y, double ds_x, double sigma,
                str loss='Huber', unsigned num_threads=1):
-    r"""Update the pixel mapping by minimizing mean-squared-error
-    (MSE). Perform a random search within the search window of `sw_y`,
-    `sw_x` size along the vertical and fast axes accordingly in order to
-    minimize the MSE at each point of the detector grid separately.
+    r"""Update the pixel mapping by minimizing mean-squared-error (MSE).
+    Perform a random search within the search window of `sw_y`, `sw_x` size
+    along the vertical and fast axes accordingly in order to minimize the MSE
+    at each point of the detector grid separately.
 
-    Parameters
-    ----------
-    I_n : numpy.ndarray
-        Measured intensity frames.
-    W : numpy.ndarray
-        Measured frames' whitefield.
-    I0 : numpy.ndarray
-        Reference image of the sample.
-    u0 : numpy.ndarray
-        Initial pixel mapping.
-    di : numpy.ndarray
-        Sample's translations along the vertical detector axis
-        in pixels.
-    dj : numpy.ndarray
-        Sample's translations along the fast detector axis
-        in pixels.
-    sw_y : float
-        Search window size in pixels along the vertical detector
-        axis.
-    sw_x : float
-        Search window size in pixels along the horizontal detector
-        axis.
-    n_trials : int
-        Number of points generated at each pixel of the detector grid.
-    seed : int
-        Specify seed for the random number generation.
-    ds_y : float
-        Sampling interval of reference image in pixels along the vertical axis.
-    ds_x : float
-        Sampling interval of reference image in pixels along the horizontal axis.
-    sigma : float
-        The standard deviation of :code:`I_n`.
-    loss : {'Epsilon', 'Huber', 'L1', 'L2'}, optional
-        Choose between the following loss functions:
+    Args:
+        I_n (numpy.ndarray) : Measured intensity frames.
+        W (numpy.ndarray) : Measured frames' whitefield.
+        I0 (numpy.ndarray) : Reference image of the sample.
+        u (numpy.ndarray) : The discrete geometrical mapping of the detector
+            plane to the reference image.
+        di (numpy.ndarray) : Initial sample's translations along the vertical
+            detector axis in pixels.
+        dj (numpy.ndarray) : Initial sample's translations along the horizontal
+            detector axis in pixels.
+        sw_y (float) : Search window size in pixels along the vertical detector
+            axis.
+        sw_x (float) : Search window size in pixels along the horizontal detector
+            axis.
+        n_trials (int) : Number of points generated at each pixel of the detector grid.
+        seed (int) : Specify seed for the random number generation.
+        ds_y (float) : Sampling interval of reference image in pixels along the
+            vertical axis.
+        ds_x (float) : Sampling interval of reference image in pixels along the
+            horizontal axis.
+        sigma (float) : The standard deviation of `I_n`.
+        loss (str) : Choose between the following loss functions:
 
-        * 'Epsilon': Epsilon loss function (epsilon = 0.5)
-        * 'Huber' : Huber loss function (k = 1.345)
-        * 'L1' : L1 norm loss function.
-        * 'L2' : L2 norm loss function.
-    num_threads : int, optional
-        Number of threads.
+            * 'Epsilon': Epsilon loss function (epsilon = 0.5)
+            * 'Huber' : Huber loss function (k = 1.345)
+            * 'L1' : L1 norm loss function.
+            * 'L2' : L2 norm loss function.
 
-    Returns
-    -------
-    u : numpy.ndarray
-        Updated pixel mapping array.
-    derr : numpy.ndarray
-        Error decrease for each pixel in the detector grid.
+        num_threads (int) : Number of threads.
+
+    Returns:
+        Tuple[numpy.ndarray, numpy.ndarray] : A tuple of two elements ('u', 'derr').
+        The elements are the following:
+
+        * 'u' : Updated pixel mapping array.
+        * 'derr' : Error decrease for each pixel in the detector grid.
+
+    Notes:
+        The error metric as a function of pixel mapping displacements
+        is given by:
+
+        .. math::
+
+            \varepsilon_{pm}[i, j, i^{\prime}, j^{\prime}] = \frac{1}{N}
+            \sum_{n = 0}^N f\left( \frac{I[n, i, j] - W[i, j]
+            I_{ref}[u[0, i, j] + i^{\prime} - di[n],
+            u[1, i, j] + j^{\prime} - dj[n]]}{\sigma} \right)
+
+        where :math:`f(x)` is L1 norm, L2 norm or Huber loss function.
     """
     if ds_y <= 0.0 or ds_x <= 0.0:
         raise ValueError('Sampling intervals must be positive')
@@ -842,69 +857,67 @@ def pm_devolution(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None, fl
                   double sw_y, double sw_x, unsigned pop_size, unsigned n_iter, unsigned long seed,
                   double ds_y, double ds_x, double sigma, double F=0.75, double CR=0.7, str loss='Huber',
                   unsigned num_threads=1):
-    r"""Update the pixel mapping by minimizing mean-squared-error
-    (MSE). Perform a differential evolution within the search window of `sw_y`,
-    `sw_x` size along the vertical and fast axes accordingly in order to
-    minimize the MSE at each point of the detector grid separately.
+    r"""Update the pixel mapping by minimizing mean-squared-error (MSE). Perform
+    a differential evolution within the search window of `sw_y`, `sw_x` size along
+    the vertical and fast axes accordingly in order to minimize the MSE at each
+    point of the detector grid separately.
 
-    Parameters
-    ----------
-    I_n : numpy.ndarray
-        Measured intensity frames.
-    W : numpy.ndarray
-        Measured frames' whitefield.
-    I0 : numpy.ndarray
-        Reference image of the sample.
-    u0 : numpy.ndarray
-        Initial pixel mapping.
-    di : numpy.ndarray
-        Sample's translations along the vertical detector axis
-        in pixels.
-    dj : numpy.ndarray
-        Sample's translations along the fast detector axis
-        in pixels.
-    sw_y : float
-        Search window size in pixels along the vertical detector
-        axis.
-    sw_x : float
-        Search window size in pixels along the horizontal detector
-        axis.
-    pop_size : int
-        The total population size. Must be greater or equal to 4.
-    n_iter : int
-        The maximum number of generations over which the entire population
-        is evolved.
-    seed : int
-        Specify seed for the random number generation.
-    ds_y : float
-        Sampling interval of reference image in pixels along the vertical axis.
-    ds_x : float
-        Sampling interval of reference image in pixels along the horizontal axis.
-    sigma : float
-        The standard deviation of :code:`I_n`.
-    F : float, optional
-        The mutation constant. In the literature this is also known as
-        differential weight. If specified as a float it should be in the
-        range [0, 2].
-    CR : float, optional
-        The recombination constant, should be in the range [0, 1]. In the
-        literature this is also known as the crossover probability.
-    loss : {'Epsilon', 'Huber', 'L1', 'L2'}, optional
-        Choose between the following loss functions:
+    Args:
+        I_n (numpy.ndarray) : Measured intensity frames.
+        W (numpy.ndarray) : Measured frames' whitefield.
+        I0 (numpy.ndarray) : Reference image of the sample.
+        u (numpy.ndarray) : The discrete geometrical mapping of the detector
+            plane to the reference image.
+        di (numpy.ndarray) : Initial sample's translations along the vertical
+            detector axis in pixels.
+        dj (numpy.ndarray) : Initial sample's translations along the horizontal
+            detector axis in pixels.
+        sw_y (float) : Search window size in pixels along the vertical detector
+            axis.
+        sw_x (float) : Search window size in pixels along the horizontal detector
+            axis.
+        pop_size (int) : The total population size. Must be greater or equal to 4.
+        n_iter (int) : The maximum number of generations over which the entire
+            population is evolved.
+        seed (int) : Specify seed for the random number generation.
+        ds_y (float) : Sampling interval of reference image in pixels along the
+            vertical axis.
+        ds_x (float) : Sampling interval of reference image in pixels along the
+            horizontal axis.
+        sigma (float) : The standard deviation of `I_n`.
+        F (float) : The mutation constant. In the literature this is also known as
+            differential weight. If specified as a float it should be in the
+            range [0, 2].
+        CR (float) : The recombination constant, should be in the range [0, 1]. In
+            the literature this is also known as the crossover probability.
+        loss (str) : Choose between the following loss functions:
 
-        * 'Epsilon': Epsilon loss function (epsilon = 0.5)
-        * 'Huber' : Huber loss function (k = 1.345)
-        * 'L1' : L1 norm loss function.
-        * 'L2' : L2 norm loss function.
-    num_threads : int, optional
-        Number of threads.
+            * 'Epsilon': Epsilon loss function (epsilon = 0.5)
+            * 'Huber' : Huber loss function (k = 1.345)
+            * 'L1' : L1 norm loss function.
+            * 'L2' : L2 norm loss function.
 
-    Returns
-    -------
-    u : numpy.ndarray
-        Updated pixel mapping array.
-    derr : numpy.ndarray
-        Error decrease for each pixel in the detector grid.
+        num_threads (int) : Number of threads.
+
+    Returns:
+        Tuple[numpy.ndarray, numpy.ndarray] : A tuple of two elements ('u', 'derr').
+        The elements are the following:
+
+        * 'u' : Updated pixel mapping array.
+        * 'derr' : Error decrease for each pixel in the detector grid.
+
+    Notes:
+        The error metric as a function of pixel mapping displacements
+        is given by:
+
+        .. math::
+
+            \varepsilon_{pm}[i, j, i^{\prime}, j^{\prime}] = \frac{1}{N}
+            \sum_{n = 0}^N f\left( \frac{I[n, i, j] - W[i, j]
+            I_{ref}[u[0, i, j] + i^{\prime} - di[n],
+            u[1, i, j] + j^{\prime} - dj[n]]}{\sigma} \right)
+
+        where :math:`f(x)` is L1 norm, L2 norm or Huber loss function.
     """
     if ds_y <= 0.0 or ds_x <= 0.0:
         raise ValueError('Sampling intervals must be positive')
@@ -978,86 +991,50 @@ def tr_gsearch(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None, float
     of `sw_x` size in pixels for sample translations along the horizontal axis in
     order to minimize the total MSE.
 
-    Parameters
-    ----------
-    I_n : numpy.ndarray
-        Measured intensity frames.
-    W : numpy.ndarray
-        Measured frames' whitefield.
-    I0 : numpy.ndarray
-        Reference image of the sample.
-    u : numpy.ndarray
-        The pixel mapping between the data at
-        the detector plane and the reference image at
-        the reference plane.
-    di : numpy.ndarray
-        Initial sample's translations along the vertical detector
-        axis in pixels.
-    dj : numpy.ndarray
-        Initial sample's translations along the fast detector
-        axis in pixels.
-    sw_y : float
-        Search window size in pixels along the vertical detector
-        axis.
-    sw_x : float
-        Search window size in pixels along the fast detector
-        axis.
-    grid_size : int
-        Grid size along one of the detector axes. The grid shape is
-        then (grid_size, grid_size).
-    ds_y : float
-        Sampling interval of reference image in pixels along the vertical axis.
-    ds_x : float
-        Sampling interval of reference image in pixels along the horizontal axis.
-    sigma : float
-        The standard deviation of :code:`I_n`.
-    loss : {'Epsilon', 'Huber', 'L1', 'L2'}, optional
-        Choose between the following loss functions:
+    Args:
+        I_n (numpy.ndarray) : Measured intensity frames.
+        W (numpy.ndarray) : Measured frames' whitefield.
+        I0 (numpy.ndarray) : Reference image of the sample.
+        u (numpy.ndarray) : The discrete geometrical mapping of the detector
+            plane to the reference image.
+        di (numpy.ndarray) : Initial sample's translations along the vertical
+            detector axis in pixels.
+        dj (numpy.ndarray) : Initial sample's translations along the horizontal
+            detector axis in pixels.
+        sw_y (float) : Search window size in pixels along the vertical detector
+            axis.
+        sw_x (float) : Search window size in pixels along the horizontal detector
+            axis.
+        grid_size (int) : Grid size along one of the detector axes. The grid shape
+            is then (grid_size, grid_size).
+        ds_y (float) : Sampling interval of reference image in pixels along the
+            vertical axis.
+        ds_x (float) : Sampling interval of reference image in pixels along the
+            horizontal axis.
+        sigma (float) : The standard deviation of `I_n`.
+        loss (str) : Choose between the following loss functions:
 
-        * 'Epsilon': Epsilon loss function (epsilon = 0.5)
-        * 'Huber' : Huber loss function (k = 1.345)
-        * 'L1' : L1 norm loss function.
-        * 'L2' : L2 norm loss function.
-    num_threads : int, optional
-        Number of threads.
+            * 'Epsilon': Epsilon loss function (epsilon = 0.5)
+            * 'Huber' : Huber loss function (k = 1.345)
+            * 'L1' : L1 norm loss function.
+            * 'L2' : L2 norm loss function.
 
-    Returns
-    -------
-    dij : numpy.ndarray
-        Updated sample pixel translations.
+        num_threads (int) : Number of threads.
 
-    Notes
-    -----
-    The following error metric is being minimized:
+    Returns:
+        numpy.ndarray : Updated sample pixel translations.
 
-    .. math::
+    Notes:
+        The error metric as a function of sample shifts is given by:
 
-        MSE_{total} = \frac{1}{N M}\sum_{i, j} \left( \frac{\sum_{n}
-        \left( I_g[n] - I_{ref}[ii_n, jj_n] \right)^2}{\sum_{n}
-        \left(I_g[n] - 1 \right)^2} \right)
-    
-    Where :math:`I_g[n]` is a smoothed intensity profile of the
-    particular detector coordinate :math:`I_n[n, i, j]`. Intensity
-    profile :math:`I_n[n, i, j]` is smoothed with gaussian kernel
-    :math:`\phi`:
+        .. math::
 
-    .. math::
-        I_g[n] = \frac{\sum_{\Delta i, \Delta j} I_n[n, i + \Delta i,
-        j + \Delta j] W[i + \Delta i, j + \Delta j] 
-        \phi[\Delta u[0], \Delta u[1]]}
-        {\sum_{\Delta i, \Delta j} W[i + \Delta i, j + \Delta j]^2
-        \phi[\Delta u[0], \Delta u[1]]}
-    
-    .. math::
-        \Delta u[0] = u[0, i + \Delta i, j + \Delta j] - u[0, i, j]
-    
-    .. math::
-        \Delta u[1] = u[1, i + \Delta i, j + \Delta j] - u[1, i, j]
+            \varepsilon_{tr}[n, di^{\prime}, dj^{\prime}] = \frac{1}{Y X}
+            \sum_{i = 0}^Y \sum_{j = 0}^Y f\left( \frac{I[n, i, j] - W[i, j]
+            I_{ref}[u[0, i, j] - di[n] - di^{\prime},
+            u[1, i, j] - dj[n] - dj^{\prime}]}{\sigma} \right)
 
-    .. math::
-        \phi [\Delta ii_{ref}, \Delta jj_{ref}] = 
-        \exp\left[{-\frac{(\Delta ii_{ref})^2 + 
-        (\Delta jj_{ref})^2}{ls^2}}\right]
+        where :math:`f(x)` is L1 norm, L2 norm or Huber loss function.
     """
     if ds_y <= 0.0 or ds_x <= 0.0:
         raise ValueError('Sampling intervals must be positive')
@@ -1092,51 +1069,49 @@ def tr_gsearch(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None, float
 def pm_errors(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None, float_t[:, ::1] I0 not None,
               float_t[:, :, ::1] u not None, float_t[::1] di not None, float_t[::1] dj not None,
               double ds_y, double ds_x, double sigma, str loss='Huber', unsigned num_threads=1) -> np.ndarray:
-    """Return the residuals for the pixel mapping fit.
+    r"""Return the residuals for the pixel mapping fit.
 
-    Parameters
-    ----------
-    I_n : numpy.ndarray
-        Measured intensity frames.
-    W : numpy.ndarray
-        Measured frames' whitefield.
-    I0 : numpy.ndarray
-        Reference image of the sample.
-    u : numpy.ndarray
-        The pixel mapping between the data at
-        the detector plane and the reference image at
-        the reference plane.
-    di : numpy.ndarray
-        Sample's translations along the vertical detector axis
-        in pixels.
-    dj : numpy.ndarray
-        Sample's translations along the fast detector axis
-        in pixels.
-    ds_y : float
-        Sampling interval of reference image in pixels along the vertical axis.
-    ds_x : float
-        Sampling interval of reference image in pixels along the horizontal axis.
-    sigma : float
-        The standard deviation of :code:`I_n`.
-    loss : {'Epsilon', 'Huber', 'L1', 'L2'}, optional
-        Choose between the following loss functions:
+    Args:
+        I_n (numpy.ndarray) : Measured intensity frames.
+        W (numpy.ndarray) : Measured frames' whitefield.
+        I0 (numpy.ndarray) : Reference image of the sample.
+        u (numpy.ndarray) : The discrete geometrical mapping of the detector
+            plane to the reference image.
+        di (numpy.ndarray) : Sample's translations along the vertical detector
+            axis in pixels.
+        dj (numpy.ndarray) : Sample's translations along the fast detector
+            axis in pixels.
+        ds_y (float) : Sampling interval of reference image in pixels along
+            the vertical axis.
+        ds_x (float) : Sampling interval of reference image in pixels along
+            the horizontal axis.
+        sigma (float) : The standard deviation of `I_n`.
+        loss (str): Choose between the following loss functions:
 
-        * 'Epsilon': Epsilon loss function (epsilon = 0.5)
-        * 'Huber' : Huber loss function (k = 1.345)
-        * 'L1' : L1 norm loss function.
-        * 'L2' : L2 norm loss function.
-    num_threads : int, optional
-        Number of threads.
+            * 'Epsilon': Epsilon loss function (epsilon = 0.5)
+            * 'Huber' : Huber loss function (k = 1.345)
+            * 'L1' : L1 norm loss function.
+            * 'L2' : L2 norm loss function.
+        num_threads (int): Number of threads.
 
-    Returns
-    -------
-    errors : numpy.ndarray
-        Residuals of the pixel mapping fit.
+    Returns:
+        numpy.ndarray : Residual profile of the pixel mapping fit.
 
-    See Also
-    --------
-    pm_gsearch : Description of error metric which
+    See Also:
+        :func:`pyrost.bin.pm_gsearch` : Description of error metric which
         is being minimized.
+
+    Notes:
+        The error metric is given by:
+
+        .. math::
+
+            \varepsilon_{pm}[i, j] = \frac{1}{N}
+            \sum_{n = 0}^N f\left( \frac{I[n, i, j] - W[i, j]
+            I_{ref}[u[0, i, j] - di[n], u[1, i, j] - dj[n]]}{\sigma}
+            \right)
+
+        where :math:`f(x)` is L1 norm, L2 norm or Huber loss function.
     """
     if ds_y <= 0.0 or ds_x <= 0.0:
         raise ValueError('Sampling intervals must be positive')
@@ -1162,51 +1137,49 @@ def pm_errors(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None, float_
 def pm_total_error(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None, float_t[:, ::1] I0 not None,
                    float_t[:, :, ::1] u not None, float_t[::1] di not None, float_t[::1] dj not None,
                    double ds_y, double ds_x, double sigma, str loss='Huber', unsigned num_threads=1) -> double:
-    """Return the mean residual for the pixel mapping fit.
+    r"""Return the mean residual for the pixel mapping fit.
 
-    Parameters
-    ----------
-    I_n : numpy.ndarray
-        Measured intensity frames.
-    W : numpy.ndarray
-        Measured frames' whitefield.
-    I0 : numpy.ndarray
-        Reference image of the sample.
-    u : numpy.ndarray
-        The pixel mapping between the data at
-        the detector plane and the reference image at
-        the reference plane.
-    di : numpy.ndarray
-        Sample's translations along the vertical detector axis
-        in pixels.
-    dj : numpy.ndarray
-        Sample's translations along the fast detector axis
-        in pixels.
-    ds_y : float
-        Sampling interval of reference image in pixels along the vertical axis.
-    ds_x : float
-        Sampling interval of reference image in pixels along the horizontal axis.
-    sigma : float
-        The standard deviation of :code:`I_n`.
-    loss : {'Epsilon', 'Huber', 'L1', 'L2'}, optional
-        Choose between the following loss functions:
+    Args:
+        I_n (numpy.ndarray) : Measured intensity frames.
+        W (numpy.ndarray) : Measured frames' whitefield.
+        I0 (numpy.ndarray) : Reference image of the sample.
+        u (numpy.ndarray) : The discrete geometrical mapping of the detector
+            plane to the reference image.
+        di (numpy.ndarray) : Sample's translations along the vertical detector
+            axis in pixels.
+        dj (numpy.ndarray) : Sample's translations along the fast detector
+            axis in pixels.
+        ds_y (float) : Sampling interval of reference image in pixels along
+            the vertical axis.
+        ds_x (float) : Sampling interval of reference image in pixels along
+            the horizontal axis.
+        sigma (float) : The standard deviation of `I_n`.
+        loss (str): Choose between the following loss functions:
 
-        * 'Epsilon': Epsilon loss function (epsilon = 0.5)
-        * 'Huber' : Huber loss function (k = 1.345)
-        * 'L1' : L1 norm loss function.
-        * 'L2' : L2 norm loss function.
-    num_threads : int, optional
-        Number of threads.
+            * 'Epsilon': Epsilon loss function (epsilon = 0.5)
+            * 'Huber' : Huber loss function (k = 1.345)
+            * 'L1' : L1 norm loss function.
+            * 'L2' : L2 norm loss function.
+        num_threads (int): Number of threads.
 
-    Returns
-    -------
-    err : numpy.ndarray
-        Mean residual value of the pixel mapping fit.
+    Returns:
+        float : Mean residual value of the pixel mapping fit.
 
-    See Also
-    --------
-    pm_gsearch : Description of error metric which
+    See Also:
+        :func:`pyrost.bin.pm_gsearch` : Description of error metric which
         is being minimized.
+
+    Notes:
+        The error metric is given by:
+
+        .. math::
+
+            \varepsilon_{pm}[i, j] = \frac{1}{N}
+            \sum_{n = 0}^N f\left( \frac{I[n, i, j] - W[i, j]
+            I_{ref}[u[0, i, j] - di[n], u[1, i, j] - dj[n]]}{\sigma}
+            \right)
+
+        where :math:`f(x)` is L1 norm, L2 norm or Huber loss function.
     """
     if ds_y <= 0.0 or ds_x <= 0.0:
         raise ValueError('Sampling intervals must be positive')
@@ -1256,53 +1229,60 @@ cdef void FVU_frame(float_t[:, ::1] errors, float_t[:, ::1] R, float_t[:, ::1] I
 def ref_errors(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None, float_t[:, ::1] I0 not None,
                float_t[:, :, ::1] u not None, float_t[::1] di not None, float_t[::1] dj not None,
                double ds_y, double ds_x, double h, double sigma, str loss='Huber', unsigned num_threads=1) -> np.ndarray:
-    """Return the residuals for the reference image regression.
+    r"""Return the residuals for the reference image regression.
 
-    Parameters
-    ----------
-    I_n : numpy.ndarray
-        Measured intensity frames.
-    W : numpy.ndarray
-        Measured frames' whitefield.
-    I0 : numpy.ndarray
-        Reference image of the sample.
-    u : numpy.ndarray
-        The pixel mapping between the data at
-        the detector plane and the reference image at
-        the reference plane.
-    di : numpy.ndarray
-        Sample's translations along the vertical detector axis
-        in pixels.
-    dj : numpy.ndarray
-        Sample's translations along the fast detector axis
-        in pixels.
-    ds_y : float
-        Sampling interval of reference image in pixels along the vertical axis.
-    ds_x : float
-        Sampling interval of reference image in pixels along the horizontal axis.
-    h : float
-        Kernel bandwidth in pixels.
-    sigma : float
-        The standard deviation of :code:`I_n`.
-    loss : {'Epsilon', 'Huber', 'L1', 'L2'}, optional
-        Choose between the following loss functions:
+    Args:
+        I_n (numpy.ndarray) :  Measured intensity frames.
+        W (numpy.ndarray) : Measured frames' whitefield.
+        I0 (numpy.ndarray) : Reference image of the sample.
+        u (numpy.ndarray) : The discrete geometrical mapping of the detector
+            plane to the reference image.
+        di (numpy.ndarray) : Sample's translations along the vertical
+            detector axis in pixels.
+        dj (numpy.ndarray): Sample's translations along the fast detector
+            axis in pixels.
+        ds_y (float) : Sampling interval of reference image in pixels along
+            the vertical axis.
+        ds_x (float) : Sampling interval of reference image in pixels along
+            the horizontal axis.
+        h (float) : Kernel bandwidth in pixels.
+        sigma (float) : The standard deviation of `I_n`.
+        loss (str) : Choose between the following loss functions:
 
-        * 'Epsilon': Epsilon loss function (epsilon = 0.5)
-        * 'Huber' : Huber loss function (k = 1.345)
-        * 'L1' : L1 norm loss function.
-        * 'L2' : L2 norm loss function.
-    num_threads : int, optional
-        Number of threads.
+            * 'Epsilon': Epsilon loss function (epsilon = 0.5)
+            * 'Huber' : Huber loss function (k = 1.345)
+            * 'L1' : L1 norm loss function.
+            * 'L2' : L2 norm loss function.
 
-    Returns
-    -------
-    errors : numpy.ndarray
-        Residuals array of the reference image regression.
+        num_threads (int) : Number of threads.
 
-    See Also
-    --------
-    KR_reference : Description of error metric which
-        is being minimized.
+    Returns:
+        numpy.ndarray : Residuals array of the reference image regression.
+
+    Notes:
+        The pixel mapping `u` maps the intensity measurements from the
+        detector plane to the reference plane as follows:
+
+        .. math::
+            i_{ref}[n, i, j] = u[0, i, j] + di[n], \; j_{ref}[n, i, j] = u[1, i, j] + dj[n]
+
+        The error metric is given by:
+
+        .. math::
+
+            \varepsilon_{ref}[i, j] = \sum_{n, i^{\prime}, j^{\prime}}
+            K[i - i_{ref}[n, i^{\prime}, j^{\prime}], 
+            j - j_{ref}[n, i^{\prime}, j^{\prime}], h] \;
+            f\left( \frac{I_n[n, i^{\prime}, j^{\prime}] -
+            W[i^{\prime}, j^{\prime}] I_{ref}[i, j]}{\sigma} \right)
+
+        where :math:`f(x)` is L1 norm, L2 norm or Huber loss function
+        and :math:`K[i, j, h] = \frac{1}{\sqrt{2 \pi}} \exp(-\frac{i^2 + j^2}{h})`
+        is the Gaussian kernel.
+
+    See Also:
+        :func:`pyrost.bin.KR_reference` : Description of the reference image
+        estimator.
     """
     if ds_y <= 0.0 or ds_x <= 0.0:
         raise ValueError('Sampling intervals must be positive')
@@ -1339,53 +1319,60 @@ def ref_errors(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None, float
 def ref_total_error(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None, float_t[:, ::1] I0 not None,
                     float_t[:, :, ::1] u not None, float_t[::1] di not None, float_t[::1] dj not None,
                     double ds_y, double ds_x, double h, double sigma, str loss='Huber', unsigned num_threads=1):
-    """Return the mean residual for the reference image regression.
+    r"""Return the mean residual for the reference image regression.
 
-    Parameters
-    ----------
-    I_n : numpy.ndarray
-        Measured intensity frames.
-    W : numpy.ndarray
-        Measured frames' whitefield.
-    I0 : numpy.ndarray
-        Reference image of the sample.
-    u : numpy.ndarray
-        The pixel mapping between the data at
-        the detector plane and the reference image at
-        the reference plane.
-    di : numpy.ndarray
-        Sample's translations along the vertical detector axis
-        in pixels.
-    dj : numpy.ndarray
-        Sample's translations along the fast detector axis
-        in pixels.
-    ds_y : float
-        Sampling interval of reference image in pixels along the vertical axis.
-    ds_x : float
-        Sampling interval of reference image in pixels along the horizontal axis.
-    h : float
-        Kernel bandwidth in pixels.
-    sigma : float
-        The standard deviation of :code:`I_n`.
-    loss : {'Epsilon', 'Huber', 'L1', 'L2'}, optional
-        Choose between the following loss functions:
+    Args:
+        I_n (numpy.ndarray) :  Measured intensity frames.
+        W (numpy.ndarray) : Measured frames' whitefield.
+        I0 (numpy.ndarray) : Reference image of the sample.
+        u (numpy.ndarray) : The discrete geometrical mapping of the detector
+            plane to the reference image.
+        di (numpy.ndarray) : Sample's translations along the vertical
+            detector axis in pixels.
+        dj (numpy.ndarray): Sample's translations along the fast detector
+            axis in pixels.
+        ds_y (float) : Sampling interval of reference image in pixels along
+            the vertical axis.
+        ds_x (float) : Sampling interval of reference image in pixels along
+            the horizontal axis.
+        h (float) : Kernel bandwidth in pixels.
+        sigma (float) : The standard deviation of `I_n`.
+        loss (str) : Choose between the following loss functions:
 
-        * 'Epsilon': Epsilon loss function (epsilon = 0.5)
-        * 'Huber' : Huber loss function (k = 1.345)
-        * 'L1' : L1 norm loss function.
-        * 'L2' : L2 norm loss function.
-    num_threads : int, optional
-        Number of threads.
+            * 'Epsilon': Epsilon loss function (epsilon = 0.5)
+            * 'Huber' : Huber loss function (k = 1.345)
+            * 'L1' : L1 norm loss function.
+            * 'L2' : L2 norm loss function.
 
-    Returns
-    -------
-    err : float
-        Mean residual value.
+        num_threads (int) : Number of threads.
 
-    See Also
-    --------
-    KR_reference : Description of error metric which
-        is being minimized.
+    Returns:
+        float : Mean residual value.
+
+    Notes:
+        The pixel mapping `u` maps the intensity measurements from the
+        detector plane to the reference plane as follows:
+
+        .. math::
+            i_{ref}[n, i, j] = u[0, i, j] + di[n], \; j_{ref}[n, i, j] = u[1, i, j] + dj[n]
+
+        The error metric is given by:
+
+        .. math::
+
+            \varepsilon_{ref}[i, j] = \sum_{n, i^{\prime}, j^{\prime}}
+            K[i - i_{ref}[n, i^{\prime}, j^{\prime}], 
+            j - j_{ref}[n, i^{\prime}, j^{\prime}], h] \;
+            f\left( \frac{I_n[n, i^{\prime}, j^{\prime}] -
+            W[i^{\prime}, j^{\prime}] I_{ref}[i, j]}{\sigma} \right)
+
+        where :math:`f(x)` is L1 norm, L2 norm or Huber loss function
+        and :math:`K[i, j, h] = \frac{1}{\sqrt{2 \pi}} \exp(-\frac{i^2 + j^2}{h})`
+        is the Gaussian kernel.
+
+    See Also:
+        :func:`pyrost.bin.KR_reference` : Description of the reference image
+        estimator.
     """
     if ds_y <= 0.0 or ds_x <= 0.0:
         raise ValueError('Sampling intervals must be positive')
@@ -1425,33 +1412,26 @@ def ref_total_error(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None, 
     return err, sqrt(err2 - err * err)
 
 def ct_integrate(float_t[:, ::1] sy_arr not None, float_t[:, ::1] sx_arr not None, int num_threads=1) -> np.ndarray:
-    """Perform the Fourier Transform wavefront reconstruction [FTI]_
-    with antisymmetric derivative integration [ASDI]_.
+    """Perform the Fourier Transform wavefront reconstruction [FTI]_ with
+    antisymmetric derivative integration [ASDI]_.
 
-    Parameters
-    ----------
-    sx_arr : numpy.ndarray
-        Array of gradient values along the horizontal axis.
-    sy_arr : numpy.ndarray
-        Array of gradient values along the vertical axis.
-    num_threads : int, optional
-        Number of threads.
+    Args:
+        sx_arr (numpy.ndarray) :  of gradient values along the horizontal axis.
+        sy_arr (numpy.ndarray) : Array of gradient values along the vertical axis.
+        num_threads (int) : Number of threads.
 
-    Returns
-    -------
-    w : numpy.ndarray
-        Reconstructed wavefront.
+    Returns:
+        numpy.ndarray : Reconstructed wavefront.
 
-    References
-    ----------
-    .. [FTI] C. Kottler, C. David, F. Pfeiffer, and O. Bunk,
-             "A two-directional approach for grating based
-             differential phase contrast imaging using hard x-rays,"
-             Opt. Express 15, 1175-1181 (2007).
-    .. [ASDI] Pierre Bon, Serge Monneret, and Benoit Wattellier,
-              "Noniterative boundary-artifact-free wavefront
-              reconstruction from its derivatives," Appl. Opt. 51,
-              5698-5704 (2012).
+    References:
+        .. [FTI] C. Kottler, C. David, F. Pfeiffer, and O. Bunk,
+                "A two-directional approach for grating based
+                differential phase contrast imaging using hard x-rays,"
+                Opt. Express 15, 1175-1181 (2007).
+        .. [ASDI] Pierre Bon, Serge Monneret, and Benoit Wattellier,
+                "Noniterative boundary-artifact-free wavefront
+                reconstruction from its derivatives," Appl. Opt. 51,
+                5698-5704 (2012).
     """
     cdef int type_num = np.PyArray_TYPE(sx_arr.base)
     cdef np.npy_intp a = sx_arr.shape[0], b = sx_arr.shape[1]

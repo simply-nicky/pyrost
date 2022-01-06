@@ -1,30 +1,27 @@
 """Multislice beam propagation simulation. Generate a profile of
 the beam that propagates through a bulky sample.
-:class:`pyrost.simulation.MLL` generates a transmission profile of
-a wedged Multilayer Laue lens (MLL). :class:`pyrost.simulations.MSPropagator`
+:class:`pyrost.multislice.MLL` generates a transmission profile of
+a wedged Multilayer Laue lens (MLL). :class:`pyrost.multislice.MSPropagator`
 calculates the beam propagation and spits out the wavefield profile of
 the propagated beam together with the transmission profile of the sample
 at each slice.
 
-Examples
---------
+Examples:
 
-Initialize a MLL object with the :class:`pyrost.simulations.MSParams`
-parameters object `params`:
+    Initialize a MLL object with the :class:`pyrost.multislice.MSParams`
+    parameters object `params` with :func:`pyrost.multislice.MLL.import_params`.
+    Then you can initialize a multislice beam propagator
+    :class:`pyrost.multislice.MSPropagator` with `params` and `mll` and perform
+    the multislice beam propagation as follows:
 
->>> import pyrost.simulation as sim
->>> mll = sim.MSParams(params)
+    >>> import pyrost.multislice as ms_sim
+    >>> params = ms_sim.MSParams.import_default()
+    >>> mll = ms_sim.MLL.import_params(params)
+    >>> ms_prgt = ms_sim.MSPropagator(params, mll)
+    >>> ms_prgt.beam_propagate() # doctest: +SKIP
 
-Initialize a multislice beam propagator with `params` and `mll`:
-
->>> ms_prgt = sim.MSPropagator(params, mll)
-
-Perform the multislice beam propagation as follows:
-
->>> ms_prgt.beam_propagate()
-
-All the results are saved into `ms_prgt.beam_profile` and
-`ms_prgt.smp_profile` attributes.
+    All the results are saved into `ms_prgt.beam_profile` and
+    `ms_prgt.smp_profile` attributes.
 """
 from __future__ import annotations
 from multiprocessing import cpu_count
@@ -212,30 +209,27 @@ class MSPropagator(DataContainer):
     * wf_inc : Wavefront at the entry surface.
     * z_arr : Coordinates array along the propagation axis [um].
     """
-    attr_set = {'num_threads', 'params', 'sample'}
-    init_set = {'beam_profile', 'fx_arr', 'kernel', 'smp_profile', 'x_arr', 'wf_inc', 'z_arr'}
+    attr_set = {'params', 'sample'}
+    init_set = {'beam_profile', 'fx_arr', 'kernel', 'num_threads', 'smp_profile', 'x_arr',
+                'wf_inc', 'z_arr'}
+
+    inits = {'num_threads'  : lambda obj: np.clip(1, 64, cpu_count()),
+             'x_arr'        : lambda obj: obj.params.get_xcoords(),
+             'z_arr'        : lambda obj: obj.params.get_zcoords(),
+             'fx_arr'       : lambda obj: np.fft.fftfreq(obj.size, obj.params.x_step),
+             'kernel'       : lambda obj: obj.params.get_kernel(obj.fx_arr) / obj.fx_arr.size,
+             'wf_inc'       : lambda obj: obj._inc_wavefront()}
 
     def __init__(self, params: MSParams, sample: MLL, num_threads: Optional[int]=None,
                  **kwargs: np.ndarray) -> None:
-        if num_threads is None:
-            num_threads = np.clip(1, 64, cpu_count())
         super(MSPropagator, self).__init__(params=params, sample=sample,
                                            num_threads=num_threads, **kwargs)
-        self._init_dict()
 
-    def _init_dict(self) -> None:
-        if self.x_arr is None or self.fx_arr is None:
-            self.x_arr = self.params.get_xcoords()
-            self.z_arr = self.params.get_zcoords()
-            self.fx_arr = np.fft.fftfreq(self.size, self.params.x_step)
-
-        if self.kernel is None:
-            self.kernel = self.params.get_kernel(self.fx_arr) / self.fx_arr.size
-
-        if self.wf_inc is None:
-            self.wf_inc = np.ones(self.x_arr.shape, dtype=np.complex128)
-            x_min, x_max = self.sample.get_span()
-            self.wf_inc[(self.x_arr < x_min) | (self.x_arr > x_max)] = 0.
+    def _inc_wavefront(self):
+        wf_inc = np.ones(self.x_arr.shape, dtype=np.complex128)
+        x_min, x_max = self.sample.get_span()
+        wf_inc[(self.x_arr < x_min) | (self.x_arr > x_max)] = 0.0
+        return wf_inc
 
     @property
     def size(self) -> int:
