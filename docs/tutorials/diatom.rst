@@ -1,7 +1,7 @@
 Speckle tracking reconstruction of a 2d dataset
 ===============================================
 
-Diatom dataset CXI File
+Diatom dataset CXI file
 -----------------------
 First download the `diatom.cxi <https://www.cxidb.org/data/134/diatom.cxi>`_
 file from the `CXIDB <https://www.cxidb.org/>`_. The file has the following
@@ -113,7 +113,7 @@ Let's update the data container with the defocus distance we got.
 
 .. _diatom-st-update:
 
-Speckle Tracking update
+Speckle tracking update
 -----------------------
 Now we're ready to generate a :class:`pyrost.SpeckleTracking` object, which does the heavy
 lifting of calculating the pixel mapping between reference plane and detector plane,

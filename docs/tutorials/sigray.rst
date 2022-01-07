@@ -81,7 +81,7 @@ Let's update the data container with the defocus distance we got.
     
         >>> data = data.update_defocus(defocus)
 
-Speckle Tracking update
+Speckle tracking update
 -----------------------
 Now we’re ready to generate a pyrost.SpeckleTracking object, which is able to perform the
 speckle tracking procedure with :func:`pyrost.SpeckleTracking.iter_update_gd` method.

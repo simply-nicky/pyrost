@@ -13,7 +13,8 @@ dependencies:
   - numpy
   - scipy
   - sphinx
-  - sphinx_rtd_theme
+  - furo
+  - sphinx-autodoc-typehints
   - mock
   - pillow
   - tqdm

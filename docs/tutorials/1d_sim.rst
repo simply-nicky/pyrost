@@ -4,7 +4,7 @@ Speckle tracking reconstruction of a simulated dataset
 Speckle Tracking update procedure of one-dimensional scan doesn't differ much
 from the case of two-dimensional scan. See :doc:`diatom` for an example.
 
-1D Scan CXI File
+1D scan CXI file
 ----------------
 In order to obtain the file generate it using :doc:`st_sim`. The file has
 the following structure:
@@ -51,7 +51,7 @@ import the protocol file, which is located in the same folder with `data.cxi`.
     >>> loader = rst.CXILoader(protocol=protocol)
     >>> data = loader.load('data.cxi')
 
-Speckle Tracking update
+Speckle tracking update
 -----------------------
 You can perform the Speckle Tracking procedure with :class:`pyrost.SpeckleTracking`.
 
