@@ -98,11 +98,12 @@ class DataContainer:
             ValueError : If an attribute specified in `attr_set` has not been
                 provided.
         """
-        for attr in self.attr_set:
-            if kwargs.get(attr, None) is None:
-                raise ValueError('Attribute {:s} has not been provided'.format(attr))
+        for attr, val in kwargs.items():
+            if attr in self.attr_set:
+                if val is None:
+                    raise ValueError('Attribute {:s} has not been provided'.format(attr))
 
-            self.__setattr__(attr, kwargs.get(attr))
+                self.__setattr__(attr, val)
 
         for attr in self.init_set:
             self.__setattr__(attr, kwargs.get(attr))
