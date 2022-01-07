@@ -83,15 +83,15 @@ Let's update the data container with the defocus distance we got.
 
 Speckle tracking update
 -----------------------
-Now we’re ready to generate a pyrost.SpeckleTracking object, which is able to perform the
-speckle tracking procedure with :func:`pyrost.SpeckleTracking.iter_update_gd` method.
-For more information about the parameters see the section :ref:`diatom-st-update` in the
+Now we’re ready to generate a :class:`pyrost.SpeckleTracking` object, which is able to
+perform the speckle tracking reconstruction with :func:`pyrost.SpeckleTracking.iter_update_gd`
+method. For more information about the parameters see the section :ref:`diatom-st-update` in the
 2d dataset tutorial.
 
 .. code-block:: python
 
     >>> st_obj = data.get_st()
-    >>> st_res = st_obj.iter_update_gd(hval=8., blur=12., sw_x=5, n_iter=150)
+    >>> st_res = st_obj.iter_update_gd(h0=8., blur=12., sw_x=5, n_iter=150)
     >>> data = data.update_phase(st_res)
 
     >>> fig, axes = plt.subplots(1, 2, figsize=(16, 6))

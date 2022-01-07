@@ -499,7 +499,7 @@ def main():
     parser.add_argument('--bulk_atn', type=float, help="Bulk attenuation")
     parser.add_argument('--bar_rnd', type=float, help="Bar random deviation")
     parser.add_argument('--offset', type=float,
-                        help="sample's offset at the beginning and the end of the scan [um]")
+                        help="Sample's offset at the beginning and the end of the scan [um]")
     parser.add_argument('-p', '--ptych', action='store_true', help="Generate ptychograph data")
     parser.set_defaults(**STParams().export_dict())
 

@@ -89,37 +89,35 @@ just type :code:`python -m pyrost.simulation --help`.
       out_path              Output folder path
 
     optional arguments:
-      -h, --help            show this help message and exit
+      -h, --help                show this help message and exit
       -f INI_FILE, --ini_file INI_FILE
-                            Path to an INI file to fetch all of the simulation
-                            parameters (default: None)
-      --defocus DEFOCUS     Lens defocus distance, [um] (default: 400.0)
-      --det_dist DET_DIST   Distance between the barcode and the detector [um]
-                            (default: 2000000.0)
-      --step_size STEP_SIZE
-                            Scan step size [um] (default: 0.1)
-      --n_frames N_FRAMES   Number of frames (default: 300)
-      --detx_size FS_SIZE     Fast axis frames size in pixels (default: 2000)
-      --dety_size SS_SIZE     Slow axis frames size in pixels (default: 1000)
-      --p0 P0               Source beam flux [cnt / s] (default: 200000.0)
-      --wl WL               Wavelength [um] (default: 7.29e-05)
-      --th_s TH_S           Source rocking curve width [rad] (default: 0.0002)
-      --ap_x AP_X           Lens size along the x axis [um] (default: 40.0)
-      --ap_y AP_Y           Lens size along the y axis [um] (default: 2.0)
-      --focus FOCUS         Focal distance [um] (default: 1500.0)
-      --alpha ALPHA         Third order aberrations [rad/mrad^3] (default: -0.05)
-      --ab_cnt AB_CNT       Lens' aberrations center point [0.0 - 1.0] (default:
-                            0.5)
-      --bar_size BAR_SIZE   Average bar size [um] (default: 0.1)
-      --bar_sigma BAR_SIGMA
-                            Bar haziness width [um] (default: 0.01)
-      --bar_atn BAR_ATN     Bar attenuation (default: 0.3)
-      --bulk_atn BULK_ATN   Bulk attenuation (default: 0.0)
-      --bar_rnd BAR_RND     Bar random deviation (default: 0.6)
-      --offset OFFSET       sample's offset at the beginning and the end of the
-                            scan [um] (default: 0.0)
-      -v, --verbose         Turn on verbosity (default: True)
-      -p, --ptych           Generate ptychograph data (default: False)
+                                Path to an INI file to fetch all of the simulation
+                                parameters (default: None)
+      --defocus DEFOCUS         Lens defocus distance, [um] (default: 400.0)
+      --det_dist DET_DIST       Distance between the barcode and the detector [um]
+                                (default: 2000000.0)
+      --step_size STEP_SIZE     Scan step size [um] (default: 0.1)
+      --n_frames N_FRAMES       Number of frames (default: 300)
+      --detx_size DETX_SIZE     Fast axis frames size in pixels (default: 2000)
+      --dety_size DETY_SIZE     Slow axis frames size in pixels (default: 1000)
+      --p0 P0                   Source beam flux [cnt / s] (default: 200000.0)
+      --wl WL                   Wavelength [um] (default: 7.29e-05)
+      --th_s TH_S               Source rocking curve width [rad] (default: 0.0002)
+      --ap_x AP_X               Lens size along the x axis [um] (default: 40.0)
+      --ap_y AP_Y               Lens size along the y axis [um] (default: 2.0)
+      --focus FOCUS             Focal distance [um] (default: 1500.0)
+      --alpha ALPHA             Third order aberrations [rad/mrad^3] (default: -0.05)
+      --ab_cnt AB_CNT           Lens' aberrations center point [0.0 - 1.0] (default:
+                                0.5)
+      --bar_size BAR_SIZE       Average bar size [um] (default: 0.1)
+      --bar_sigma BAR_SIGMA     Bar haziness width [um] (default: 0.01)
+      --bar_atn BAR_ATN         Bar attenuation (default: 0.3)
+      --bulk_atn BULK_ATN       Bulk attenuation (default: 0.0)
+      --bar_rnd BAR_RND         Bar random deviation (default: 0.6)
+      --offset OFFSET           Sample's offset at the beginning and the end of the
+                                scan [um] (default: 0.0)
+      -v, --verbose             Turn on verbosity (default: True)
+      -p, --ptych               Generate ptychograph data (default: False)
 
     $ python -m pyrost.simulation results/sim_results --bar_size 0.7 --bar_sigma 0.12 \
     --bar_atn 0.18 --bulk_atn 0.2 --p0 5e4 --th_s 8e-5 --n_frames 200 --offset 2 \

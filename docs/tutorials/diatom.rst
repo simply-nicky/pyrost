@@ -116,40 +116,40 @@ Let's update the data container with the defocus distance we got.
 Speckle tracking update
 -----------------------
 Now we're ready to generate a :class:`pyrost.SpeckleTracking` object, which does the heavy
-lifting of calculating the pixel mapping between reference plane and detector plane,
-and generating the unabberated profile of the sample following the ptychographic speckle
-tracking algorithm [ST]_.
+lifting of calculating the pixel mapping between reference plane and detector plane (`pixel_map`),
+and generating the unabberated profile of the sample (`reference_image`) following the ptychographic
+speckle tracking algorithm [ST]_.
 
 For the speckle tracking update you've got two options to choose from:
 
     * :func:`pyrost.SpeckleTracking.iter_update` : performs the iterative reference image
       and pixel mapping updates with the constant kernel bandwidths for the reference image
-      estimator (`hval`).
+      estimator (`h0`).
 
     * :func:`pyrost.SpeckleTracking.iter_update_gd` : does ditto, but updates the bandwidth
       value for the reference image estimator at each iteration by the help of gradient descent
       to attain the minimal mean-squared-error value.
 
-.. note:: You should pay outmost attention to choose the right kernel bandwidth used for
-    reference image (`hval` in :func:`SpeckleTracing.update_reference`). Essentially it stands
-    for the high frequency cut-off imposed during the reference profile update, it helps to
+.. note:: You should pay outmost attention to choosing the right kernel bandwidth of the
+    reference image estimator (`h0` in :func:`pyrost.SpeckleTracing.update_reference`). Essentially it
+    stands for the high frequency cut-off imposed during the reference profile update, so it helps to
     supress the noise. If the value is too high you'll lose useful information in the reference
     profile. If the value is too low and the data is noisy, you won't get an acurate reconstruction.
-    An optimal kernel bandwidth can be found with :func:`SpeckleTracking.find_hopt` method.
+    An optimal kernel bandwidth can be found with :func:`pyrost.SpeckleTracking.find_hopt` method.
     
-.. note:: Next important parameter is `blur` in :func:`SpeckleTracking.update_pixel_map`. It
-    helps to prevent the noise propagation to the next iteration by the means of kernel smoothing
-    of the updated pixel mapping. **As a rule of thumb, `blur` should be several times larger
-    than `hval`**.
+.. note:: Next important parameter is `blur` in :func:`pyrost.SpeckleTracking.update_pixel_map`.
+    It helps to prevent the noise propagation to the next iteration by the means of kernel
+    smoothing of the updated pixel mapping. **As a rule of thumb, `blur` should be several times
+    larger than `h0`**.
 
 .. note:: Apart from pixel mapping update you may try to perform the sample shifts update if you've
-    got low precision or credibilily of sample shifts measurements. You can do it by setting
-    `update_translations` parameter to True.
+    got a low precision or credibilily of sample shifts measurements. You can do it by setting
+    the `update_translations` parameter to True.
 
 .. code-block:: python
 
     >>> st_obj = data.get_st()
-    >>> st_res = st_obj.iter_update(sw_x=15, sw_y=15, hval=1.2, blur=8.0,
+    >>> st_res = st_obj.iter_update(sw_x=15, sw_y=15, h0=1.2, blur=8.0,
                                     verbose=True, n_iter=5)
 
     >>> fig, ax = plt.subplots(figsize=(10, 10))
