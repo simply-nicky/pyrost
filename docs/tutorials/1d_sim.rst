@@ -58,7 +58,7 @@ contains a :func:`pyrost.SpeckleTracking.iter_update` method, that performs the 
 profile (`reference_image`) and lens aberrations (`pixel_map`) reconstruction.
 
 .. note:: You should pay outmost attention to choosing the right kernel bandwidth of the
-    reference image estimator (`h0` in :func:`pyrost.SpeckleTracing.update_reference`). Essentially it
+    reference image estimator (`h0` in :func:`pyrost.SpeckleTracking.update_reference`). Essentially it
     stands for the high frequency cut-off imposed during the reference profile update, so it helps to
     supress the noise. If the value is too high you'll lose useful information in the reference
     profile. If the value is too low and the data is noisy, you won't get an acurate reconstruction.
