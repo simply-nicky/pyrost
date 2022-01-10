@@ -5,10 +5,10 @@ import pytest
 import pyrost as rst
 import pyrost.simulation as st_sim
 
-@pytest.fixture(params=[{'det_dist': 5.0e5, 'n_frames': 10, 'ap_x': 4,
-                         'ap_y': 1, 'focus': 3.0e3, 'defocus': -2.0e2},
-                        {'det_dist': 4.5e5, 'n_frames': 5, 'ap_x': 3,
-                         'ap_y': 1.5, 'focus': 2.0e3, 'defocus': 1.0e2}],
+@pytest.fixture(params=[{'ap_x': 10, 'ap_y': 5, 'defocus': -2e2, 'detx_size': 300,
+                         'dety_size': 300, 'n_frames': 50, 'pix_size': 8},
+                        {'ap_x': 10, 'ap_y': 5, 'defocus': 1e2, 'detx_size': 300,
+                         'dety_size': 300, 'n_frames': 50, 'pix_size': 8}],
                 scope='session')
 def st_params(request):
     """Return a default instance of simulation parameters.
@@ -107,7 +107,7 @@ def test_st_update_exp(path, roi, defocus, loader):
     assert data.data.dtype == loader.get_dtype('data')
     st_obj = data.get_st()
     pixel_map0 = st_obj.pixel_map.copy()
-    st_obj.iter_update_gd(sw_x=10, h0=30, verbose=True, n_iter=10)
+    st_obj.iter_update_gd(sw_x=10, h0=30, blur=8.0, verbose=True, n_iter=10)
     assert (st_obj.pixel_map == pixel_map0).all()
     assert st_obj.pixel_map.dtype == loader.get_dtype('pixel_map')
 
@@ -116,7 +116,7 @@ def test_full(converter, ptych, sim_obj):
     data = converter.export_data(ptych, sim_obj)
     assert data.data.dtype == converter.protocol.get_dtype('data')
     st_obj = data.get_st()
-    st_res = st_obj.iter_update_gd(sw_x=10, h0=15, verbose=True, n_iter=10)
+    st_res = st_obj.iter_update_gd(sw_x=10, h0=15, blur=2.0, verbose=True, n_iter=10)
     data.update_phase(st_res)
     fit = data.fit_phase(axis=1)
     assert (st_obj.pixel_map != st_res.pixel_map).any()
