@@ -340,7 +340,7 @@ def gaussian_kernel(double sigma, unsigned order=0, double truncate=4.):
         gauss_kernel1d(_out, sigma, order, dims[0], 1)
     return out
 
-def gaussian_filter(np.ndarray inp not None, object sigma, object order not None=0,
+def gaussian_filter(np.ndarray inp not None, object sigma not None, object order not None=0,
                     str mode='reflect', double cval=0., double truncate=4., str backend='numpy',
                     unsigned num_threads=1):
     r"""Multidimensional Gaussian filter. The multidimensional filter is implemented as
