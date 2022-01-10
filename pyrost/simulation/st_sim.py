@@ -180,16 +180,17 @@ class STSim(DataContainer):
 
         if (x1 - x0) < self.params.detx_size * self.params.pix_size:
             dx = self.params.detx_size * self.params.pix_size / self.x_size
-            cnt_x, cnt_y = self.x_size // 2 + int(0.5 * (x0 + x1) // dx), self.y_size // 2
+            cnt_x = self.x_size // 2 + int(0.5 * (x0 + x1) // dx)
             grad_x = gaussian_gradient_magnitude(wfield_x, self.x_size // 100, mode='nearest',
-                                                    num_threads=self.params.num_threads)
-            grad_y = gaussian_gradient_magnitude(wfield_y, self.y_size // 100, mode='nearest',
-                                                    num_threads=self.params.num_threads)
+                                                 num_threads=self.params.num_threads)
             x0 = (np.argmax(grad_x[:cnt_x]) * self.params.detx_size) // self.x_size
             x1 = ((cnt_x + np.argmax(grad_x[cnt_x:])) * self.params.detx_size) // self.x_size
         else:
             x0, x1 = 0, self.params.detx_size
 
+        cnt_y = self.y_size // 2
+        grad_y = gaussian_gradient_magnitude(wfield_y, self.y_size // 100, mode='nearest',
+                                             num_threads=self.params.num_threads)
         y0 = (np.argmax(grad_y[:cnt_y]) * self.params.dety_size) // self.y_size
         y1 = ((cnt_y + np.argmax(grad_y[cnt_y:])) * self.params.dety_size) // self.y_size
         return np.array([y0, y1, x0, x1])

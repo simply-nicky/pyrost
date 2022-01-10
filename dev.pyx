@@ -2,7 +2,7 @@
 cimport numpy as np
 import numpy as np
 import cython
-import speckle_tracking as st
+# import speckle_tracking as st
 from libc.math cimport sqrt, exp, pi, floor, ceil, fabs
 from cython.parallel import prange, parallel
 from libc.stdlib cimport malloc, free
@@ -371,49 +371,49 @@ def gaussian_gradient_magnitude(np.ndarray inp not None, object sigma not None, 
         raise RuntimeError('C backend exited with error.')
     return out
 
-def st_update(I_n, dij, basis, x_ps, y_ps, z, df, search_window, n_iter=5,
-              filter=None, update_translations=False, verbose=False):
-    """
-    Andrew's speckle tracking update algorithm
+# def st_update(I_n, dij, basis, x_ps, y_ps, z, df, search_window, n_iter=5,
+#               filter=None, update_translations=False, verbose=False):
+#     """
+#     Andrew's speckle tracking update algorithm
     
-    I_n - measured data
-    W - whitefield
-    basis - detector plane basis vectors
-    x_ps, y_ps - x and y pixel sizes
-    z - distance between the sample and the detector
-    df - defocus distance
-    wl - wavelength
-    sw_max - pixel mapping search window size
-    n_iter - number of iterations
-    """
-    M = np.ones((I_n.shape[1], I_n.shape[2]), dtype=bool)
-    W = st.make_whitefield(I_n, M, verbose=verbose)
-    u, dij_pix, res = st.generate_pixel_map(W.shape, dij, basis,
-                                            x_ps, y_ps, z,
-                                            df, verbose=verbose)
-    I0, n0, m0 = st.make_object_map(I_n, M, W, dij_pix, u, subpixel=True, verbose=verbose)
+#     I_n - measured data
+#     W - whitefield
+#     basis - detector plane basis vectors
+#     x_ps, y_ps - x and y pixel sizes
+#     z - distance between the sample and the detector
+#     df - defocus distance
+#     wl - wavelength
+#     sw_max - pixel mapping search window size
+#     n_iter - number of iterations
+#     """
+#     M = np.ones((I_n.shape[1], I_n.shape[2]), dtype=bool)
+#     W = st.make_whitefield(I_n, M, verbose=verbose)
+#     u, dij_pix, res = st.generate_pixel_map(W.shape, dij, basis,
+#                                             x_ps, y_ps, z,
+#                                             df, verbose=verbose)
+#     I0, n0, m0 = st.make_object_map(I_n, M, W, dij_pix, u, subpixel=True, verbose=verbose)
 
-    es = []
-    for i in range(n_iter):
+#     es = []
+#     for i in range(n_iter):
 
-        # calculate errors
-        error_total = st.calc_error(I_n, M, W, dij_pix, I0, u, n0, m0, subpixel=True, verbose=verbose)[0]
+#         # calculate errors
+#         error_total = st.calc_error(I_n, M, W, dij_pix, I0, u, n0, m0, subpixel=True, verbose=verbose)[0]
 
-        # store total error
-        es.append(error_total)
+#         # store total error
+#         es.append(error_total)
 
-        # update pixel map
-        u = st.update_pixel_map(I_n, M, W, I0, u, n0, m0, dij_pix,
-                                search_window=search_window, subpixel=True,
-                                fill_bad_pix=False, integrate=False,
-                                quadratic_refinement=False, verbose=verbose,
-                                filter=filter)[0]
+#         # update pixel map
+#         u = st.update_pixel_map(I_n, M, W, I0, u, n0, m0, dij_pix,
+#                                 search_window=search_window, subpixel=True,
+#                                 fill_bad_pix=False, integrate=False,
+#                                 quadratic_refinement=False, verbose=verbose,
+#                                 filter=filter)[0]
 
-        # make reference image
-        I0, n0, m0 = st.make_object_map(I_n, M, W, dij_pix, u, subpixel=True, verbose=verbose)
+#         # make reference image
+#         I0, n0, m0 = st.make_object_map(I_n, M, W, dij_pix, u, subpixel=True, verbose=verbose)
 
-        # update translations
-        if update_translations:
-            dij_pix = st.update_translations(I_n, M, W, I0, u, n0, m0, dij_pix)[0]
+#         # update translations
+#         if update_translations:
+#             dij_pix = st.update_translations(I_n, M, W, I0, u, n0, m0, dij_pix)[0]
 
-    return {'u':u, 'I0':I0, 'errors':es, 'n0': n0, 'm0': m0}
+#     return {'u':u, 'I0':I0, 'errors':es, 'n0': n0, 'm0': m0}
