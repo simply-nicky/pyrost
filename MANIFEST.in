@@ -5,7 +5,10 @@ graft pyrost/ini_templates
 graft pyrost/data
 graft pyrost/include
 exclude dev.pyx
+exclude pyrost/include/Makefile
 include pytest.ini
 include LICENSE
 global-exclude *.py[cod]
 global-exclude *.so
+global-exclude pyrost/bin/*.html
+global-exclude pyrost/bin/*.c
