@@ -4,7 +4,7 @@
 typedef int (*fft_func)(void *plan, double complex *inp);
 typedef int (*rfft_func)(void *plan, double *inp, size_t npts);
 
-static int fft_convolve_calc(void *rfft_plan, void *irfft_plan, line out, double *inp,
+static int rfft_convolve_calc(void *rfft_plan, void *irfft_plan, line out, double *inp,
     double *krn, size_t flen, rfft_func rfft, rfft_func irfft)
 {
     int fail = 0;
@@ -12,17 +12,29 @@ static int fft_convolve_calc(void *rfft_plan, void *irfft_plan, line out, double
     double re, im;
     for (int i = 0; i < (int)flen / 2 + 1; i++)
     {
-        re = (inp[2 * i] * krn[2 * i] - inp[2 * i + 1] * krn[2 * i + 1]);
-        im = (inp[2 * i] * krn[2 * i + 1] + inp[2 * i + 1] * krn[2 * i]);
+        re = (inp[2 * i] * krn[2 * i] - inp[2 * i + 1] * krn[2 * i + 1]) / flen;
+        im = (inp[2 * i] * krn[2 * i + 1] + inp[2 * i + 1] * krn[2 * i]) / flen;
         inp[2 * i] = re; inp[2 * i + 1] = im;
     }
     fail = irfft(irfft_plan, inp, flen);
-    for (int i = 0; i < (int)out->npts / 2; i++) ((double *)out->data)[i * out->stride] = inp[i + flen - out->npts / 2] / flen;
-    for (int i = 0; i < (int)out->npts / 2 + (int)out->npts % 2; i++) ((double *)out->data)[(i + out->npts / 2) * out->stride] = inp[i] / flen;
+    for (int i = 0; i < (int)out->npts / 2; i++) ((double *)out->data)[i * out->stride] = inp[i + flen - out->npts / 2];
+    for (int i = 0; i < (int)out->npts / 2 + (int)out->npts % 2; i++) ((double *)out->data)[(i + out->npts / 2) * out->stride] = inp[i];
     return fail;
 }
 
-int fft_convolve_np(double *out, double *inp, int ndim, size_t *dims,
+static int cfft_convolve_calc(void *fft_plan, void *ifft_plan, line out, double complex *inp,
+    double complex *krn, size_t flen, fft_func fft, fft_func ifft)
+{
+    int fail = 0;
+    fail = fft(fft_plan, inp);
+    for (int i = 0; i < (int)flen; i++) inp[i] *= krn[i] / flen;
+    fail = ifft(ifft_plan, inp);
+    for (int i = 0; i < (int)out->npts / 2; i++) ((double complex *)out->data)[i * out->stride] = inp[i + flen - out->npts / 2];
+    for (int i = 0; i < (int)out->npts / 2 + (int)out->npts % 2; i++) ((double complex *)out->data)[(i + out->npts / 2) * out->stride] = inp[i];
+    return fail;
+}
+
+int rfft_convolve_np(double *out, double *inp, int ndim, size_t *dims,
     double *krn, size_t ksize, int axis, EXTEND_MODE mode, double cval,
     unsigned threads)
 {
@@ -59,7 +71,7 @@ int fft_convolve_np(double *out, double *inp, int ndim, size_t *dims,
             UPDATE_LINE(iline, i);
             UPDATE_LINE(oline, i);
             extend_line((void *)inpft, flen, iline, mode, (void *)&cval);
-            fail |= fft_convolve_calc((void *)plan, (void *)plan, oline, inpft, krnft,
+            fail |= rfft_convolve_calc((void *)plan, (void *)plan, oline, inpft, krnft,
                 flen, rfft_np, irfft_np);
         }
 
@@ -75,7 +87,60 @@ int fft_convolve_np(double *out, double *inp, int ndim, size_t *dims,
     return fail;
 }
 
-int fft_convolve_fftw(double *out, double *inp, int ndim, size_t *dims,
+int cfft_convolve_np(double complex *out, double complex *inp, int ndim, size_t *dims,
+    double complex *krn, size_t ksize, int axis, EXTEND_MODE mode, double complex cval,
+    unsigned threads)
+{
+    /* check parameters */
+    if (!out || !inp || !dims || !krn) {ERROR("fft_convole_np: one of the arguments is NULL."); return -1;}
+    if (ndim <= 0 || ksize == 0) {ERROR("fft_convolve_np: ndim and ksize must be positive."); return -1;}
+    if (axis < 0 || axis >= ndim) {ERROR("fft_convolve_np: invalid axis."); return -1;}
+    if (threads == 0) {ERROR("fft_convolve_np: threads must be positive."); return -1;}
+
+    double complex zerro = 0.;
+    array oarr = new_array(ndim, dims, sizeof(double complex), (void *)out);
+    array iarr = new_array(ndim, dims, sizeof(double complex), (void *)inp);
+    line kline = new_line(ksize, 1, sizeof(double complex), krn);
+    
+    int fail = 0;
+    size_t flen = good_size(iarr->dims[axis] + ksize - 1);
+    size_t repeats = iarr->size / iarr->dims[axis];
+    threads = (threads > (unsigned) repeats) ? (unsigned) repeats : threads;
+
+    #pragma omp parallel num_threads(threads) reduction(|:fail)
+    {
+        double complex *inpft = (double complex *)malloc(flen * sizeof(double complex));
+        double complex *krnft = (double complex *)malloc(flen * sizeof(double complex));
+        cfft_plan plan = make_cfft_plan(flen);
+
+        extend_line((void *)krnft, flen, kline, EXTEND_CONSTANT, (void *)&zerro);
+        fail |= fft_np((void *)plan, krnft);
+
+        line iline = init_line(iarr, axis);
+        line oline = init_line(oarr, axis);
+        #pragma omp for
+        for (int i = 0; i < (int)repeats; i++)
+        {
+            UPDATE_LINE(iline, i);
+            UPDATE_LINE(oline, i);
+            extend_line((void *)inpft, flen, iline, mode, (void *)&cval);
+            fail |= cfft_convolve_calc((void *)plan, (void *)plan, oline, inpft, krnft,
+                flen, fft_np, ifft_np);
+        }
+
+        free(iline); free(oline);
+        destroy_cfft_plan(plan);
+        free(inpft); free(krnft);    
+    }
+
+    free_array(iarr);
+    free_array(oarr);
+    free(kline);
+
+    return fail;
+}
+
+int rfft_convolve_fftw(double *out, double *inp, int ndim, size_t *dims,
     double *krn, size_t ksize, int axis, EXTEND_MODE mode, double cval,
     unsigned threads)
 {
@@ -122,13 +187,77 @@ int fft_convolve_fftw(double *out, double *inp, int ndim, size_t *dims,
             UPDATE_LINE(iline, i);
             UPDATE_LINE(oline, i);
             extend_line((void *)inpft, flen, iline, mode, (void *)&cval);
-            fail |= fft_convolve_calc((void *)rfft_plan, (void *)irfft_plan, oline,
+            fail |= rfft_convolve_calc((void *)rfft_plan, (void *)irfft_plan, oline,
                 inpft, krnft, flen, rfft_fftw, irfft_fftw);
         }
 
         free(iline); free(oline);
         fftw_destroy_plan(rfft_plan);
         fftw_destroy_plan(irfft_plan);
+        free(dim); fftw_free(inpft); fftw_free(krnft);
+    }
+
+    free_array(iarr);
+    free_array(oarr);
+    free(kline);
+
+    return fail;
+}
+
+int cfft_convolve_fftw(double complex *out, double complex *inp, int ndim, size_t *dims,
+    double complex *krn, size_t ksize, int axis, EXTEND_MODE mode, double complex cval,
+    unsigned threads)
+{
+    /* check parameters */
+    if (!out || !inp || !dims || !krn) {ERROR("fft_convolve_np: one of the arguments is NULL."); return -1;}
+    if (ndim <= 0 || ksize == 0) {ERROR("fft_convolve_np: ndim and ksize must be positive."); return -1;}
+    if (axis < 0 || axis >= ndim) {ERROR("fft_convolve_np: invalid axis."); return -1;}
+    if (threads == 0) {ERROR("fft_convolve_np: threads must be positive."); return -1;}
+
+    double complex zerro = 0.;
+    array oarr = new_array(ndim, dims, sizeof(double complex), (void *)out);
+    array iarr = new_array(ndim, dims, sizeof(double complex), (void *)inp);
+    line kline = new_line(ksize, 1, sizeof(double complex), krn);
+    
+    int fail = 0;
+    size_t flen = next_fast_len_fftw(iarr->dims[axis] + ksize - 1);
+    size_t repeats = iarr->size / iarr->dims[axis];
+    threads = (threads > (unsigned)repeats) ? (unsigned)repeats : threads;
+
+    #pragma omp parallel num_threads(threads) reduction(|:fail)
+    {
+        double complex *inpft = (double complex *)fftw_malloc(flen * sizeof(double complex));
+        double complex *krnft = (double complex *)fftw_malloc(flen * sizeof(double complex));
+        fftw_iodim *dim = (fftw_iodim *)malloc(sizeof(fftw_iodim));
+        dim->n = flen; dim->is = 1; dim->os = 1;
+        fftw_plan fft_plan, ifft_plan;
+
+        #pragma omp critical
+        {
+            fft_plan = fftw_plan_guru_dft(1, dim, 0, NULL, (fftw_complex *)inpft,
+                (fftw_complex *)inpft, FFTW_FORWARD, FFTW_ESTIMATE);
+            ifft_plan = fftw_plan_guru_dft(1, dim, 0, NULL, (fftw_complex *)inpft,
+                (fftw_complex *)inpft, FFTW_BACKWARD, FFTW_ESTIMATE);
+        }
+
+        extend_line((void *)krnft, flen, kline, EXTEND_CONSTANT, (void *)&zerro);
+        fail |= fft_fftw((void *)fft_plan, krnft);
+
+        line iline = init_line(iarr, axis);
+        line oline = init_line(oarr, axis);
+        #pragma omp for
+        for (int i = 0; i < (int)repeats; i++)
+        {
+            UPDATE_LINE(iline, i);
+            UPDATE_LINE(oline, i);
+            extend_line((void *)inpft, flen, iline, mode, (void *)&cval);
+            fail |= cfft_convolve_calc((void *)fft_plan, (void *)ifft_plan, oline,
+                inpft, krnft, flen, fft_fftw, ifft_fftw);
+        }
+
+        free(iline); free(oline);
+        fftw_destroy_plan(fft_plan);
+        fftw_destroy_plan(ifft_plan);
         free(dim); fftw_free(inpft); fftw_free(krnft);
     }
 
@@ -146,7 +275,7 @@ static int rsc_type1_calc(void *fft_plan, void *ifft_plan, line out, double comp
     double ph, dist;
     for (int i = 0; i < flen; i++)
     {
-        dist = pow((dx0 * (i - flen / 2)), 2) + pow(z, 2);
+        dist = SQ(dx0 * (i - flen / 2)) + SQ(z);
         ph = 2 * M_PI / wl * sqrt(dist);
         krn[i] = -dx0 * z / sqrt(wl) * (sin(ph) + cos(ph) * I) / pow(dist, 0.75);
     }
@@ -156,7 +285,7 @@ static int rsc_type1_calc(void *fft_plan, void *ifft_plan, line out, double comp
 
     for (int i = 0; i < flen; i++)
     {
-        ph = M_PI * pow((((double) i / flen) - ((2 * i) / flen)), 2) * dx / dx0 * flen;
+        ph = M_PI * SQ(((double) i / flen) - ((2 * i) / flen)) * dx / dx0 * flen;
         inp[i] *= krn[i] * (cos(ph) - sin(ph) * I) / flen;
         krn[i] = (cos(ph) + sin(ph) * I) / flen;
     }
@@ -169,13 +298,13 @@ static int rsc_type1_calc(void *fft_plan, void *ifft_plan, line out, double comp
 
     for (int i = 0; i < (int)out->npts / 2; i++)
     {
-        ph = M_PI * pow((double) (i - (int)out->npts / 2) / flen, 2) * dx / dx0 * flen;
+        ph = M_PI * SQ((double) (i - (int)out->npts / 2) / flen) * dx / dx0 * flen;
         ((double complex *)out->data)[i * out->stride] = inp[i + flen - (int)out->npts / 2] * (cos(ph) - sin(ph) * I);
     }
 
     for (int i = 0; i < (int)out->npts / 2 + (int)out->npts % 2; i++)
     {
-        ph = M_PI * pow((double) i / flen, 2) * dx / dx0 * flen;
+        ph = M_PI * SQ((double) i / flen) * dx / dx0 * flen;
         ((double complex *)out->data)[(i + out->npts / 2) * out->stride] = inp[i] * (cos(ph) - sin(ph) * I);
     }
   return fail;
@@ -188,7 +317,7 @@ static int rsc_type2_calc(void *fft_plan, void *ifft_plan, line out, double comp
     double ph, dist;
     for (int i = 0; i < flen; i++)
     {
-        ph = M_PI * pow(i - flen / 2, 2) * dx0 / dx / flen;
+        ph = M_PI * SQ(i - flen / 2) * dx0 / dx / flen;
         krn[i] = cos(ph) - sin(ph) * I;
         inp[i] *= cos(ph) + sin(ph) * I;
     }
@@ -199,7 +328,7 @@ static int rsc_type2_calc(void *fft_plan, void *ifft_plan, line out, double comp
     for (int i = 0; i < flen; i++)
     {
         inp[i] *= krn[i] / flen;
-        dist = pow((dx * (i - flen / 2)), 2) + pow(z, 2);
+        dist = SQ(dx * (i - flen / 2)) + SQ(z);
         ph = 2 * M_PI / wl * sqrt(dist);
         krn[i] = -dx0 * z / sqrt(wl) * (sin(ph) + cos(ph) * I) / pow(dist, 0.75);
     }
@@ -209,7 +338,7 @@ static int rsc_type2_calc(void *fft_plan, void *ifft_plan, line out, double comp
 
     for (int i = 0; i < flen; i++)
     {
-        ph = M_PI * pow((((double) i / flen) - ((2 * i) / flen)), 2) * dx0 / dx * flen;
+        ph = M_PI * SQ(((double) i / flen) - ((2 * i) / flen)) * dx0 / dx * flen;
         inp[i] *= krn[i] * (cos(ph) + sin(ph) * I) / flen;
     }
 
@@ -344,7 +473,7 @@ int fraunhofer_calc(void *fft_plan, void *ifft_plan, line out, double complex *i
     double ph;
     for (int i = 0; i < flen; i++)
     {
-        ph = M_PI * pow(i - flen / 2, 2) * alpha;
+        ph = M_PI * SQ(i - flen / 2) * alpha;
         inp[i] *= cos(ph) + sin(ph) * I;
     }
 
@@ -355,14 +484,14 @@ int fraunhofer_calc(void *fft_plan, void *ifft_plan, line out, double complex *i
     double complex w;
     for (int i = 0; i < (int)out->npts / 2; i++)
     {
-        ph = M_PI * pow(i - (int)out->npts / 2, 2) * alpha;
+        ph = M_PI * SQ(i - (int)out->npts / 2) * alpha;
         w = (cos(ph) - sin(ph) * I) * inp[i + flen - (int)out->npts / 2];
         ((double complex *)out->data)[i * out->stride] = (cos(ph / dx0 * dx) - sin(ph / dx0 * dx) * I) * w;
     }
 
     for (int i = 0; i < (int)out->npts / 2 + (int)out->npts % 2; i++)
     {
-        ph = M_PI * pow(i, 2) * alpha;
+        ph = M_PI * SQ(i) * alpha;
         w = (cos(ph) - sin(ph) * I) * inp[i];
         ((double complex *)out->data)[(i + out->npts / 2) * out->stride] = (cos(ph / dx0 * dx) - sin(ph / dx0 * dx) * I) * w;
     }
@@ -401,7 +530,7 @@ int fraunhofer_np(double complex *out, double complex *inp, int ndim, size_t *di
         double complex k0 = -(sin(ph) + cos(ph) * I) / sqrt(wl * z) * dx0;
         for (int i = 0; i < (int)flen; i++)
         {
-            ph = M_PI * pow(i - (int)flen / 2, 2) * alpha;
+            ph = M_PI * SQ(i - (int)flen / 2) * alpha;
             krnft[i] = k0 * (cos(ph) - sin(ph) * I);
         }
         fail |= fft_np(plan, krnft);
@@ -465,12 +594,12 @@ int fraunhofer_fftw(double complex *out, double complex *inp, int ndim, size_t *
                 (fftw_complex *)inpft, FFTW_BACKWARD, FFTW_ESTIMATE);
         }
 
-        double ph = 2 * M_PI / wl * z;
+        double ph = 2.0 * M_PI / wl * z;
         double alpha = dx0 * dx / wl / z;
         double complex k0 = -(sin(ph) + cos(ph) * I) / sqrt(wl * z) * dx0;
         for (int i = 0; i < (int)flen; i++)
         {
-            ph = M_PI * pow(i - flen / 2, 2) * alpha;
+            ph = M_PI * SQ(i - (int)flen / 2) * alpha;
             krnft[i] = k0 * (cos(ph) - sin(ph) * I);
         }
         fail |= fft_fftw(fft_plan, krnft);
@@ -499,7 +628,7 @@ int fraunhofer_fftw(double complex *out, double complex *inp, int ndim, size_t *
     return fail;
 }
 
-int gauss_kernel1d(double *out, double sigma, unsigned order, size_t ksize)
+int gauss_kernel1d(double *out, double sigma, unsigned order, size_t ksize, int step)
 {
     /* check parameters */
     if (!out) {ERROR("gauss_kernel1d: out is NULL."); return -1;}
@@ -511,9 +640,9 @@ int gauss_kernel1d(double *out, double sigma, unsigned order, size_t ksize)
     double sigma2 = sigma * sigma;
     for (int i = 0; i < (int) ksize; i++)
     {
-        out[i] = exp(-0.5 * pow(i - radius, 2) / sigma2); sum += out[i];
+        out[i * step] = exp(-0.5 * SQ(i - radius) / sigma2); sum += out[i * step];
     }
-    for (int i = 0; i < (int) ksize; i++) out[i] /= sum;
+    for (int i = 0; i < (int) ksize; i++) out[i * step] /= sum;
     if (order)
     {
         double *q0 = (double *)calloc(order + 1, sizeof(double)); q0[0] = 1.;
@@ -540,16 +669,16 @@ int gauss_kernel1d(double *out, double sigma, unsigned order, size_t ksize)
         {
             fct = 0;
             for (int j = 0; j <= (int) order; j++) fct += pow(i - radius, j) * q1[j];
-            out[i] *= fct;
+            out[i * step] *= fct;
         }
         free(q1);
     }
     return 0;
 }
 
-int gauss_filter(double *out, double *inp, int ndim, size_t *dims, double *sigma,
+int gauss_filter_r(double *out, double *inp, int ndim, size_t *dims, double *sigma,
     unsigned *order, EXTEND_MODE mode, double cval, double truncate, unsigned threads,
-    convolve_func fft_convolve)
+    rconvolve_func fft_convolve)
 {
     /* check parameters */
     if (!out || !inp || !dims || !sigma || !order)
@@ -564,7 +693,7 @@ int gauss_filter(double *out, double *inp, int ndim, size_t *dims, double *sigma
     {
         size_t ksize = 2 * (size_t) (sigma[axis] * truncate) + 1;
         double *krn = (double *)malloc(ksize * sizeof(double));
-        fail |= gauss_kernel1d(krn, sigma[axis], order[axis], ksize);
+        fail |= gauss_kernel1d(krn, sigma[axis], order[axis], ksize, 1);
         fail |= fft_convolve(out, inp, ndim, dims, krn, ksize, axis, mode, cval, threads);
         free(krn);
 
@@ -574,7 +703,7 @@ int gauss_filter(double *out, double *inp, int ndim, size_t *dims, double *sigma
             {
                 ksize = 2 * (size_t) (sigma[n] * truncate) + 1;
                 krn = (double *)malloc(ksize * sizeof(double));
-                fail |= gauss_kernel1d(krn, sigma[n], order[n], ksize);
+                fail |= gauss_kernel1d(krn, sigma[n], order[n], ksize, 1);
                 fail |= fft_convolve(out, out, ndim, dims, krn, ksize, n, mode, cval, threads);
                 free(krn);
             }
@@ -590,9 +719,52 @@ int gauss_filter(double *out, double *inp, int ndim, size_t *dims, double *sigma
     return fail;
 }
 
-int gauss_grad_mag(double *out, double *inp, int ndim, size_t *dims, double *sigma,
+int gauss_filter_c(double complex *out, double complex *inp, int ndim, size_t *dims, double *sigma,
+    unsigned *order, EXTEND_MODE mode, double complex cval, double truncate, unsigned threads,
+    cconvolve_func fft_convolve)
+{
+    /* check parameters */
+    if (!out || !inp || !dims || !sigma || !order)
+    {ERROR("gauss_filter: one of the arguments is NULL."); return -1;}
+    if (ndim <= 0) {ERROR("gauss_filter: ndim must be positive."); return -1;}
+    if (!threads) {ERROR("gauss_filter: threads must be positive."); return -1;}
+
+    int fail = 0;
+    int axis = 0;
+    while (sigma[axis] < 1e-15 && axis < ndim) axis++;
+    if (axis < ndim)
+    {
+        size_t ksize = 2 * (size_t) (sigma[axis] * truncate) + 1;
+        double complex *krn = (double complex *)calloc(ksize, sizeof(double complex));
+        fail |= gauss_kernel1d((double *)krn, sigma[axis], order[axis], ksize, 2);
+        fail |= fft_convolve(out, inp, ndim, dims, krn, ksize, axis, mode, cval, threads);
+        free(krn);
+
+        for (int n = axis + 1; n < ndim; n++)
+        {
+            if (sigma[n] > 1e-15)
+            {
+                ksize = 2 * (size_t) (sigma[n] * truncate) + 1;
+                krn = (double complex *)calloc(ksize, sizeof(double complex));
+                fail |= gauss_kernel1d((double *)krn, sigma[n], order[n], ksize, 2);
+                fail |= fft_convolve(out, out, ndim, dims, krn, ksize, n, mode, cval, threads);
+                free(krn);
+            }
+        }
+    }
+    else
+    {
+        size_t size = 1;
+        for (int n = 0; n < ndim; n++) size *= dims[n];
+        #pragma omp parallel for num_threads(threads)
+        for (int i = 0; i < (int)size; i++) out[i] = inp[i];
+    }
+    return fail;
+}
+
+int gauss_grad_mag_r(double *out, double *inp, int ndim, size_t *dims, double *sigma,
     EXTEND_MODE mode, double cval, double truncate, unsigned threads,
-    convolve_func fft_convolve)
+    rconvolve_func fft_convolve)
 {
     /* check parameters */
     if (!out || !inp || !dims || !sigma)
@@ -603,23 +775,55 @@ int gauss_grad_mag(double *out, double *inp, int ndim, size_t *dims, double *sig
     int fail = 0;
     size_t size = 1;
     unsigned *order = (unsigned *)malloc(ndim * sizeof(unsigned));
-    for (int n = 0; n < ndim; n++) {order[n] = (n == 0) ? 1 : 0; size *= dims[n];}
-
-    fail |= gauss_filter(out, inp, ndim, dims, sigma, order, mode,
-        cval, truncate, threads, fft_convolve);
+    for (int n = 0; n < ndim; n++) size *= dims[n];
 
     #pragma omp parallel for num_threads(threads)
-    for (int i = 0; i < (int)size; i++) out[i] = out[i] * out[i];
+    for (int i = 0; i < (int)size; i++) out[i] = 0.0;
 
     double *tmp = (double *)malloc(size * sizeof(double));
-    for (int m = 1; m < ndim; m++)
+    for (int m = 0; m < ndim; m++)
     {
         for (int n = 0; n < ndim; n++) order[n] = (n == m) ? 1 : 0;
-        fail |= gauss_filter(tmp, inp, ndim, dims, sigma, order, mode,
+        fail |= gauss_filter_r(tmp, inp, ndim, dims, sigma, order, mode,
             cval, truncate, threads, fft_convolve);
         
         #pragma omp parallel for num_threads(threads)
         for (int i = 0; i < (int)size; i++) out[i] += tmp[i] * tmp[i];
+    }
+
+    free(tmp); free(order);
+    #pragma omp parallel for num_threads(threads)
+    for (int i = 0; i < (int)size; i++) out[i] = sqrt(out[i]);
+    return fail;
+}
+
+int gauss_grad_mag_c(double *out, double complex *inp, int ndim, size_t *dims, double *sigma,
+    EXTEND_MODE mode, double complex cval, double truncate, unsigned threads,
+    cconvolve_func fft_convolve)
+{
+    /* check parameters */
+    if (!out || !inp || !dims || !sigma)
+    {ERROR("gauss_grad_mag: one of the arguments is NULL."); return -1;}
+    if (ndim <= 0) {ERROR("gauss_grad_mag: ndim must be positive."); return -1;}
+    if (!threads) {ERROR("gauss_grad_mag: threads must be positive."); return -1;}
+
+    int fail = 0;
+    size_t size = 1;
+    unsigned *order = (unsigned *)malloc(ndim * sizeof(unsigned));
+    for (int n = 0; n < ndim; n++) size *= dims[n];
+
+    #pragma omp parallel for num_threads(threads)
+    for (int i = 0; i < (int)size; i++) out[i] = 0.0;
+
+    double complex *tmp = (double complex *)malloc(size * sizeof(double complex));
+    for (int m = 0; m < ndim; m++)
+    {
+        for (int n = 0; n < ndim; n++) order[n] = (n == m) ? 1 : 0;
+        fail |= gauss_filter_c(tmp, inp, ndim, dims, sigma, order, mode,
+            cval, truncate, threads, fft_convolve);
+        
+        #pragma omp parallel for num_threads(threads)
+        for (int i = 0; i < (int)size; i++) out[i] += SQ(creal(tmp[i])) + SQ(cimag(tmp[i]));
     }
 
     free(tmp); free(order);

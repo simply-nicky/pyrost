@@ -1,13 +1,8 @@
-"""st_sim provides wavefront propagation tools to simulate
-Speckle Tracking scans. Wavefront propagation is based on
-the Fresnel diffraction theory.
+"""pyrost.simulation (st_sim) provides wavefront propagation tools to simulate
+speckle tracking scans. Wavefront propagation is based on the Fresnel diffraction
+theory.
+
+(c) Nikolay Ivanov, 2020.
 """
-from .ms_parameters import MSParams
-from .mslice import Element, Material, MLL, MSPropagator
 from .st_parameters import STParams
 from .st_sim import STSim, STConverter
-
-# del locals()['ms_parameters']
-del locals()['mslice']
-del locals()['ms_parameters']
-del locals()['st_sim']

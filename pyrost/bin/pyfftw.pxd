@@ -175,3 +175,77 @@ cdef enum:
     FFTW_PATIENT = 32
     FFTW_ESTIMATE = 64
     FFTW_WISDOM_ONLY = 2097152
+
+cdef class FFTW:
+    # Each of these function pointers simply
+    # points to a chosen fftw wrapper function
+    cdef fftw_generic_plan_guru _fftw_planner
+    cdef fftw_generic_execute _fftw_execute
+    cdef fftw_generic_destroy_plan _fftw_destroy
+    cdef fftw_generic_plan_with_nthreads _nthreads_plan_setter
+
+    # The plan is typecast when it is created or used
+    # within the wrapper functions
+    cdef void *_plan
+
+    cdef np.ndarray _input_array
+    cdef np.ndarray _output_array
+    cdef int *_direction
+    cdef unsigned _flags
+
+    cdef bint _simd_allowed
+    cdef int _input_array_alignment
+    cdef int _output_array_alignment
+    cdef bint _use_threads
+
+    cdef object _input_item_strides
+    cdef object _input_strides
+    cdef object _output_item_strides
+    cdef object _output_strides
+    cdef object _input_shape
+    cdef object _output_shape
+    cdef object _input_dtype
+    cdef object _output_dtype
+    cdef object _flags_used
+
+    cdef double _normalisation_scaling
+    cdef double _sqrt_normalisation_scaling
+
+    cdef int _rank
+    cdef _fftw_iodim *_dims
+    cdef int _howmany_rank
+    cdef _fftw_iodim *_howmany_dims
+
+    cdef int64_t *_axes
+    cdef int64_t *_not_axes
+
+    cdef int64_t _total_size
+
+    cdef bint _normalise_idft
+    cdef bint _ortho
+
+    cdef inline _update_arrays(self, np.ndarray new_input_array,
+                               np.ndarray new_output_array):
+        ''' A C interface to the update_arrays method that does not
+        perform any checks on strides being correct and so on.
+        '''
+        self._input_array = new_input_array
+        self._output_array = new_output_array
+
+    cdef inline _execute(self):
+        '''execute()
+
+        Execute the planned operation, taking the correct kind of FFT of
+        the input array (i.e. :attr:`FFTW.input_array`),
+        and putting the result in the output array (i.e.
+        :attr:`FFTW.output_array`).
+        '''
+        cdef void *input_pointer = (
+                <void *>np.PyArray_DATA(self._input_array))
+        cdef void *output_pointer = (
+                <void *>np.PyArray_DATA(self._output_array))
+
+        cdef void *plan = self._plan
+        cdef fftw_generic_execute fftw_execute = self._fftw_execute
+        with nogil:
+            fftw_execute(plan, input_pointer, output_pointer)

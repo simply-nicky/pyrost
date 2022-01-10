@@ -1,98 +1,73 @@
 """:class:`INIParser` ini parser implementation.
 """
+from __future__ import annotations
 import os
-import configparser
+from configparser import ConfigParser
 import re
+from typing import Any, Dict, TypeVar, Type
+import numpy as np
 
+T = TypeVar('T')            # Object type
+Desc = TypeVar('Desc')      # Descriptor type
 ROOT_PATH = os.path.dirname(__file__)
 
 class hybridmethod:
     """Hybrid method descriptor supporting
     two distinct methodsbound to class and instance.
 
-    Parameters
-    ----------
-    fclass : method
-        Class bound method.
-    finstance : method, optional
-        Instance bound method.
-    doc : str, optional
-        Method's docstring.
-
-    Attributes
-    ----------
-    fclass : method
-        Class bound method.
-    finstance : method
-        Instance bound method.
-    doc : str
-        Method's dosctring.
+    Attributes:
+        fclass : Class bound method.
+        finstance : Instance bound method.
+        doc : Method's dosctring.
     """
-    def __init__(self, fclass, finstance=None, doc=None):
+    def __init__(self, fclass: Desc, finstance: Desc=None, doc: str=None) -> None:
+        """Args:
+            fclass : Class bound method.
+            finstance : Instance bound method.
+            doc : Method's docstring.
+        """
         self.fclass, self.finstance = fclass, finstance
         self.__doc__ = doc or fclass.__doc__
         self.__isabstractmethod__ = bool(getattr(fclass, '__isabstractmethod__', False))
 
-    def classmethod(self, fclass):
+    def classmethod(self, fclass: Desc) -> hybridmethod:
         """Class method decorator
 
-        Parameters
-        ----------
-        fclass : method
-            Class bound method.
+        Args:
+            fclass : Class bound method.
 
-        Returns
-        -------
-        hybridmethod
-            A new instance with the class bound method added to the object
+        Returns:
+            A new instance with the class bound method added
+            to the object.
         """
         return type(self)(fclass, self.finstance, None)
 
-    def instancemethod(self, finstance):
+    def instancemethod(self, finstance: Desc) -> hybridmethod:
         """Instance method decorator
 
-        Parameters
-        ----------
-        finstance : method
-            Instance bound method.
+        Args:
+            finstance : Instance bound method.
 
-        Returns
-        -------
-        hybridmethod
-            A new instance with the instance bound method added to the object
+        Returns:
+            A new instance with the instance bound method added
+            to the object.
         """
         return type(self)(self.fclass, finstance, self.__doc__)
 
-    def __get__(self, instance, cls):
+    def __get__(self, instance: T, cls: Type[T]) -> Any:
         if instance is None or self.finstance is None:
             return self.fclass.__get__(cls, None)
         return self.finstance.__get__(instance, cls)
 
 class INIParser:
-    """INI files parser class with the methods for importing and exporting ini files
-    and Python dictionaries.
+    """INI files parser class with the methods for importing and exporting
+    ini files and Python dictionaries.
 
-    Parameters
-    ----------
-    **kwargs : dict
-        Attributes specified in `attr_dict`.
-
-    Attributes
-    ----------
-    err_txt : str
-        Error text.
-    known_types : dict
-        Look-up dictionary of supported types for formatting.
-    attr_dict : dict
-        Dictionary of provided attributes.
-    fmt_dict : dict
-        Dictionary of attributes' types used for formatting.
-
-    Raises
-    ------
-    AttributeError
-        If the attribute specified in `attr_dict`
-        has not been provided in keyword arguments ``**kwargs``.
+    Attributes:
+        err_txt : Error text.
+        known_types : Look-up dictionary of supported types for formatting.
+        attr_dict : Dictionary of provided attributes.
+        fmt_dict : Dictionary of attributes' types used for formatting.
     """
     err_txt = "Wrong format key '{0:s}' of option '{1:s}'"
     known_types = {'int': int, 'bool': bool, 'float': float, 'str': str}
@@ -101,7 +76,14 @@ class INIParser:
     LIST_MATCHER = r'^\[([\s\S]*)\]$'
     FMT_LEN = 3
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
+        """Args:
+            kwargs : Attributes specified in `attr_dict`.
+
+        Raises:
+            AttributeError : If the attribute specified in `attr_dict`
+                has not been provided in keyword arguments ``**kwargs``.
+        """
         self.__dict__['_lookup'] = {}
         self.__dict__['ini_dict'] = {section: {} for section in self.attr_dict}
         for section in self.attr_dict:
@@ -114,67 +96,60 @@ class INIParser:
             self.__setattr__(section, value)
         self._lookup = self._lookup_dict()
 
-    def _get_value(self, section, option, kwargs):
+    def _get_value(self, section: str, option: str, kwargs: Dict) -> Any:
         if not option in kwargs[section]:
             raise AttributeError("The '{:s}' option has not been provided".format(option))
         fmt = self.get_format(section, option)
-        if isinstance(kwargs[section][option], list):
+
+        if isinstance(kwargs[section][option], (list, tuple)):
             return [fmt(part) for part in kwargs[section][option]]
+
+        if isinstance(kwargs[section][option], np.ndarray):
+            if kwargs[section][option].ndim > 1:
+                raise ValueError(f'{kwargs[section][option]:s} must be one-dimensional')
+            return [fmt(part) for part in kwargs[section][option]]
+
         return fmt(kwargs[section][option])
 
     @classmethod
-    def _lookup_dict(cls):
+    def _lookup_dict(cls) -> Dict:
         """Look-up table between the sections and the parameters.
 
-        Returns
-        -------
-        dict
+        Returns:
             Look-up dictionary.
         """
         return {}
 
     @classmethod
-    def read_ini(cls, protocol_file):
+    def read_ini(cls, protocol_file: str) -> ConfigParser:
         """Read the `protocol_file` and return an instance of
         :class:`configparser.ConfigParser` class.
 
-        Parameters
-        ----------
-        protocol_file : str
-            Path to the file.
+        Args:
+            protocol_file : Path to the file.
 
-        Returns
-        -------
-        configparser.ConfigParser
+        Returns:
             Parser object with all the data contained in the
             INI file.
 
-        Raises
-        ------
-        ValueError
-            If the file doesn't exist.
+        Raises:
+            ValueError : If the file doesn't exist.
         """
         if not os.path.isfile(protocol_file):
             raise ValueError("File {:s} doesn't exist".format(protocol_file))
-        ini_parser = configparser.ConfigParser()
+        ini_parser = ConfigParser()
         ini_parser.read(protocol_file)
         return ini_parser
 
     @classmethod
-    def get_format(cls, section, option):
+    def get_format(cls, section: str, option: str) -> Type:
         """Return the attribute's format specified by `fmt_dict`.
 
-        Parameters
-        ----------
-        section : str
-            Attribute's section.
+        Args:
+            section : Attribute's section.
+            option : Attribute's name.
 
-        option : str
-            Attribute's name.
-
-        Returns
-        -------
-        type
+        Returns:
             Type of the attribute.
         """
         fmt = cls.fmt_dict.get(os.path.join(section, option))
@@ -183,22 +158,15 @@ class INIParser:
         return cls.known_types.get(fmt, str)
 
     @classmethod
-    def get_value(cls, ini_parser, section, option):
+    def get_value(cls, ini_parser: ConfigParser, section: str, option: str) -> Any:
         """Return an attribute from an INI file's parser object `ini_parser`.
 
-        Parameters
-        ----------
-        ini_parser : configparser.ConfigParser
-            A parser object of an INI file.
+        Args:
+            ini_parser : A parser object of an INI file.
+            section : Attribute's section.
+            option : Attribute's option.
 
-        section : str
-            Attribute's section.
-
-        option : str
-            Attribute's option.
-
-        Returns
-        -------
+        Returns:
             Attribute's value imported from the INI file.
         """
         fmt = cls.get_format(section, option)
@@ -211,7 +179,7 @@ class INIParser:
             return fmt(string.strip())
 
     @classmethod
-    def _import_ini(cls, protocol_file):
+    def _import_ini(cls, protocol_file: str) -> Dict:
         ini_parser = cls.read_ini(protocol_file)
         kwargs = {}
         for section in cls.attr_dict:
@@ -228,7 +196,7 @@ class INIParser:
         return kwargs
 
     @classmethod
-    def _format(cls, obj):
+    def _format(cls, obj: INIParser) -> Dict:
         crop_obj = {}
         for key, val in list(obj.items())[:cls.FMT_LEN]:
             if isinstance(val, dict):
@@ -240,15 +208,15 @@ class INIParser:
             crop_obj['...'] = '...'
         return crop_obj
 
-    def __getattr__(self, attr):
-        if attr in self._lookup:
-            return self.ini_dict[self._lookup[attr]][attr]
-        elif attr in self.ini_dict:
-            return self.ini_dict[attr]
+    def __getattr__(self, attr: str) -> Any:
+        if attr in self.__dict__.get('_lookup', {}):
+            return self.ini_dict[self.__dict__['_lookup'][attr]][attr]
+        elif attr in self.__dict__.get('ini_dict', {}):
+            return self.__dict__['ini_dict'][attr]
         else:
             raise AttributeError(attr + " doesn't exist")
 
-    def __setattr__(self, attr, value):
+    def __setattr__(self, attr: str, value: Any) -> None:
         if attr in self._lookup:
             self.ini_dict[self._lookup[attr]][attr] = value
         elif attr in self.ini_dict:
@@ -256,59 +224,51 @@ class INIParser:
         else:
             super(INIParser, self).__setattr__(attr, value)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         crop_dict = {key: self._format(val) for key, val in self.export_dict().items()}
         return crop_dict.__repr__()
 
-    def __str__(self):
+    def __str__(self) -> str:
         crop_dict = {key: self._format(val) for key, val in self.export_dict().items()}
         return crop_dict.__str__()
 
-    def export_dict(self):
+    def export_dict(self) -> Dict[str, Any]:
         """Return a :class:`dict` object with all the attributes.
 
-        Returns
-        -------
-        dict
+        Returns:
             Dictionary with all the attributes conntained in the object.
         """
         return {section: self.__getattr__(section) for section in self.attr_dict}
 
     @hybridmethod
-    def export_ini(cls, **kwargs):
+    def export_ini(self, **kwargs: Dict) -> ConfigParser:
         """Return a :class:`configparser.ConfigParser` object
-        with all the attributes exported the class.
+        with all the attributes exported from the class.
 
-        Parameters
-        ----------
-        **kwargs : dict
-            Extra parameters to export to the
-            :class:`configparser.ConfigParser` object.
+        Args:
+            kwargs : Extra parameters to export to the
+                :class:`configparser.ConfigParser` object.
 
-        Returns
-        ------
-        configparser.ConfigParser
-            A parser object with all the attributes contained in
-            `attr_dict`.
+        Returns:
+            A parser object with all the parsing specifications
+            contained in class.
         """
-        ini_parser = configparser.ConfigParser()
-        for section in cls.attr_dict:
-            if 'ALL' in cls.attr_dict[section]:
+        ini_parser = ConfigParser()
+        for section in self.attr_dict:
+            if 'ALL' in self.attr_dict[section]:
                 ini_parser[section] = kwargs[section]
             else:
                 ini_parser[section] = {option: kwargs[section][option]
-                                       for option in cls.attr_dict[section]}
+                                       for option in self.attr_dict[section]}
         return ini_parser
 
     @export_ini.instancemethod
-    def export_ini(self):
+    def export_ini(self) -> ConfigParser:
         """Return a :class:`configparser.ConfigParser` object
         with all the attributes exported from the object.
 
-        Returns
-        -------
-        configparser.ConfigParser
-            A parser object with all the attributes contained in
-            the object.
+        Returns:
+            A parser object with all the parsing specifications
+            contained in the object.
         """
         return type(self).export_ini(**self.ini_dict)

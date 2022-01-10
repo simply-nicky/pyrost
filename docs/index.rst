@@ -6,6 +6,11 @@
 pyrost
 ======
 
+.. image:: figures/ST_flowchart_article.png
+    :width: 100 %
+
+|
+
 Python Robust Speckle Tracking (**pyrost**) is a library for wavefront
 metrology and sample imaging based on ptychographic speckle tracking
 algorithm. This project takes over Andrew Morgan's
@@ -27,21 +32,14 @@ more information.
 pyrost.simulation
 =================
 
-This library also contains a set of tools to simulate the light propagation
-through various media. pyrost.simulation is comprised of two simulation
-frameworks:
-
-Speckle tracking scan simulation (st_sim)
------------------------------------------
-
-st_sim is capable to simulate one-dimensional speckle tracking scans. st_sim
-employs Rayleigh-Sommerfeld convolution and Fraunhofer diffraction to propagate
+**pyrost.simulation** is capable to simulate one-dimensional speckle tracking scans.
+It employs Rayleigh-Sommerfeld convolution and Fraunhofer diffraction to propagate
 the wavefronts. The back-end is written in C to yield the best performance.
 
-Multislice simulation (ms_sim)
-------------------------------
+pyrost.multislice
+=================
 
-The multislice simulation package (**ms_sim**) is capable to propagate the wavefront
+The multislice simulation package (**pyrost.multislice**) is capable to propagate the wavefront
 through a bulky sample by the dint of multislice beam propagation algorithm.
 The back-end is based on FFTW library.
 
@@ -50,13 +48,14 @@ Python Reference
 ================
 
 .. toctree::
-   :maxdepth: 4
-   :caption: Contents:
+   :maxdepth: 1
 
 
    install
    tutorials/tutorials
-   reference/api
+   reference/pyrost_api
+   reference/st_sim_api
+   reference/ms_sim_api
 
 
 

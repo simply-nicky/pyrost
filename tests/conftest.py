@@ -1,7 +1,7 @@
 def pytest_addoption(parser):
-    parser.addoption("--path", type=str, default="results/exp/Scan_1986.cxi",
+    parser.addoption("--path", type=str, default="results/exp/Scan_2312.cxi",
                      help="Path to a CXI file")
-    parser.addoption("--roi", type=int, nargs=4, default=(0, 1, 360, 1090),
+    parser.addoption("--roi", type=int, nargs=4, default=(0, 1, 440, 1220),
                      help="Region of interest")
     parser.addoption("--defocus", type=float, default=1.0e-4,
                      help="Defocus distance [m]")

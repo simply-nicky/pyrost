@@ -1,8 +1,8 @@
-Working with CXI Files
+Working with CXI files
 ======================
 
-CXIProtocol
------------
+:class:`CXIProtocol <pyrost.CXIProtocol>`
+-----------------------------------------
 
 CXI protocol (:class:`pyrost.CXIProtocol`) is a helper class for a :class:`pyrost.STData`
 data container, which tells it where to look for the necessary data fields in a CXI
@@ -12,6 +12,11 @@ data field (`data`, `whitefield`, etc.):
 
 * `datatypes` : Data type (`float`, `int`, or `bool`).
 * `default_paths` : CXI file path.
+* `is_data` : Flag all the attributes whether they are of the data type.
+
+.. note::
+    Attribute is of data type if the data array is 2- or 3-dimensional and
+    has the shape identical to the detector pixel grid.
 
 .. note::
 
@@ -28,14 +33,14 @@ is given by:
 
     [datatypes]
     basis_vectors = float
-    data = float
-    defocus = float
-    defocus_fs = float
-    defocus_ss = float
+    data = uint
+    defocus_x = float
+    defocus_y = float
     distance = float
     energy = float
     error_frame = float
-    good_frames = int
+    flatfields = uint
+    good_frames = uint
     m0 = int
     mask = bool
     n0 = int
@@ -44,7 +49,7 @@ is given by:
     pixel_map = float
     pixel_translations = float
     reference_image = float
-    roi = int
+    roi = uint
     translations = float
     wavelength = float
     whitefield = float
@@ -52,15 +57,15 @@ is given by:
     y_pixel_size = float
 
     [default_paths]
-    basis_vectors = /entry_1/instrument_1/detector_1/basis_vectors
-    data = /entry_1/data_1/data
-    defocus = /speckle_tracking/defocus
-    defocus_fs = /speckle_tracking/dfs
-    defocus_ss = /speckle_tracking/dss
-    distance = /entry_1/instrument_1/detector_1/distance
-    energy = /entry_1/instrument_1/source_1/energy
+    basis_vectors = /speckle_tracking/basis_vectors
+    data = /entry/data/data
+    defocus_x = /speckle_tracking/defocus_x
+    defocus_y = /speckle_tracking/defocus_y
+    distance = /entry/instrument/detector/distance
+    energy = /entry/instrument/source/energy
     error_frame = /speckle_tracking/error_frame
-    good_frames = /frame_selector/good_frames
+    flatfields = /speckle_tracking/flatfields
+    good_frames = /speckle_tracking/good_frames
     m0 = /speckle_tracking/m0
     mask = /speckle_tracking/mask
     n0 = /speckle_tracking/n0
@@ -70,14 +75,39 @@ is given by:
     pixel_translations = /speckle_tracking/pixel_translations
     reference_image = /speckle_tracking/reference_image
     roi = /speckle_tracking/roi
-    translations = /entry_1/sample_1/geometry/translations
-    wavelength = /entry_1/instrument_1/source_1/wavelength
+    translations = /speckle_tracking/translations
+    wavelength = /entry/instrument/source/wavelength
     whitefield = /speckle_tracking/whitefield
-    x_pixel_size = /entry_1/instrument_1/detector_1/x_pixel_size
-    y_pixel_size = /entry_1/instrument_1/detector_1/y_pixel_size
+    x_pixel_size = /entry/instrument/detector/x_pixel_size
+    y_pixel_size = /entry/instrument/detector/y_pixel_size
 
-CXILoader
----------
+    [is_data]
+    basis_vectors = False
+    data = True
+    defocus_x = False
+    defocus_y = False
+    distance = False
+    energy = False
+    error_frame = False
+    flatfields = True
+    good_frames = False
+    m0 = False
+    mask = True
+    n0 = False
+    phase = True
+    pixel_aberrations = True
+    pixel_map = True
+    pixel_translations = False
+    reference_image = False
+    roi = False
+    translations = False
+    wavelength = False
+    whitefield = True
+    x_pixel_size = False
+    y_pixel_size = False
+
+:class:`CXILoader <pyrost.CXILoader>`
+-------------------------------------
 
 CXI file loader class (:class:`pyrost.CXILoader`) uses a protocol to
 automatically load all the necessary data fields from a CXI file. Other than
@@ -100,20 +130,29 @@ is given by:
 .. code-block:: ini
 
     [load_paths]
-    good_frames = [/speckle_tracking/good_frames, /frame_selector/good_frames, /process_3/good_frames]
-    mask = [/speckle_tracking/mask, /mask_maker/mask, /entry_1/instrument_1/detector_1/mask]
-    translations = [/entry_1/sample_1/geometry/translations, /entry_1/sample_1/geometry/translation, /pos_refine/translation, /entry_1/sample_3/geometry/translation]
-    whitefield = [/speckle_tracking/whitefield, /process_1/whitefield, /make_whitefield/whitefield, /process_2/whitefield, /process_3/whitefield]
+    basis_vectors = [/entry_1/instrument_1/detector_1/basis_vectors, /entry/instrument/detector/basis_vectors]
+    data = [/entry/instrument/detector/data, /entry_1/instrument_1/detector_1/data, /entry_1/data_1/data]
+    defocus_y = [/speckle_tracking/defocus_ss]
+    defocus_x = [/speckle_tracking/defocus_fs, /speckle_tracking/defocus]
+    distance = [/entry_1/instrument_1/detector_1/distance,]
+    energy = [/entry_1/instrument_1/detector_1/distance,]
+    good_frames = [/frame_selector/good_frames, /process_3/good_frames]
+    mask = [/mask_maker/mask, /entry_1/instrument_1/detector_1/mask, /entry/instrument/detector/mask]
+    translations = [/entry_1/sample_1/geometry/translations, /entry/sample/geometry/translations, /entry_1/sample_1/geometry/translation, /pos_refine/translation, /entry_1/sample_3/geometry/translation]
+    wavelength = [/entry_1/instrument_1/source_1/wavelength,]
+    whitefield = [/process_1/whitefield, /make_whitefield/whitefield, /process_2/whitefield, /process_3/whitefield]
+    x_pixel_size = [/entry_1/instrument_1/detector_1/x_pixel_size,]
+    y_pixel_size = [/entry_1/instrument_1/detector_1/y_pixel_size,]
 
     [policy]
     basis_vectors = True
     data = True
-    defocus = True
-    defocus_fs = True
-    defocus_ss = True
+    defocus_x = True
+    defocus_y = True
     distance = True
     energy = False
     error_frame = False
+    flatfields = False
     good_frames = True
     m0 = False
     mask = True
@@ -126,7 +165,7 @@ is given by:
     roi = True
     translations = True
     wavelength = True
-    whitefield = False
+    whitefield = True
     x_pixel_size = True
     y_pixel_size = True
 

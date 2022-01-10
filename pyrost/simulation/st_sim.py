@@ -1,33 +1,29 @@
-"""One-dimensional Speckle Tracking scan simulation.
-Generate intensity frames based on Fresnel diffraction
-theory. :class:`pyrost.simulation.STSim` does the heavy lifting
-of calculating the wavefront propagation to the detector plane.
+"""One-dimensional speckle tracking scan simulation. Generate intensity frames
+based on Fresnel diffraction theory. :class:`pyrost.simulation.STSim` does the
+heavy lifting of calculating the wavefront propagation to the detector plane.
 :class:`pyrost.simulation.STConverter` exports simulated data to a
-`CXI <https://www.cxidb.org/cxi.html>`_ format file accordingly to
-the provided :class:`pyrost.CXIProtocol` object and saves the protocol
-and experimental parameters to the same folder.
+`CXI <https://www.cxidb.org/cxi.html>`_ format file accordingly to the provided
+:class:`pyrost.CXIProtocol` object and saves the protocol and experimental parameters
+to the same folder.
 
-Examples
---------
+Examples:
 
-Perform the simulation for a given :class:`pyrost.simulation.STParams` object
-`params`:
+    Perform the simulation for a given :class:`pyrost.simulation.STParams` object
+    `params` with :class:`pyrost.simulation.STSim`. Then generate a stack frames with
+    :func:`pyrost.simulation.STSim.frames`, and save the simulated data to a
+    `CXI <https://www.cxidb.org/cxi.html>`_ file using the default protocol as follows:
 
->>> import pyrost.simulation as sim
->>> sim_obj = sim.STSim(params)
-
-Return an array of intensity frames at the detector plane.
-
->>> data = sim_obj.frames()
-
-Save the simulated data to a `CXI <https://www.cxidb.org/cxi.html>`_ file using
-the default protocol.
-
->>> st_conv = sim.STConverter()
->>> st_conv.save_sim(data, sim_obj, 'test')
+    >>> import pyrost.simulation as st_sim
+    >>> params = st_sim.STParams.import_default()
+    >>> sim_obj = st_sim.STSim(params)
+    >>> data = sim_obj.frames()
+    >>> st_conv = st_sim.STConverter()
+    >>> st_conv.save_sim(data, sim_obj, 'test') # doctest: +SKIP
 """
+from __future__ import annotations
 import os
 import argparse
+from typing import Dict, Optional, Union
 import h5py
 import numpy as np
 from ..cxi_protocol import CXIProtocol, ROOT_PATH
@@ -43,233 +39,214 @@ class STSim(DataContainer):
     wavefront, whereupon propagates the wavefront to the detector's
     plane.
 
-    Parameters
-    ----------
-    params : STParams
-        Experimental parameters.
-    backend : {'fftw', 'numpy'}, optional
-        Choose the backend library for the FFT implementation.
-    num_threads : int, optional
-        Number of threads used in the calculations.
-    **kwargs : dict, optional
-        Attributes specified in `init_set`.
+    Attributes:
+        attr_set : Set of attributes in the container which are necessary
+            to initialize in the constructor.
+        init_set : Set of optional data attributes.
 
-    Attributes
-    ----------
-    attr_set : set
-        Set of attributes in the container which are necessary
-        to initialize in the constructor.
-    init_set : set
-        Set of optional data attributes.
+    Notes:
+        **Necessary attributes**:
 
-    Notes
-    -----
-    Necessary attributes:
+        * backend : the backend library for the FFT implementation.
+        * num_threads : Number of threads used in the calculations.
+        * params : Experimental parameters.
 
-    * backend : Choose the backend library for the FFT implementation.
-    * num_threads : Number of threads used in the calculations.
-    * params : Experimental parameters.
+        **Optional attributes**:
 
-    Optional attributes:
-
-    * bars : Barcode's bar positions [um].
-    * det_wfx : Wavefront at the detector plane along the x
-      axis.
-    * det_wfy : Wavefront at the detector plane along the y
-      axis.
-    * det_iy : Intensity profile at the detector plane along
-      the x axis.
-    * det_iy : Intensity profile at the detector plane along
-      the y axis.
-    * lens_wfx : Wavefront at the lens plane along the x
-      axis.
-    * lens_wfy : Wavefront at the lens plane along the y
-      axis.
-    * n_x : Wavefront size along the x axis.
-    * n_y : Wavefront size along the y axis.
-    * roi : Region of interest in detector plane.
-    * smp_pos : Sample translations along the x axis.
-    * smp_profile : Barcode's transmission profile.
-    * smp_wfx : Wavefront at the sample plane along the x
-      axis.
-    * smp_wfy : Wavefront at the sample plane along the y
-      axis.
-
-    See Also
-    --------
-    st_sim_param : Full list of experimental parameters.
+        * bars : Barcode's bar positions [um].
+        * det_wfx : Wavefront at the detector plane along the x axis.
+        * det_wfy : Wavefront at the detector plane along the y axis.
+        * det_iy : Intensity profile at the detector plane along the
+          x axis.
+        * det_iy : Intensity profile at the detector plane along the
+          y axis.
+        * lens_wfx : Wavefront at the lens plane along the x axis.
+        * lens_wfy : Wavefront at the lens plane along the y axis.
+        * n_x : Wavefront size along the x axis.
+        * n_y : Wavefront size along the y axis.
+        * roi : Region of interest in detector plane.
+        * smp_pos : Sample translations along the x axis.
+        * smp_profile : Barcode's transmission profile.
+        * smp_wfx : Wavefront at the sample plane along the x axis.
+        * smp_wfy : Wavefront at the sample plane along the y axis.
     """
     backends = {'numpy', 'fftw'}
     attr_set = {'backend', 'params'}
     init_set = {'bars', 'det_wfx', 'det_wfy', 'det_ix', 'det_iy', 'lens_wfx',
                 'lens_wfy', 'roi', 'smp_pos', 'smp_profile', 'smp_wfx', 'smp_wfy'}
 
-    def __init__(self, params, backend='numpy', **kwargs):
+    inits = {'bars'       : lambda obj: obj.params.bar_positions(dist=obj.params.defocus),
+             'lens_wfx'   : lambda obj: obj.params.lens_x_wavefront(),
+             'lens_wfy'   : lambda obj: obj.params.lens_y_wavefront(),
+             'smp_wfx'    : lambda obj: obj._sample_x_wavefront(),
+             'smp_wfy'    : lambda obj: obj._sample_y_wavefront(),
+             'smp_pos'    : lambda obj: obj.params.sample_positions(),
+             'smp_profile': lambda obj: obj._sample_profile(),
+             'det_wfx'    : lambda obj: obj._detector_x_wavefront(),
+             'det_wfy'    : lambda obj: obj._detector_y_wavefront(),
+             'det_ix'     : lambda obj: obj._detector_x_intensity(),
+             'det_iy'     : lambda obj: obj._detector_y_intensity(),
+             'roi'        : lambda obj: obj.find_beam_roi()}
+
+    def __init__(self, params: STParams, backend: str='numpy',
+                 **kwargs: Union[int, np.ndarray]) -> None:
+        """
+        Args:
+            params : Set of simulation parameters.
+            backend : Choose between numpy ('numpy') or FFTW ('fftw') library for the FFT
+                implementation.
+            num_threads : Number of threads used in the calculations.
+            kwargs : Any of the optional attributes specified in :class:`STSim` notes.
+
+        Raises:
+            ValueError : If the 'backend' keyword is invalid.
+        """
         if not backend in self.backends:
             err_msg = f'backend must be one of the following: {str(self.backends):s}'
             raise ValueError(err_msg)
         super(STSim, self).__init__(backend=backend, params=params, **kwargs)
-        self._init_dict()
 
-    def _init_dict(self):
-        # Initialize barcode's bar positions
-        if self.bars is None:
-            self.bars = self.params.bar_positions(dist=self.params.defocus)
+    def _sample_x_wavefront(self) -> np.ndarray:
+        dx0 = 2.0 * self.params.ap_x / self.x_size
+        dx1 = np.abs(dx0 * self.params.defocus / self.params.focus)
+        z01 = self.params.focus + self.params.defocus
+        return rsc_wp(wft=self.lens_wfx, dx0=dx0, dx=dx1, z=z01, wl=self.params.wl,
+                        backend=self.backend, num_threads=self.params.num_threads)
 
-        # Initialize wavefronts at the lens plane
-        if self.lens_wfx is None or self.lens_wfy is None:
-            self.lens_wfx, self.lens_wfy = self.params.lens_wavefronts()
+    def _sample_y_wavefront(self) -> np.ndarray:
+        dy0 = 2.0 * self.params.ap_y / self.y_size
+        z01 = self.params.focus + self.params.defocus
+        return rsc_wp(wft=self.lens_wfy, dx0=dy0, dx=dy0, z=z01, wl=self.params.wl,
+                        backend=self.backend, num_threads=self.params.num_threads)
 
-        # Initialize wavefronts at the sample plane
-        if self.smp_wfx is None:
-            dx0 = 2 * self.params.ap_x / self.x_size
-            dx1 = np.abs(dx0 * self.params.defocus / self.params.focus)
-            z01 = self.params.focus + self.params.defocus
-            self.smp_wfx = rsc_wp(wft=self.lens_wfx, dx0=dx0, dx=dx1, z=z01, wl=self.params.wl,
-                                  backend=self.backend, num_threads=self.params.num_threads)
-        if self.smp_wfy is None:
-            dy0 = 2 * self.params.ap_y / self.y_size
-            z01 = self.params.focus + self.params.defocus
-            self.smp_wfy = rsc_wp(wft=self.lens_wfy, dx0=dy0, dx=dy0, z=z01, wl=self.params.wl,
-                                  backend=self.backend, num_threads=self.params.num_threads)
 
-        # Initialize sample's translations
-        if self.smp_pos is None:
-            self.smp_pos = self.params.sample_positions()
+    def _sample_profile(self) -> np.ndarray:
+        dx1 = np.abs(2.0 * self.params.ap_x * self.params.defocus / self.params.focus / self.x_size)
+        x1_arr = dx1 * np.arange(-self.x_size // 2, self.x_size // 2) + self.smp_pos[:, None]
+        return self.params.barcode_profile(x_arr=x1_arr, dx=dx1, bars=self.bars)
 
-        # Initialize sample's transmission profile
-        if self.smp_profile is None:
-            dx1 = np.abs(2 * self.params.ap_x * self.params.defocus \
-                         / self.params.focus / self.x_size)
-            x1_arr = dx1 * np.arange(-self.x_size // 2, self.x_size // 2) + self.smp_pos[:, None]
-            self.smp_profile = self.params.barcode_profile(x_arr=x1_arr, bars=self.bars,
-                                                           num_threads=self.params.num_threads)
+    def _detector_x_wavefront(self) -> np.ndarray:
+        dx1 = np.abs(2.0 * self.params.ap_x * self.params.defocus / self.params.focus / self.x_size)
+        dx2 = self.params.detx_size * self.params.pix_size / self.x_size
+        wft = self.smp_wfx * self.smp_profile
+        return fraunhofer_wp(wft=wft, dx0=dx1, dx=dx2, z=self.params.det_dist,
+                             wl=self.params.wl, backend=self.backend,
+                             num_threads=self.params.num_threads)
 
-        # Initialize wavefronts at the detector plane
-        if self.det_wfx is None:
-            dx1 = np.abs(2 * self.params.ap_x * self.params.defocus \
-                         / self.params.focus / self.x_size)
-            dx2 = self.params.fs_size * self.params.pix_size / self.x_size
-            wft = self.smp_wfx * self.smp_profile
-            self.det_wfx = fraunhofer_wp(wft=wft, dx0=dx1, dx=dx2, z=self.params.det_dist,
-                                         wl=self.params.wl, backend=self.backend,
-                                         num_threads=self.params.num_threads)
-            self.det_wx = np.abs(fraunhofer_wp(wft=self.smp_wfx, dx0=dx1, dx=dx2,
-                                               z=self.params.det_dist, wl=self.params.wl,
-                                               backend=self.backend, num_threads=1))
+    def _detector_y_wavefront(self) -> np.ndarray:
+        dy1 = 2.0 * self.params.ap_y / self.y_size
+        dy2 = self.params.dety_size * self.params.pix_size / self.y_size
+        return fraunhofer_wp(wft=self.smp_wfy, dx0=dy1, dx=dy2, z=self.params.det_dist,
+                             wl=self.params.wl, backend=self.backend,
+                             num_threads=1)
 
-        if self.det_wfy is None:
-            dy1 = 2 * self.params.ap_y / self.y_size
-            dy2 = self.params.ss_size * self.params.pix_size / self.y_size
-            self.det_wfy = fraunhofer_wp(wft=self.smp_wfy, dx0=dy1, dx=dy2, z=self.params.det_dist,
-                                         wl=self.params.wl, backend=self.backend,
-                                         num_threads=1)
-            self.det_wy = np.abs(fraunhofer_wp(wft=self.smp_wfy, dx0=dy1, dx=dy2,
-                                               z=self.params.det_dist, wl=self.params.wl,
-                                               backend=self.backend, num_threads=1))
+    def _detector_x_intensity(self) -> np.ndarray:
+        dx = self.params.detx_size * self.params.pix_size / self.x_size
+        sc_x = self.params.source_curve(dist=self.params.defocus + self.params.det_dist, step=dx)
+        det_ix = np.sqrt(self.params.p0) / self.params.ap_x * np.abs(self.det_wfx)**2
+        return fft_convolve(array=det_ix, kernel=sc_x, backend=self.backend,
+                            num_threads=self.params.num_threads)
 
-        # Initialize intensity profiles at the detector plane
-        if self.det_ix is None:
-            dx = self.params.fs_size * self.params.pix_size / self.x_size
-            sc_x = self.params.source_curve(dist=self.params.defocus + self.params.det_dist, step=dx)
-            det_ix = np.sqrt(self.params.p0) / self.params.ap_x * np.abs(self.det_wfx)**2
-            self.det_ix = fft_convolve(array=det_ix, kernel=sc_x, backend=self.backend,
-                                       num_threads=self.params.num_threads)
-        if self.det_iy is None:
-            dy = self.params.ss_size * self.params.pix_size / self.y_size
-            sc_y = self.params.source_curve(dist=self.params.defocus + self.params.det_dist, step=dy)
-            det_iy = np.sqrt(self.params.p0) / self.params.ap_y * np.abs(self.det_wfy)**2
-            self.det_iy = fft_convolve(array=det_iy, kernel=sc_y, backend=self.backend,
-                                       num_threads=self.params.num_threads)
+    def _detector_y_intensity(self) -> np.ndarray:
+        dy = self.params.dety_size * self.params.pix_size / self.y_size
+        sc_y = self.params.source_curve(dist=self.params.defocus + self.params.det_dist, step=dy)
+        det_iy = np.sqrt(self.params.p0) / self.params.ap_y * np.abs(self.det_wfy)**2
+        return fft_convolve(array=det_iy, kernel=sc_y, backend=self.backend,
+                            num_threads=self.params.num_threads)
 
-        # Initialize region of interest
-        if self.roi is None:
-            x0, x1 = self.params.beam_span(self.params.det_dist)
-            if (x1 - x0) < self.params.fs_size * self.params.pix_size:
-                dx = self.params.fs_size * self.params.pix_size / self.x_size
-                cnt_x, cnt_y = self.x_size // 2 + int((x0 + x1) / 2 // dx), self.y_size // 2
-                grad_x = gaussian_gradient_magnitude(self.det_wx, self.x_size // 100,
-                                                     mode='nearest',
-                                                     num_threads=self.params.num_threads)
-                grad_y = gaussian_gradient_magnitude(self.det_wy, self.y_size // 100,
-                                                     mode='nearest',
-                                                     num_threads=self.params.num_threads)
-                fs0 = (np.argmax(grad_x[:cnt_x]) * self.params.fs_size) // self.x_size
-                fs1 = ((cnt_x + np.argmax(grad_x[cnt_x:])) * self.params.fs_size) // self.x_size
-            else:
-                fs0, fs1 = 0, self.params.fs_size
-            ss0 = (np.argmax(grad_y[:cnt_y]) * self.params.ss_size) // self.y_size
-            ss1 = ((cnt_y + np.argmax(grad_y[cnt_y:])) * self.params.ss_size) // self.y_size
-            self.roi = np.array([ss0, ss1, fs0, fs1])
+    def find_beam_roi(self) -> np.ndarray:
+        """Calculate the beam's field of view at the detector grid as a
+        list of four pixel coordinates.
+
+        Returns:
+            A set of four coordinates ('y0', 'y1', 'x0', 'x1'), where 'y0' and
+            'y1' are the lower and upper bounds of the beam along the vertical
+            detector axis and 'x0' and 'x1' are the lower and upper bounds of
+            the beam along the horizontal axis.
+        """
+        dx1 = np.abs(2.0 * self.params.ap_x * self.params.defocus / self.params.focus / self.x_size)
+        dx2 = self.params.detx_size * self.params.pix_size / self.x_size
+        wfield_x = np.abs(fraunhofer_wp(wft=self.smp_wfx, dx0=dx1, dx=dx2,
+                                        z=self.params.det_dist, wl=self.params.wl,
+                                        backend=self.backend, num_threads=1))
+
+        dy1 = 2.0 * self.params.ap_y / self.y_size
+        dy2 = self.params.dety_size * self.params.pix_size / self.y_size
+        wfield_y = np.abs(fraunhofer_wp(wft=self.smp_wfy, dx0=dy1, dx=dy2,
+                                        z=self.params.det_dist, wl=self.params.wl,
+                                        backend=self.backend, num_threads=1))
+
+        x0, x1 = self.params.beam_span(self.params.det_dist)
+
+        if (x1 - x0) < self.params.detx_size * self.params.pix_size:
+            dx = self.params.detx_size * self.params.pix_size / self.x_size
+            cnt_x, cnt_y = self.x_size // 2 + int(0.5 * (x0 + x1) // dx), self.y_size // 2
+            grad_x = gaussian_gradient_magnitude(wfield_x, self.x_size // 100, mode='nearest',
+                                                    num_threads=self.params.num_threads)
+            grad_y = gaussian_gradient_magnitude(wfield_y, self.y_size // 100, mode='nearest',
+                                                    num_threads=self.params.num_threads)
+            x0 = (np.argmax(grad_x[:cnt_x]) * self.params.detx_size) // self.x_size
+            x1 = ((cnt_x + np.argmax(grad_x[cnt_x:])) * self.params.detx_size) // self.x_size
+        else:
+            x0, x1 = 0, self.params.detx_size
+
+        y0 = (np.argmax(grad_y[:cnt_y]) * self.params.dety_size) // self.y_size
+        y1 = ((cnt_y + np.argmax(grad_y[cnt_y:])) * self.params.dety_size) // self.y_size
+        return np.array([y0, y1, x0, x1])
 
     @property
-    def x_size(self):
+    def x_size(self) -> int:
         return self.lens_wfx.size
 
     @property
-    def y_size(self):
+    def y_size(self) -> int:
         return self.lens_wfy.size
 
     @dict_to_object
-    def update_bars(self, bars):
+    def update_bars(self, bars: np.ndarray) -> STSim:
         """Return a new :class:`STSim` object with the updated
         `bars`.
 
-        Parameters
-        ----------
-        bars : numpy.ndarray
-            Array of barcode's bar positions.
+        Args:
+            bars : Array of barcode's bar positions.
 
-        Returns
-        -------
-        STSim
-            A new :class:`STSim` object with the updated
-            `bars`.
+        Returns:
+            A new :class:`STSim` object with the updated `bars`.
         """
         return {'bars': bars, 'smp_profile': None, 'det_wfx': None, 'det_ix': None}
 
     @dict_to_object
-    def update_roi(self, roi):
+    def update_roi(self, roi: np.ndarray) -> STSim:
         """Return a new :class:`STSim` object with the updated
         region of interest.
 
-        Parameters
-        ----------
-        roi : numpy.ndarray
-            Region of interest in detector plane. The values are
+        Args:
+            roi : Region of interest in detector plane. The values are
             given in pixels as following : [`x0`, `x1`, `y0`, `y1`].
 
-        Returns
-        -------
-        STSim
-            A new :class:`STSim` object with the updated
-            `roi`.
+        Returns:
+            A new :class:`STSim` object with the updated `roi`.
         """
         return {'roi': roi}
 
-    def frames(self, wfieldx=None, wfieldy=None, apply_noise=True):
+    def frames(self, wfieldx: Optional[np.ndarray]=None, wfieldy: Optional[np.ndarray]=None,
+               apply_noise: bool=True) -> np.ndarray:
         """Return intensity frames at the detector plane. Applies
         Poisson noise if `apply_noise` is True.
 
-        Parameters
-        ----------
-        wfieldx : np.ndarray, optional
-            Whitefield profile along the x axis.
-        wfieldy : np.ndarray, optional
-            whitefield profile along the y aixs.
-        apply_noise : bool, optional
-            Apply Poisson noise if it's True.
+        Args:
+            wfieldx : Whitefield profile along the x axis.
+            wfieldy : Whitefield profile along the y aixs.
+            apply_noise : Apply Poisson noise if it's True.
 
-        Returns
-        -------
-        numpy.ndarray
+        Returns:
             Intensity frames.
         """
-        dx = self.params.fs_size * self.params.pix_size / self.x_size
-        dy = self.params.ss_size * self.params.pix_size / self.y_size
+        dx = self.params.detx_size * self.params.pix_size / self.x_size
+        dy = self.params.dety_size * self.params.pix_size / self.y_size
         seed = self.params.seed if apply_noise else -1
         frames = make_frames(pfx=self.det_ix, pfy=self.det_iy, dx=dx, dy=dy,
-                             shape=(self.params.ss_size, self.params.fs_size),
+                             shape=(self.params.dety_size, self.params.detx_size),
                              seed=seed, num_threads=self.params.num_threads)
         if not wfieldx is None:
             frames *= (wfieldx / wfieldx.mean())
@@ -277,22 +254,17 @@ class STSim(DataContainer):
             frames *= (wfieldy / wfieldy.mean())[:, None]
         return frames
 
-    def ptychograph(self, wfieldx=None, wfieldy=None, apply_noise=True):
+    def ptychograph(self, wfieldx: Optional[np.ndarray]=None, wfieldy: Optional[np.ndarray]=None,
+                    apply_noise: bool=True) -> np.ndarray:
         """Return a ptychograph of intensity frames. Applies Poisson
         noise if `apply_noise` is True.
 
-        Parameters
-        ----------
-        wfieldx : np.ndarray, optional
-            Whitefield profile along the x axis.
-        wfieldy : np.ndarray, optional
-            whitefield profile along the y aixs.
-        apply_noise : bool, optional
-            Apply Poisson noise if it's True.
+        Args:
+            wfieldx : Whitefield profile along the x axis.
+            wfieldy : Whitefield profile along the y aixs.
+            apply_noise : Apply Poisson noise if it's True.
 
-        Returns
-        -------
-        numpy.ndarray
+        Returns:
             Ptychograph.
         """
         data = self.frames(wfieldx=wfieldx, wfieldy=wfieldy, apply_noise=apply_noise)
@@ -304,44 +276,31 @@ class STConverter:
     file. :class:`STConverter` also exports experimental parameters and the
     used protocol to INI files.
 
-    Parameters
-    ----------
-    protocol : CXIProtocol
-        CXI protocol, which contains all the attribute's paths and data types.
-    coord_ratio : float, optional
-        Coordinates ratio between the simulated and saved data.
+    Attributes:
+        templates_dir : Path to ini templates (for exporting `protocol` and :class:`STParams`).
+        write_attrs : Dictionary with all the attributes which are saved in CXI file.
+        protocol : CXI protocol, which contains all the attribute's paths and data types.
+        coord_ratio : Coordinates ratio between the simulated and saved data.
 
-    Attributes
-    ----------
-    templates_dir : str
-        Path to ini templates (for exporting `protocol` and :class:`STParams`).
-    write_attrs : dict
-        Dictionary with all the attributes which are saved in CXI file.
-    protocol : CXIProtocol
-        CXI protocol, which contains all the attribute's paths and data types.
-    coord_ratio : float, optional
-        Coordinates ratio between the simulated and saved data.
+    Notes:
+        List of the attributes saved in CXI file:
 
-    Notes
-    -----
-    List of the attributes saved in CXI file:
-
-    * basis_vectors : Detector basis vectors.
-    * data : Measured intensity frames.
-    * defocus_fs : Defocus distance along the fast detector axis.
-    * defocus_ss : Defocus distance along the slow detector axis.
-    * distance : Sample-to-detector distance.
-    * energy : Incoming beam photon energy [eV].
-    * good_frames : An array of good frames' indices.
-    * mask : Bad pixels mask.
-    * roi : Region of interest in the detector plane.
-    * translations : Sample's translations.
-    * wavelength : Incoming beam's wavelength.
-    * whitefield : Measured frames' whitefield.
-    * x_pixel_size : Pixel's size along the fast detector
-      axis.
-    * y_pixel_size : Pixel's size along the slow detector
-      axis.
+        * basis_vectors : Detector basis vectors.
+        * data : Measured intensity frames.
+        * defocus_x : Defocus distance along the horizontal detector axis.
+        * defocus_y : Defocus distance along the vertical detector axis.
+        * distance : Sample-to-detector distance.
+        * energy : Incoming beam photon energy [eV].
+        * good_frames : An array of good frames' indices.
+        * mask : Bad pixels mask.
+        * roi : Region of interest in the detector plane.
+        * translations : Sample's translations.
+        * wavelength : Incoming beam's wavelength.
+        * whitefield : Measured frames' whitefield.
+        * x_pixel_size : Pixel's size along the horizontal detector
+          axis.
+        * y_pixel_size : Pixel's size along the vertical detector
+          axis.
     """
     unit_vector_fs = np.array([1, 0, 0])
     unit_vector_ss = np.array([0, -1, 0])
@@ -352,12 +311,16 @@ class STConverter:
                    'energy', 'good_frames', 'mask', 'roi', 'translations',
                    'wavelength', 'whitefield', 'x_pixel_size', 'y_pixel_size'}
 
-    def __init__(self, protocol=None, coord_ratio=1e-6):
-        if protocol is None:
-            protocol = CXIProtocol()
+    def __init__(self, protocol: Optional[CXIProtocol]=CXIProtocol.import_default(),
+                 coord_ratio: float=1e-6) -> None:
+        """
+        Args:
+            protocol : CXI protocol, which contains all the attribute's paths and data types.
+            coord_ratio : Coordinates ratio between the simulated and saved data.
+        """
         self.protocol, self.crd_rat = protocol, coord_ratio
 
-    def _ini_parsers(self, st_params):
+    def _ini_parsers(self, st_params: STParams) -> Dict[str, dict]:
         ini_parsers = {}
         for filename in os.listdir(self.templates_dir):
             path = os.path.join(self.templates_dir, filename)
@@ -370,30 +333,24 @@ class STConverter:
         ini_parsers['protocol'] = self.protocol.export_ini()
         return ini_parsers
 
-    def export_dict(self, data, roi, smp_pos, st_params):
+    def export_dict(self, data: np.ndarray, roi: np.ndarray, smp_pos: np.ndarray,
+                    st_params: STParams) -> Dict[str, Union[np.ndarray, float]]:
         """Export simulated data `data` (fetched from :func:`STSim.frames`
         or :func:`STSim.ptychograph`) and `st_params` to :class:`dict` object.
 
-        Parameters
-        ----------
-        data : numpy.ndarray
-            Simulated data.
-        roi : numpy.ndarray
-            Region of interest in detector plane. The values are
-            given in pixels as following : [`x0`, `x1`, `y0`, `y1`].
-        smp_pos : numpy.ndarray
-            Sample translations.
-        st_params : STParams
-            Experimental parameters.
+        Args:
+            data : Simulated stack of frames.
+            roi : Region of interest in detector plane. The values are
+                given in pixels as following : [`x0`, `x1`, `y0`, `y1`].
+            smp_pos : Sample translations.
+            st_params : Set of simulation parameters.
 
-        Returns
-        -------
-        data_dict : dict
+        Returns:
             Dictionary with all the data from `data` and `st_params`.
 
-        See Also
-        --------
-        STConverter - full list of the attributes stored in `data_dict`.
+        See Also:
+            :class:`STConverter` : full list of the attributes stored in the output
+            dictionary.
         """
         data_dict = {}
 
@@ -413,8 +370,8 @@ class STConverter:
         data_dict['whitefield'] = median(mask=data_dict['mask'], data=data, axis=0, num_threads=st_params.num_threads)
 
         # Initialize defocus distances
-        data_dict['defocus_fs'] = self.crd_rat * st_params.defocus
-        data_dict['defocus_ss'] = self.crd_rat * st_params.defocus
+        data_dict['defocus_x'] = self.crd_rat * st_params.defocus
+        data_dict['defocus_y'] = self.crd_rat * st_params.defocus
 
         # Initialize sample-to-detector distance
         data_dict['distance'] = self.crd_rat * st_params.det_dist
@@ -435,82 +392,42 @@ class STConverter:
         data_dict['translations'] = self.crd_rat * t_arr
         return data_dict
 
-    def export_data(self, data, sim_obj):
+    def export_data(self, data: np.ndarray, sim_obj: STSim) -> STData:
         """Export simulated data `data` (fetched from :func:`STSim.frames`
         or :func:`STSim.ptychograph`) and a :class:`STSim` object `sim_obj`
         to a data container.
 
-        Parameters
-        ----------
-        data : numpy.ndarray
-            Simulated data.
-        sim_obj : STSim
-            Speckle Tracking simulation object.
+        Args:
+            data : Simulated stack of frames.
+            sim_obj : Speckle tracking simulation object.
 
-        Returns
-        -------
-        STData
-            Data container with all the data from `data` and `sim_obj`.
-
-        See Also
-        --------
-        STConverter - full list of the attributes stored in `data_dict`.
+        Returns:
+            Data container :class:`pyrost.STData` with all the data from `data`
+            and `sim_obj`.
         """
         return STData(protocol=self.protocol, **self.export_dict(data, roi=sim_obj.roi,
                       smp_pos=sim_obj.smp_pos, st_params=sim_obj.params))
 
-    def save_sim(self, data, sim_obj, dir_path):
-        """Export simulated data `data` (fetched from :func:`STSim.frames`
-        or :func:`STSim.ptychograph`) and a :class:`STSim` object
-        `sim_obj` to `dir_path` folder.
-
-        Parameters
-        ----------
-        data : numpy.ndarray
-            Simulated data.
-        sim_obj : STSim
-            Speckle Tracking simulation object.
-        dir_path : str
-            Path to the folder, where all the files are saved.
-
-        Notes
-        -----
-        List of the files saved in `dir_path`:
-
-        * 'data.cxi' : CXI file with all the data attributes.
-        * 'protocol.ini' : CXI protocol.
-        * 'parameters.ini' : experimental parameters.
-        * {'calc_error.ini', 'calculate_phase.ini', 'generate_pixel_map.ini',
-          'make_reference.ini', 'speckle_gui.ini', 'update_pixel_map.ini',
-          'update_translations.ini', 'zernike.ini'} : INI files to work with
-          Andrew's `speckle_tracking <https://github.com/andyofmelbourne/speckle-tracking>`_
-          GUI.
-        """
-        self.save(data=data, roi=sim_obj.roi, smp_pos=sim_obj.smp_pos,
-                  st_params=sim_obj.params, dir_path=dir_path)
-
-    def save(self, data, roi, smp_pos, st_params, dir_path):
+    def save(self, data: np.ndarray, roi: np.ndarray, smp_pos: np.ndarray, st_params: STParams,
+             dir_path: str) -> None:
         """Export simulated data `data` (fetched from :func:`STSim.frames`
         or :func:`STSim.ptychograph`), `smp_pos`, and `st_params` to `dir_path`
         folder.
 
-        Parameters
-        ----------
-        data : numpy.ndarray
-            Simulated data.
-        roi : numpy.ndarray
-            Region of interest in detector plane. The values are
-            given in pixels as following : [`x0`, `x1`, `y0`, `y1`].
-        smp_pos : numpy.ndarray
-            Sample translations.
-        st_params : STParams
-            Experimental parameters.
-        dir_path : str
-            Path to the folder, where all the files are saved.
+        Args:
+            data : Simulated stack of frames.
+            roi : Region of interest in detector plane. The values are given in
+                pixels as following : [`x0`, `x1`, `y0`, `y1`].
+            smp_pos : Sample translations.
+            st_params : Set of simulation parameters.
+            dir_path : Path to the folder, where all the files are saved.
 
-        See Also
-        --------
-        STConverter.save_sim : Full list of the files saved in `dir_path`.
+        Returns:
+            None
+
+        See Also:
+            :func:`STConverter.save_sim` : Full list of the files saved in
+            `dir_path`.
         """
         os.makedirs(dir_path, exist_ok=True)
         for name, parser in self._ini_parsers(st_params).items():
@@ -521,6 +438,34 @@ class STConverter:
         with h5py.File(os.path.join(dir_path, 'data.cxi'), 'w') as cxi_file:
             for attr in data_dict:
                 self.protocol.write_cxi(attr, data_dict[attr], cxi_file)
+
+    def save_sim(self, data: np.ndarray, sim_obj: STSim, dir_path: str) -> None:
+        """Export simulated data `data` (fetched from :func:`STSim.frames` or
+        :func:`STSim.ptychograph`) and a :class:`STSim` object `sim_obj` to
+        `dir_path` folder.
+
+        Args:
+            data : Simulated stack of frames.
+            sim_obj : Speckle tracking simulation object.
+            dir_path : Path to the folder, where all the files are saved.
+
+        Returns:
+            None
+
+        Notes:
+            List of the files saved in `dir_path`:
+
+            * 'data.cxi' : CXI file with all the data attributes.
+            * 'protocol.ini' : CXI protocol.
+            * 'parameters.ini' : experimental parameters.
+            * {'calc_error.ini', 'calculate_phase.ini', 'generate_pixel_map.ini',
+              'make_reference.ini', 'speckle_gui.ini', 'update_pixel_map.ini',
+              'update_translations.ini', 'zernike.ini'} : INI files to work with
+              Andrew's `speckle_tracking <https://github.com/andyofmelbourne/speckle-tracking>`_
+              GUI.
+        """
+        self.save(data=data, roi=sim_obj.roi, smp_pos=sim_obj.smp_pos,
+                  st_params=sim_obj.params, dir_path=dir_path)
 
 def main():
     """Main fuction to run Speckle Tracking simulation and save the results to a CXI file.
@@ -537,8 +482,8 @@ def main():
     parser.add_argument('--step_rnd', type=float,
                         help="Random deviation of sample translations [0.0 - 1.0]")
     parser.add_argument('--n_frames', type=int, help="Number of frames")
-    parser.add_argument('--fs_size', type=int, help="Fast axis frames size in pixels")
-    parser.add_argument('--ss_size', type=int, help="Slow axis frames size in pixels")
+    parser.add_argument('--detx_size', type=int, help="horizontal axis frames size in pixels")
+    parser.add_argument('--dety_size', type=int, help="vertical axis frames size in pixels")
     parser.add_argument('--p0', type=float, help="Source beam flux [cnt / s]")
     parser.add_argument('--wl', type=float, help="Wavelength [um]")
     parser.add_argument('--th_s', type=float, help="Source rocking curve width [rad]")
@@ -554,7 +499,7 @@ def main():
     parser.add_argument('--bulk_atn', type=float, help="Bulk attenuation")
     parser.add_argument('--bar_rnd', type=float, help="Bar random deviation")
     parser.add_argument('--offset', type=float,
-                        help="sample's offset at the beginning and the end of the scan [um]")
+                        help="Sample's offset at the beginning and the end of the scan [um]")
     parser.add_argument('-p', '--ptych', action='store_true', help="Generate ptychograph data")
     parser.set_defaults(**STParams().export_dict())
 

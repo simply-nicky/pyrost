@@ -25,6 +25,7 @@ int compare_double(const void *a, const void *b);
 int compare_float(const void *a, const void *b);
 int compare_int(const void *a, const void *b);
 int compare_uint(const void *a, const void *b);
+int compare_ulong(const void *a, const void *b);
 
 int median(void *out, void *data, unsigned char *mask, int ndim, size_t *dims, size_t item_size,
     int axis, int (*compar)(const void*, const void*), unsigned threads);

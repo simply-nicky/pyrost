@@ -25,6 +25,8 @@ double ddot_(const int *N, const double *a, const int *inca, const double *b, co
     #define M_PI 3.14159265358979323846264338327950288
 #endif
 
+#define SQ(x)   ((x) * (x))
+
 #define RALLOC(type,num) \
     ((type *)malloc((num)*sizeof(type)))
 #define DEALLOC(ptr) \

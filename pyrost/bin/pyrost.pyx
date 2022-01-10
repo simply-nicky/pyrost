@@ -1,19 +1,74 @@
 cimport numpy as np
 import numpy as np
-from libc.math cimport sqrt, exp, pi, floor, ceil
+from libc.math cimport sqrt, exp, pi, floor, ceil, fabs
 from cython.parallel import prange, parallel
-from libc.stdlib cimport abort, malloc, free
+from libc.stdlib cimport malloc, free
+from libc.string cimport memset
 cimport openmp
+from . cimport pyfftw
+from . import pyfftw
+from . cimport simulation as sim
+
+# Numpy must be initialized. When using numpy from C or Cython you must
+# *ALWAYS* do that, or you will have segfaults
+np.import_array()
 
 ctypedef fused float_t:
     np.float64_t
     np.float32_t
 
-ctypedef np.uint64_t uint_t
-ctypedef np.complex128_t complex_t
+ctypedef fused uint_t:
+    np.uint64_t
+    np.uint32_t
 
 DEF FLOAT_MAX = 1.7976931348623157e+308
-DEF NO_VAR = -1.0
+DEF M_1_SQRT2PI = 0.3989422804014327
+
+ctypedef double (*loss_func)(double a) nogil
+
+cdef double Huber_loss(double a) nogil:
+    cdef double aa = fabs(a)
+    if aa < 1.345:
+        return 0.5 * a * a
+    elif 1.345 <= aa < 3.0:
+        return 1.345 * (aa - 0.6725)
+    else:
+        return 3.1304875
+
+cdef double Epsilon_loss(double a) nogil:
+    cdef double aa = fabs(a)
+    if aa < 0.25:
+        return 0.0
+    elif 0.25 <= aa < 3.0:
+        return aa - 0.25
+    else:
+        return 2.75
+
+cdef double l2_loss(double a) nogil:
+    if -3.0 < a < 3.0:
+        return a * a
+    else:
+        return 9.0
+
+cdef double l1_loss(double a) nogil:
+    if -3.0 < a < 3.0:
+        return fabs(a)
+    else:
+        return 3.0
+
+cdef loss_func choose_loss(str loss):
+    cdef loss_func f
+    if loss == 'Epsilon':
+        f = Epsilon_loss
+    elif loss == 'Huber':
+        f = Huber_loss
+    elif loss == 'L2':
+        f = l2_loss
+    elif loss == 'L1':
+        f = l1_loss
+    else:
+        raise ValueError('loss keyword is invalid')
+    return f
 
 cdef float_t min_float(float_t* array, int a) nogil:
     cdef:
@@ -33,879 +88,1396 @@ cdef float_t max_float(float_t* array, int a) nogil:
             mv = array[i]
     return mv
 
-cdef float_t rbf(float_t dsq, float_t ls) nogil:
-    return exp(-dsq / 2 / ls**2) / sqrt(2 * pi)
+cdef double rbf(double dsq, double h) nogil:
+    return exp(-0.5 * dsq / (h * h)) * M_1_SQRT2PI
 
-cdef void frame_reference(float_t[:, ::1] I0, float_t[:, ::1] w0, float_t[:, ::1] I, float_t[:, ::1] W,
-                          float_t[:, :, ::1] u, float_t di, float_t dj, float_t ls) nogil:
-    cdef:
-        int b = I.shape[0], c = I.shape[1], j, k, jj, kk, j0, k0
-        int aa = I0.shape[0], bb = I0.shape[1], jj0, jj1, kk0, kk1
-        int dn = <int>(ceil(4 * ls))
-        float_t ss, fs, r
-    for j in range(b):
-        for k in range(c):
-            ss = u[0, j, k] - di
-            fs = u[1, j, k] - dj
-            j0 = <int>(ss) + 1
-            k0 = <int>(fs) + 1
-            jj0 = j0 - dn if j0 - dn > 0 else 0
-            jj1 = j0 + dn if j0 + dn < aa else aa
-            kk0 = k0 - dn if k0 - dn > 0 else 0
-            kk1 = k0 + dn if k0 + dn < bb else bb
+cdef void KR_frame_1d(float_t[:, ::1] I0, float_t[:, ::1] w0, uint_t[:, ::1] I_n,
+                      float_t[:, ::1] W, float_t[:, :, ::1] u, float_t dj,
+                      double ds_x, double h) nogil:
+    cdef int X = I_n.shape[1], X0 = I0.shape[1], k, kk, k0, kk0, kk1
+    cdef int dn = <int>ceil((4.0 * h) / ds_x)
+    cdef double x, r
+
+    for k in range(X):
+        x = u[1, 0, k] - dj
+        k0 = <int>(x / ds_x) + 1
+
+        kk0 = k0 - dn if k0 - dn > 0 else 0
+        kk1 = k0 + dn if k0 + dn < X0 else X0
+
+        for kk in range(kk0, kk1):
+            r = rbf((ds_x * kk - x) * (ds_x * kk - x), h)
+            I0[0, kk] += I_n[0, k] * W[0, k] * r
+            w0[0, kk] += W[0, k] * W[0, k] * r
+
+cdef void KR_frame_2d(float_t[:, ::1] I0, float_t[:, ::1] w0, uint_t[:, ::1] I_n,
+                      float_t[:, ::1] W, float_t[:, :, ::1] u, float_t di, float_t dj,
+                      double ds_y, double ds_x, double h) nogil:
+    cdef int Y = I_n.shape[0], X = I_n.shape[1], Y0 = I0.shape[0], X0 = I0.shape[1]
+    cdef int j, k, jj, kk, j0, k0, jj0, jj1, kk0, kk1
+    cdef int dn_y = <int>ceil((4.0 * h) / ds_y), dn_x = <int>ceil((4.0 * h) / ds_x)
+    cdef double y, x, r
+
+    for j in range(Y):
+        for k in range(X):
+            y = u[0, j, k] - di
+            x = u[1, j, k] - dj
+            j0 = <int>(y / ds_y) + 1
+            k0 = <int>(x / ds_x) + 1
+
+            jj0 = j0 - dn_y if j0 - dn_y > 0 else 0
+            jj1 = j0 + dn_y if j0 + dn_y < Y0 else Y0
+            kk0 = k0 - dn_x if k0 - dn_x > 0 else 0
+            kk1 = k0 + dn_x if k0 + dn_x < X0 else X0
+
             for jj in range(jj0, jj1):
                 for kk in range(kk0, kk1):
-                    r = rbf((jj - ss)**2 + (kk - fs)**2, ls)
-                    I0[jj, kk] += I[j, k] * W[j, k] * r
-                    w0[jj, kk] += W[j, k]**2 * r
+                    r = rbf((ds_y * jj - y) * (ds_y * jj - y) + (ds_x * kk - x) * (ds_x * kk - x), h)
+                    I0[jj, kk] += I_n[j, k] * W[j, k] * r
+                    w0[jj, kk] += W[j, k] * W[j, k] * r
 
-def make_reference(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, :, ::1] u, float_t[::1] di,
-                   float_t[::1] dj, int sw_ss, int sw_fs, float_t ls, bint return_nm0=True, unsigned num_threads=1):
-    r"""Generate an unabberated reference image of the sample
-    based on the pixel mapping `u` and the measured data `I_n`
-    using the `simple kriging`_.
+def KR_reference(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None, float_t[:, :, ::1] u not None,
+                 float_t[::1] di not None, float_t[::1] dj not None, double ds_y, double ds_x, double h,
+                 bint return_nm0=True, unsigned num_threads=1):
+    r"""Generate an unabberated reference image of the sample based on the pixel
+    mapping `u` and the measured data `I_n` using the Kernel regression.
 
-    .. _simple kriging: https://en.wikipedia.org/wiki/Kriging#Simple_kriging
+    Args:
+        I_n (numpy.ndarray) : Measured intensity frames.
+        W (numpy.ndarray) : Measured frames' whitefield.
+        u (numpy.ndarray) : The discrete geometrical mapping of the detector
+            plane to the reference image.
+        di (numpy.ndarray) : Initial sample's translations along the vertical
+            detector axis in pixels.
+        dj (numpy.ndarray) : Initial sample's translations along the horizontal
+            detector axis in pixels.
+        ds_y (float) : Sampling interval of reference image in pixels along the
+            vertical axis.
+        ds_x (float) : Sampling interval of reference image in pixels along the
+            horizontal axis.
+        h (float) : Gaussian kernel bandwidth in pixels.
+        return_nm0 (bool) : If True, also returns the lower bounds (`n0`, `m0`)
+            of the reference image in pixels.
+        num_threads (int) : Number of threads.
 
-    Parameters
-    ----------
-    I_n : numpy.ndarray
-        Measured intensity frames.
-    W : numpy.ndarray
-        Measured frames' whitefield.
-    u : numpy.ndarray
-        The pixel mapping between the data at
-        the detector plane and the reference image at
-        the reference plane.
-    di : numpy.ndarray
-        Sample's translations along the slow detector axis
-        in pixels.
-    dj : numpy.ndarray
-        Sample's translations along the fast detector axis
-        in pixels.
-    sw_ss : int
-        Search window size in pixels along the slow detector
-        axis.
-    sw_fs : int
-        Search window size in pixels along the fast detector
-        axis.
-    ls : float
-        Reference image length scale in pixels.
-    return_nm0 : bool
-        If True, also returns the lower bounds (`n0`, `m0`)
-        of the reference image in pixels.
-    num_threads : int, optional
-        Number of threads.
+    Returns:
+        Tuple[numpy.ndarray, int, int] : A tuple of three elements ('I0', 'n0',
+        'm0'). The elements are the following:
 
-    Returns
-    -------
-    I0 : numpy.ndarray
-        Reference image array.
-    n0 : int, optional
-        The lower bounds of the slow detector axis of
-        the reference image at the reference frame in pixels.
-        Only provided if `return_nm0` is True.
-    m0 : int, optional
-        The lower bounds of the fast detector axis of
-        the reference image at the reference frame in pixels.
-        Only provided if `return_nm0` is True.
+        * 'I0' : Reference image array.
+        * 'n0' : The lower bounds of the vertical detector axis of the reference
+          image at the reference frame in pixels. Only provided if `return_nm0` is
+          True.
+        * 'm0' : The lower bounds of the horizontal detector axis of the reference
+          image at the reference frame in pixels. Only provided if `return_nm0` is
+          True.
 
-    Notes
-    -----
-    Reference image update algorithm the detector plane to the
-    reference plane using the pixel mapping `u`:
+    Notes:
+        The pixel mapping `u` maps the intensity measurements from the detector
+        plane to the reference plane as follows:
 
-    .. math::
-        ii_{0}, jj_{0} = u[0, i, j] - di[n], u[1, i, j] - dj[n]
+        .. math::
+            i_{ref}[n, i, j] = u[0, i, j] + di[n], \; j_{ref}[n, i, j] = u[1, i, j] + dj[n]
 
-    Whereupon it generates a smoothed sample profile using
-    simply kriging approach with the gaussian radial basis
-    function :math:`\phi`:
+        The reference image profile :math:`I_{ref}[ii, jj]` is obtained with the
+        kernel regression extimator as follows:
 
-    .. math::
+        .. math::
 
-        I_{ref}[ii, jj] = \frac{\sum_{n, i, j} I_n[i, j] W[i, j]
-        \phi[ii - u[0, i, j] + di[n], jj - u[1, i, j] + dj[n]]}
-        {\sum_{n, i, j} W[i, j]^2 \phi[ii - u[0, i, j] + di[n],
-        jj - u[1, i, j] + dj[n]]}
+            I_{ref}[i, j] = \frac{\sum_{n, i^{\prime}, j^{\prime}} K[i - i_{ref}[n,
+            i^{\prime}, j^{\prime}], j - j_{ref}[n, i^{\prime}, j^{\prime}], h]
+            \; W[i^{\prime}, j^{\prime}] I[n, i^{\prime}, j^{\prime}]}
+            {\sum_{n, i^{\prime}, j^{\prime}} K[i - i_{ref}[n, i^{\prime}, j^{\prime}], 
+            j - j_{ref}[n, i^{\prime}, j^{\prime}], h] \; W^2[i^{\prime}, j^{\prime}]}
 
-    .. math::
-
-        \phi [\Delta ii_{ref}, \Delta jj_{ref}] = 
-        \exp\left[{-\frac{(\Delta ii_{ref})^2 + 
-        (\Delta jj_{ref})^2}{ls^2}}\right]
+        where :math:`K[i, j, h] = \frac{1}{\sqrt{2 \pi}} \exp(-\frac{i^2 + j^2}{h})`
+        is the Gaussian kernel.
     """
-    cdef:
-        str dtype = 'float64' if float_t is np.float64_t else 'float32'
-        int a = I_n.shape[0], b = I_n.shape[1], c = I_n.shape[2]
-        int i, j, k, t
-        float_t Is, ws
-        float_t n0 = -min_float(&u[0, 0, 0], b * c) + max_float(&di[0], a) + sw_ss
-        float_t m0 = -min_float(&u[1, 0, 0], b * c) + max_float(&dj[0], a) + sw_fs
-        int aa = <int>(max_float(&u[0, 0, 0], b * c) - min_float(&di[0], a) + n0) + 1 + sw_ss
-        int bb = <int>(max_float(&u[1, 0, 0], b * c) - min_float(&dj[0], a) + m0) + 1 + sw_fs
-        float_t[:, :, ::1] I = np.zeros((num_threads, aa, bb), dtype=dtype)
-        float_t[:, :, ::1] w = np.zeros((num_threads, aa, bb), dtype=dtype)
-        float_t[:, ::1] I0 = np.zeros((aa, bb), dtype=dtype)
-    for i in prange(a, schedule='guided', num_threads=num_threads, nogil=True):
-        t = openmp.omp_get_thread_num()
-        frame_reference(I[t], w[t], I_n[i], W, u, di[i] - n0, dj[i] - m0, ls)
-    for k in prange(bb, schedule='guided', num_threads=num_threads, nogil=True):
-        t = openmp.omp_get_thread_num()
-        for j in range(aa):
-            Is = 0; ws = 0
-            for i in range(num_threads):
-                Is = Is + I[i, j, k]
-                ws = ws + w[i, j, k]
-            if ws:
-                I0[j, k] = Is / ws
-            else:
-                I0[j, k] = 0
+    if ds_y <= 0.0 or ds_x <= 0.0:
+        raise ValueError('Sampling intervals must be positive')
+
+    cdef int type_num = np.PyArray_TYPE(W.base)
+    cdef int N = I_n.shape[0], Y = I_n.shape[1], X = I_n.shape[2]
+    cdef int i, j, t, k
+
+    cdef float_t n0 = -min_float(&u[0, 0, 0], Y * X) + max_float(&di[0], N)
+    cdef float_t m0 = -min_float(&u[1, 0, 0], Y * X) + max_float(&dj[0], N)
+    cdef int Y0 = <int>((max_float(&u[0, 0, 0], Y * X) - min_float(&di[0], N) + n0) / ds_y) + 1
+    cdef int X0 = <int>((max_float(&u[1, 0, 0], Y * X) - min_float(&dj[0], N) + m0) / ds_x) + 1
+        
+    cdef np.npy_intp *shape = [num_threads, Y0, X0]
+    cdef float_t[:, :, ::1] I0_buf = np.PyArray_ZEROS(3, shape, type_num, 0)
+    cdef float_t[:, :, ::1] W0_buf = np.PyArray_ZEROS(3, shape, type_num, 0)
+    cdef np.ndarray I0 = np.PyArray_SimpleNew(2, shape + 1, type_num)
+
+    if Y0 > 1:
+        for i in prange(N, schedule='guided', num_threads=num_threads, nogil=True):
+            t = openmp.omp_get_thread_num()
+            KR_frame_2d(I0_buf[t], W0_buf[t], I_n[i], W, u, di[i] - n0, dj[i] - m0, ds_y, ds_x, h)
+    else:
+        for i in prange(N, schedule='guided', num_threads=num_threads, nogil=True):
+            t = openmp.omp_get_thread_num()
+            KR_frame_1d(I0_buf[t], W0_buf[t], I_n[i], W, u, dj[i] - m0, ds_x, h)
+
+    cdef float_t[:, ::1] _I0 = I0
+    cdef float_t I0_sum, W0_sum
+    for k in prange(X0, schedule='guided', num_threads=num_threads, nogil=True):
+        for j in range(Y0):
+            I0_sum = 0.0; W0_sum = 0.0
+            for i in range(<int>num_threads):
+                I0_sum = I0_sum + I0_buf[i, j, k]
+                W0_sum = W0_sum + W0_buf[i, j, k]
+
+            _I0[j, k] = I0_sum / W0_sum if W0_sum > 0.0 else 1.0
+
     if return_nm0:
-        return np.asarray(I0), <int>(n0), <int>(m0)
+        return I0, <int>n0, <int>m0
     else:
-        return np.asarray(I0)
+        return I0
 
-cdef void mse_bi(float_t* m_ptr, float_t[::1] I, float_t[:, ::1] I0,
-                 float_t[::1] di, float_t[::1] dj, float_t ux, float_t uy) nogil:
-    cdef:
-        int a = I.shape[0] - 1, aa = I0.shape[0], bb = I0.shape[1]
-        int i, ss0, ss1, fs0, fs1
-        float_t SS_res = 0, SS_tot = 0, ss, fs, dss, dfs, I0_bi
-    for i in range(a):
-        ss = ux - di[i]
-        fs = uy - dj[i]
-        if ss <= 0:
-            dss = 0; ss0 = 0; ss1 = 0
-        elif ss >= aa - 1:
-            dss = 0; ss0 = aa - 1; ss1 = aa - 1
-        else:
-            dss = ss - floor(ss)
-            ss0 = <int>(floor(ss)); ss1 = ss0 + 1
-        if fs <= 0:
-            dfs = 0; fs0 = 0; fs1 = 0
-        elif fs >= bb - 1:
-            dfs = 0; fs0 = bb - 1; fs1 = bb - 1
-        else:
-            dfs = fs - floor(fs)
-            fs0 = <int>(floor(fs)); fs1 = fs0 + 1
-        I0_bi = (1 - dss) * (1 - dfs) * I0[ss0, fs0] + \
-                (1 - dss) * dfs * I0[ss0, fs1] + \
-                dss * (1 - dfs) * I0[ss1, fs0] + \
-                dss * dfs * I0[ss1, fs1]
-        SS_res += (I[i] - I0_bi)**2
-        SS_tot += (I[i] - 1)**2
-    m_ptr[0] = SS_res; m_ptr[1] = SS_tot
-    if m_ptr[2] >= 0:
-        m_ptr[2] = 4 * I[a] * (SS_res / SS_tot**2 + SS_res**2 / SS_tot**3)
+cdef void LOWESS_frame_1d(float_t[:, ::1] W_sum, float_t[:, :, ::1] M_mat, float_t[:, :, ::1] I0_mat,
+                          float_t[:, :, ::1] W0_mat, uint_t[:, ::1] I_n, float_t[:, ::1] W,
+                          float_t[:, :, ::1] u, float_t dj, double ds_x, double h) nogil:
+    cdef int X = I_n.shape[1], X0 = W_sum.shape[1]
+    cdef int k, kk, j0, k0, kk0, kk1
+    cdef int dn = <int>ceil((4.0 * h) / ds_x)
+    cdef double x, r, w
 
-cdef void mse_diff_bi(float_t* m_ptr, float_t[:, :, ::1] SS_m, float_t[:, ::1] I,
-                      float_t[:, ::1] rss, float_t[:, ::1] I0, float_t[:, :, ::1] u,
-                      float_t di0, float_t dj0, float_t di, float_t dj) nogil:
-    cdef:
-        int b = I.shape[0], c = I.shape[1], j, k
-        int ss_0, fs_0, ss_1, fs_1
-        int aa = I0.shape[0], bb = I0.shape[1]
-        float_t ss0, fs0, ss1, fs1, dss, dfs
-        float_t mse = 0, mse_var = 0, I0_bi, res_0, tot_0, res, tot, SS_res, SS_tot
-    for j in range(b):
-        for k in range(c):
-            ss0 = u[0, j, k] - di0; fs0 = u[1, j, k] - dj0
-            ss1 = u[0, j, k] - di; fs1 = u[1, j, k] - dj
-            if ss0 <= 0:
-                dss = 0; ss_0 = 0; ss_1 = 0
-            elif ss0 >= aa - 1:
-                dss = 0; ss_0 = aa - 1; ss_1 = aa - 1
-            else:
-                dss = ss0 - floor(ss0)
-                ss_0 = <int>(floor(ss0)); ss_1 = ss_0 + 1
-            if fs0 <= 0:
-                dfs = 0; fs_0 = 0; fs_1 = 0
-            elif fs0 >= bb - 1:
-                dfs = 0; fs_0 = bb - 1; fs_1 = bb - 1
-            else:
-                dfs = fs0 - floor(fs0)
-                fs_0 = <int>(floor(fs0)); fs_1 = fs_0 + 1
-            I0_bi = (1 - dss) * (1 - dfs) * I0[ss_0, fs_0] + \
-                    (1 - dss) * dfs * I0[ss_0, fs_1] + \
-                    dss * (1 - dfs) * I0[ss_1, fs_0] + \
-                    dss * dfs * I0[ss_1, fs_1]
-            res_0 = (I[j, k] - I0_bi)**2
-            tot_0 = (I[j, k] - 1)**2
+    for k in range(X):
+        x = u[1, 0, k] - dj
+        k0 = <int>(x / ds_x) + 1
 
-            if ss1 <= 0:
-                dss = 0; ss_0 = 0; ss_1 = 0
-            elif ss1 >= aa - 1:
-                dss = 0; ss_0 = aa - 1; ss_1 = aa - 1
-            else:
-                dss = ss1 - floor(ss1)
-                ss_0 = <int>(floor(ss1)); ss_1 = ss_0 + 1
-            if fs1 <= 0:
-                dfs = 0; fs_0 = 0; fs_1 = 0
-            elif fs1 >= bb - 1:
-                dfs = 0; fs_0 = bb - 1; fs_1 = bb - 1
-            else:
-                dfs = fs1 - floor(fs1)
-                fs_0 = <int>(floor(fs1)); fs_1 = fs_0 + 1
-            I0_bi = (1 - dss) * (1 - dfs) * I0[ss_0, fs_0] + \
-                    (1 - dss) * dfs * I0[ss_0, fs_1] + \
-                    dss * (1 - dfs) * I0[ss_1, fs_0] + \
-                    dss * dfs * I0[ss_1, fs_1]
-            res = (I[j, k] - I0_bi)**2
-            tot = (I[j, k] - 1)**2
-
-            SS_res = SS_m[0, j, k] - res_0 + res; SS_tot = SS_m[1, j, k] - tot_0 + tot
-            mse += SS_res / SS_tot / b / c
-            mse_var += 4 * rss[j, k] * (SS_res / SS_tot**2 + SS_res**2 / SS_tot**3) / b**2 / c**2
-    m_ptr[0] = mse; m_ptr[1] = mse_var
-
-cdef void krig_data_c(float_t[::1] I, float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, :, ::1] u,
-                      int j, int k, float_t ls) nogil:
-    cdef:
-        int a = I_n.shape[0], b = I_n.shape[1], c = I_n.shape[2], i, jj, kk
-        int djk = <int>(ceil(2 * ls))
-        int jj0 = j - djk if j - djk > 0 else 0
-        int jj1 = j + djk if j + djk < b else b
-        int kk0 = k - djk if k - djk > 0 else 0
-        int kk1 = k + djk if k + djk < c else c
-        float_t w0 = 0, r
-    for i in range(a + 1):
-        I[i] = 0
-    for jj in range(jj0, jj1):
+        kk0 = k0 - dn if k0 - dn > 0 else 0
+        kk1 = k0 + dn if k0 + dn < X0 else X0
+    
         for kk in range(kk0, kk1):
-            r = rbf((u[0, jj, kk] - u[0, j, k])**2 + (u[1, jj, kk] - u[1, j, k])**2, ls)
-            w0 += r
-            if w0 * W[jj, kk]:
-                I[a] += r**2 / W[jj, kk]
-                for i in range(a):
-                    I[i] += r / w0 * (I_n[i, jj, kk] / W[jj, kk] - I[i])
-    if w0:
-        I[a] /= w0**2
+            r = rbf((ds_x * kk - x) * (ds_x * kk - x), h)
+            W_sum[0, kk] += r
+            w = r / W_sum[0, kk]
 
-cdef void subpixel_ref_1d(float_t[::1] x, float_t* mse_m, float_t mu) nogil:
-    cdef:
-        float_t dfs = 0, det, dd
-    det = 4 * (mse_m[2] + mse_m[0] - 2 * mse_m[1])
-    if det != 0:
-        dfs = (mse_m[0] - mse_m[2]) / det * mu
-        dd = sqrt(dfs**2)
-        if dd > 1:
-            dfs /= dd
+            M_mat[0, kk, 1] += w * (x - M_mat[0, kk, 1])
+            M_mat[0, kk, 3] += w * (x * x - M_mat[0, kk, 3])
 
-    x[1] += dfs
+            I0_mat[0, kk, 0] += w * (I_n[0, k] * W[0, k] - I0_mat[0, kk, 0])
+            I0_mat[0, kk, 2] += w * (I_n[0, k] * W[0, k] * x - I0_mat[0, kk, 2])
 
-cdef void subpixel_ref_2d(float_t[::1] x, float_t* mse_m, float_t mu) nogil:
-    cdef:
-        float_t dss = 0, dfs = 0, det, dd
-    det = 4 * (mse_m[5] + mse_m[1] - 2 * mse_m[3]) * (mse_m[4] + mse_m[2] - 2 * mse_m[3]) - \
-          (mse_m[6] + mse_m[0] + 2 * mse_m[3] - mse_m[1] - mse_m[5] - mse_m[2] - mse_m[4])**2
-    if det != 0:
-        dss = ((mse_m[6] + mse_m[0] + 2 * mse_m[3] - mse_m[1] - mse_m[5] - mse_m[2] - mse_m[4]) * \
-               (mse_m[4] - mse_m[2]) - 2 * (mse_m[4] + mse_m[2] - 2 * mse_m[3]) * \
-               (mse_m[5] - mse_m[1])) / det * mu / 2
-        dfs = ((mse_m[6] + mse_m[0] + 2 * mse_m[3] - mse_m[1] - mse_m[5] - mse_m[2] - mse_m[4]) * \
-               (mse_m[5] - mse_m[1]) - 2 * (mse_m[5] + mse_m[1] - 2 * mse_m[3]) * \
-               (mse_m[4] - mse_m[2])) / det * mu / 2
-        dd = sqrt(dfs**2 + dss**2)
-        if dd > 1:
-            dss /= dd; dfs /= dd
-    
-    x[0] += dss; x[1] += dfs
+            W0_mat[0, kk, 0] += w * (W[0, k] * W[0, k] - W0_mat[0, kk, 0])
+            W0_mat[0, kk, 2] += w * (W[0, k] * W[0, k] * x - W0_mat[0, kk, 2])
 
-cdef void update_pm_c(float_t[::1] I, float_t[:, ::1] I0, float_t[::1] u,
-                       float_t[::1] di, float_t[::1] dj, int sw_ss, int sw_fs) nogil:
-    cdef:
-        int ss_min = -sw_ss, fs_min = -sw_fs, ss_max = -sw_ss, fs_max = -sw_fs, ss, fs
-        float_t mse_min = FLOAT_MAX, mse_max = -FLOAT_MAX, mse_var = FLOAT_MAX, mse, l1, mu
-        float_t mv_ptr[3]
-        float_t mse_m[7]
-    for ss in range(-sw_ss, sw_ss + 1):
-        for fs in range(-sw_fs, sw_fs + 1):
-            mse_bi(mv_ptr, I, I0, di, dj, u[0] + ss, u[1] + fs)
-            mse = mv_ptr[0] / mv_ptr[1]
-            if mse < mse_min:
-                mse_min = mse; mse_var = mv_ptr[2]; ss_min = ss; fs_min = fs; 
-            if mse > mse_max:
-                mse_max = mse; ss_max = ss; fs_max = fs
-    u[0] += ss_min; u[1] += fs_min
-    l1 = 2 * (mse_max - mse_min) / ((ss_max - ss_min)**2 + (fs_max - fs_min)**2)
-    mu = (3 * mse_var**0.5 / l1)**0.33
-    mu = mu if mu > 2 else 2
-    if sw_ss:
-        mse_bi(mv_ptr, I, I0, di, dj, u[0] - mu / 2, u[1] - mu / 2)
-        mse_m[0] = mv_ptr[0] / mv_ptr[1]
-        mse_bi(mv_ptr, I, I0, di, dj, u[0] - mu / 2, u[1])
-        mse_m[1] = mv_ptr[0] / mv_ptr[1]
-        mse_bi(mv_ptr, I, I0, di, dj, u[0], u[1] - mu / 2)
-        mse_m[2] = mv_ptr[0] / mv_ptr[1]
-        mse_m[3] = mse_min
-        mse_bi(mv_ptr, I, I0, di, dj, u[0], u[1] + mu / 2)
-        mse_m[4] = mv_ptr[0] / mv_ptr[1]
-        mse_bi(mv_ptr, I, I0, di, dj, u[0] + mu / 2, u[1])
-        mse_m[5] = mv_ptr[0] / mv_ptr[1]
-        mse_bi(mv_ptr, I, I0, di, dj, u[0] + mu / 2, u[1] + mu / 2)
-        mse_m[6] = mv_ptr[0] / mv_ptr[1]
-        subpixel_ref_2d(u, mse_m, mu)
-    else:
-        mse_bi(mv_ptr, I, I0, di, dj, u[0], u[1] - mu / 2)
-        mse_m[0] = mv_ptr[0] / mv_ptr[1]
-        mse_m[1] = mse_min
-        mse_bi(mv_ptr, I, I0, di, dj, u[0], u[1] + mu / 2)
-        mse_m[2] = mv_ptr[0] / mv_ptr[1]
-        subpixel_ref_1d(u, mse_m, mu)
+cdef void LOWESS_frame_2d(float_t[:, ::1] W_sum, float_t[:, :, ::1] M_mat, float_t[:, :, ::1] I0_mat,
+                          float_t[:, :, ::1] W0_mat, uint_t[:, ::1] I_n, float_t[:, ::1] W,
+                          float_t[:, :, ::1] u, float_t di, float_t dj, double ds_y, double ds_x, double h) nogil:
+    cdef int Y = I_n.shape[0], X = I_n.shape[1], Y0 = W_sum.shape[0], X0 = W_sum.shape[1]
+    cdef int j, k, jj, kk, j0, k0, jj0, jj1, kk0, kk1
+    cdef int dn_y = <int>ceil((4.0 * h) / ds_y), dn_x = <int>ceil((4.0 * h) / ds_x)
+    cdef double y, x, r, w
 
-def update_pixel_map_gs(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0,
-                        float_t[:, :, ::1] u0, float_t[::1] di, float_t[::1] dj,
-                        int sw_ss, int sw_fs, float_t ls, unsigned num_threads=1):
-    r"""Update the pixel mapping by minimizing mean-squared-error
-    (MSE). Perform a grid search within the search window of `sw_ss`,
-    `sw_fs` size along the slow and fast axes accordingly in order to
-    minimize the MSE.
+    for j in range(Y):
+        for k in range(X):
+            y = u[0, j, k] - di
+            x = u[1, j, k] - dj
+            j0 = <int>(y / ds_y) + 1
+            k0 = <int>(x / ds_x) + 1
 
-    Parameters
-    ----------
-    I_n : numpy.ndarray
-        Measured intensity frames.
-    W : numpy.ndarray
-        Measured frames' whitefield.
-    I0 : numpy.ndarray
-        Reference image of the sample.
-    u0 : numpy.ndarray
-        Initial pixel mapping.
-    di : numpy.ndarray
-        Sample's translations along the slow detector axis
-        in pixels.
-    dj : numpy.ndarray
-        Sample's translations along the fast detector axis
-        in pixels.
-    sw_ss : int
-        Search window size in pixels along the slow detector
-        axis.
-    sw_fs : int
-        Search window size in pixels along the fast detector
-        axis.
-    ls : float
-        Reference image length scale in pixels.
-    num_threads : int, optional
-        Number of threads.
+            jj0 = j0 - dn_y if j0 - dn_y > 0 else 0
+            jj1 = j0 + dn_y if j0 + dn_y < Y0 else Y0
+            kk0 = k0 - dn_x if k0 - dn_x > 0 else 0
+            kk1 = k0 + dn_x if k0 + dn_x < X0 else X0
+        
+            for jj in range(jj0, jj1):
+                for kk in range(kk0, kk1):
+                    r = rbf((ds_y * jj - y) * (ds_y * jj - y) + (ds_x * kk - x) * (ds_x * kk - x), h)
+                    W_sum[jj, kk] += r
+                    w = r / W_sum[jj, kk]
 
-    Returns
-    -------
-    u : numpy.ndarray
-        Updated pixel mapping array.
+                    M_mat[jj, kk, 0] += w * (y - M_mat[jj, kk, 0])
+                    M_mat[jj, kk, 1] += w * (x - M_mat[jj, kk, 1])
+                    M_mat[jj, kk, 2] += w * (y * y - M_mat[jj, kk, 2])
+                    M_mat[jj, kk, 3] += w * (x * x - M_mat[jj, kk, 3])
 
-    Notes
-    -----
-    The following error metric is being minimized:
+                    I0_mat[jj, kk, 0] += w * (I_n[j, k] * W[j, k] - I0_mat[jj, kk, 0])
+                    I0_mat[jj, kk, 1] += w * (I_n[j, k] * W[j, k] * y - I0_mat[jj, kk, 1])
+                    I0_mat[jj, kk, 2] += w * (I_n[j, k] * W[j, k] * x - I0_mat[jj, kk, 2])
 
-    .. math::
+                    W0_mat[jj, kk, 0] += w * (W[j, k] * W[j, k] - W0_mat[jj, kk, 0])
+                    W0_mat[jj, kk, 1] += w * (W[j, k] * W[j, k] * y - W0_mat[jj, kk, 1])
+                    W0_mat[jj, kk, 2] += w * (W[j, k] * W[j, k] * x - W0_mat[jj, kk, 2])
 
-        MSE[i, j] = \frac{\sum_n \left( I_g[n]
-        - I_{ref}[ii_n, jj_n] \right)^2}{\sum_n \left(
-        I_g[n] - 1 \right)^2}
-    
-    Where :math:`I_g[n]` is a kriged intensity profile of the
-    particular detector coordinate :math:`I_n[n, i, j]`. Intensity
-    profile :math:`I_n[n, i, j]` is kriged with gaussian radial
-    basis function :math:`\phi`:
+def LOWESS_reference(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None, float_t[:, :, ::1] u not None,
+                     float_t[::1] di not None, float_t[::1] dj not None, double ds_y, double ds_x, double h,
+                     bint return_nm0=True, unsigned num_threads=1):
+    r"""Generate an unabberated reference image of the sample based on the
+    pixel mapping `u` and the measured data `I_n` using the Local Weighted
+    Linear Regression (LOWESS).
 
-    .. math::
-        I_g[n] = \frac{\sum_{\Delta i, \Delta j} I_n[n, i + \Delta i,
-        j + \Delta j] W[i + \Delta i, j + \Delta j] 
-        \phi[\Delta u[0], \Delta u[1]]}
-        {\sum_{\Delta i, \Delta j} W[i + \Delta i, j + \Delta j]^2
-        \phi[\Delta u[0], \Delta u[1]]}
-    
-    .. math::
-        \Delta u[0] = u[0, i + \Delta i, j + \Delta j] - u[0, i, j]
-    
-    .. math::
-        \Delta u[1] = u[1, i + \Delta i, j + \Delta j] - u[1, i, j]
+    Args:
+        I_n (numpy.ndarray) : Measured intensity frames.
+        W (numpy.ndarray) : Measured frames' whitefield.
+        u (numpy.ndarray) : The discrete geometrical mapping of the detector
+            plane to the reference image.
+        di (numpy.ndarray) : Initial sample's translations along the vertical
+            detector axis in pixels.
+        dj (numpy.ndarray) : Initial sample's translations along the horizontal
+            detector axis in pixels.
+        ds_y (float) : Sampling interval of reference image in pixels along the
+            vertical axis.
+        ds_x (float) : Sampling interval of reference image in pixels along the
+            horizontal axis.
+        h (float) : Gaussian kernel bandwidth in pixels.
+        return_nm0 (bool) : If True, also returns the lower bounds (`n0`, `m0`)
+            of the reference image in pixels.
+        num_threads (int) : Number of threads.
 
-    .. math::
-        \phi [\Delta ii_{ref}, \Delta jj_{ref}] = 
-        \exp\left[{-\frac{(\Delta ii_{ref})^2 + 
-        (\Delta jj_{ref})^2}{ls^2}}\right]
+    Returns:
+        Tuple[numpy.ndarray, int, int] : A tuple of three elements ('I0', 'n0',
+        'm0'). The elements are the following:
+
+        * 'I0' : Reference image array.
+        * 'n0' : The lower bounds of the vertical detector axis of the reference
+          image at the reference frame in pixels. Only provided if `return_nm0` is
+          True.
+        * 'm0' : The lower bounds of the horizontal detector axis of the reference
+          image at the reference frame in pixels. Only provided if `return_nm0` is
+          True.
+
+    Notes:
+        The pixel mapping `u` maps the intensity measurements from the
+        detector plane to the reference plane as follows:
+
+        .. math::
+            i_{ref}[n, i, j] = u[0, i, j] + di[n], \; j_{ref}[n, i, j] = u[1, i, j] + dj[n]
+
+        The reference image profile :math:`I_{ref}[ii, jj]` is obtained
+        with the LOWESS regression extimator as follows:
+
+        .. math::
+
+            I_{ref}[i, j] = \frac{\sum_{n, i^{\prime}, j^{\prime}} K[i - i_{ref}[n,
+            i^{\prime}, j^{\prime}], j - j_{ref}[n, i^{\prime}, j^{\prime}], h]
+            \; r_{IW}[n, a^{IW}, b^{IW}_i, b^{IW}_j]}
+            {\sum_{n, i^{\prime}, j^{\prime}} K[i - i_{ref}[n, i^{\prime}, j^{\prime}], 
+            j - j_{ref}[n, i^{\prime}, j^{\prime}], h] \;
+            r_{WW}[n, a^{WW}, b^{WW}_i, b^{WW}_j]}
+
+        where :math:`r_{IW}[n, a, b_i, b_j]` and :math:`r_{WW}[n, a, b_i, b_j]`
+        are the residuals at the pixel :math:`i, j` with linear coefficients
+        defined with the least squares approach:
+
+        .. math::
+
+            r_{IW}[n, a, b_i, b_j] = I[n, i^{\prime}, j^{\prime}] W[i^{\prime}, j^{\prime}]
+            - a - b_i (i - i_{ref}[n, i^{\prime}, j^{\prime}) - b_j
+            (j - j_{ref}[n, i^{\prime}, j^{\prime})
+
+        .. math::
+
+            r_{WW}[n, a, b_i, b_j] = W^2[i^{\prime}, j^{\prime}]
+            - a - b_i (i - i_{ref}[n, i^{\prime}, j^{\prime}) - b_j
+            (j - j_{ref}[n, i^{\prime}, j^{\prime})
+
+        and :math:`K[i, j, h] = \frac{1}{\sqrt{2 \pi}} \exp(-\frac{i^2 + j^2}{h})`
+        is the Gaussian kernel.
     """
-    cdef:
-        str dtype = 'float64' if float_t is np.float64_t else 'float32'
-        int a = I_n.shape[0], b = I_n.shape[1], c = I_n.shape[2]
-        int j, k, t
-        float_t[:, ::1] u_buf = np.empty((num_threads, 2), dtype=dtype)
-        float_t[:, :, ::1] u = np.empty((2, b, c), dtype=dtype)
-        float_t[:, ::1] I = np.empty((num_threads, a + 1), dtype=dtype)
-    for k in prange(c, schedule='guided', num_threads=num_threads, nogil=True):
-        t = openmp.omp_get_thread_num()
-        for j in range(b):
-            krig_data_c(I[t], I_n, W, u0, j, k, ls)
-            u_buf[t, 0] = u0[0, j, k]; u_buf[t, 1] = u0[1, j, k]
-            update_pm_c(I[t], I0, u_buf[t], di, dj, sw_ss, sw_fs)
-            u[0, j, k] = u_buf[t, 0]; u[1, j, k] = u_buf[t, 1]
-    return np.asarray(u)
+    if ds_y <= 0.0 or ds_x <= 0.0:
+        raise ValueError('Sampling intervals must be positive')
 
-cdef void init_newton_c(float_t[::1] sptr, float_t[::1] I, float_t[:, ::1] I0,
-                        float_t[::1] u, float_t[::1] di, float_t[::1] dj, int sw_fs) nogil:
-    cdef:
-        int fs, fs_max = -sw_fs
-        float_t mse_min = FLOAT_MAX, mse_max = -FLOAT_MAX, mse, l1, d0, l, dist
-        float_t mptr[3]
-    mptr[1] = NO_VAR; sptr[0] = 0; sptr[2] = 0
-    for fs in range(-sw_fs, sw_fs + 1):
-        mse_bi(mptr, I, I0, di, dj, u[0], u[1] + fs)
-        mse = mptr[0] / mptr[1]
-        if mse < mse_min:
-            mse_min = mse; sptr[1] = fs
-        if mse > mse_max:
-            mse_max = mse; fs_max = fs
-    d0 = (fs_max - sptr[1])**2
-    l1 = 2 * (mse_max - mse_min) / d0
-    for fs in range(-sw_fs, sw_fs + 1):
-        dist = (fs - sptr[1])**2
-        if dist > d0 / 4 and dist < d0:
-            mse_bi(mptr, I, I0, di, dj, u[0], u[1] + fs)
-            l = 2 * (mptr[0] / mptr[1] - mse_min) / dist
-            if l > l1:
-                l1 = l
-    sptr[2] = l1
+    cdef int type_num = np.PyArray_TYPE(W.base)
+    cdef int N = I_n.shape[0], Y = I_n.shape[1], X = I_n.shape[2]
+    cdef int i, j, t, k
 
-cdef void newton_1d_c(float_t[::1] sptr, float_t[::1] I, float_t[:, ::1] I0, float_t[::1] u,
-                      float_t[::1] di, float_t[::1] dj, int max_iter, float_t x_tol, int sw_fs) nogil:
-    cdef:
-        float_t fs, mu, dfs
-        float_t mptr0[3]
-        float_t mptr1[3]
-        float_t mptr2[3]
-    if sptr[2] == 0:
-        init_newton_c(sptr, I, I0, u, di, dj, sw_fs)
-    fs = sptr[1]; mptr1[1] = NO_VAR; mptr2[1] = NO_VAR
-    for k in range(max_iter):
-        mse_bi(mptr0, I, I0, di, dj, u[0], u[1] + fs)
-        mu = (3 * mptr0[2]**0.5 / sptr[2])**0.33
-        mse_bi(mptr1, I, I0, di, dj, u[0], u[1] + fs - mu / 2)
-        mse_bi(mptr2, I, I0, di, dj, u[0], u[1] + fs + mu / 2)
-        dfs = -(mptr2[0] / mptr2[1] - mptr1[0] / mptr1[1]) / mu / sptr[2]
-        fs += dfs
-        if dfs < x_tol and dfs > -x_tol:
-            u[1] += fs; sptr[1] = fs
-            break
-        if fs >= sw_fs + 1 or fs < -sw_fs:
-            u[1] += sptr[1]
-            break
+    cdef float_t n0 = -min_float(&u[0, 0, 0], Y * X) + max_float(&di[0], N)
+    cdef float_t m0 = -min_float(&u[1, 0, 0], Y * X) + max_float(&dj[0], N)
+    cdef int Y0 = <int>((max_float(&u[0, 0, 0], Y * X) - min_float(&di[0], N) + n0) / ds_y) + 1
+    cdef int X0 = <int>((max_float(&u[1, 0, 0], Y * X) - min_float(&dj[0], N) + m0) / ds_x) + 1
+        
+    cdef np.npy_intp *shape = [num_threads, Y0, X0, 4]
+    cdef float_t[:, :, ::1] W_buf = np.PyArray_ZEROS(3, shape, type_num, 0)
+    cdef float_t[:, :, :, ::1] M_buf = np.PyArray_ZEROS(4, shape, type_num, 0)
+    shape[3] = 3
+    cdef float_t[:, :, :, ::1] I0_buf = np.PyArray_ZEROS(4, shape, type_num, 0)
+    cdef float_t[:, :, :, ::1] W0_buf = np.PyArray_ZEROS(4, shape, type_num, 0)
+    cdef np.ndarray I0 = np.PyArray_SimpleNew(2, shape + 1, type_num)
+
+    if Y0 > 1:
+        for i in prange(N, schedule='guided', num_threads=num_threads, nogil=True):
+            t = openmp.omp_get_thread_num()
+            LOWESS_frame_2d(W_buf[t], M_buf[t], I0_buf[t], W0_buf[t], I_n[i], W, u,
+                            di[i] - n0, dj[i] - m0, ds_y, ds_x, h)
     else:
-        u[1] += fs; sptr[1] = fs
+        for i in prange(N, schedule='guided', num_threads=num_threads, nogil=True):
+            t = openmp.omp_get_thread_num()
+            LOWESS_frame_1d(W_buf[t], M_buf[t], I0_buf[t], W0_buf[t], I_n[i], W, u,
+                            dj[i] - m0, ds_x, h)
 
-def update_pixel_map_nm(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0, float_t[:, :, ::1] u0,
-                        float_t[::1] di, float_t[::1] dj, int sw_fs, float_t ls,
-                        int max_iter=500, float_t x_tol=1e-12, unsigned num_threads=1):
-    r"""Update the pixel mapping by minimizing mean-squared-error
-    (MSE). Perform an iterative Newton's method within the search window
-    of `sw_ss`, `sw_fs` size along the slow and fast axes accordingly
-    in order to minimize the MSE. only works with 1D scans.
+    cdef float_t[:, ::1] _I0 = I0
+    cdef float_t W_sum, w, betta_y, betta_x, var_y, var_x, I0_pred, W0_pred
+    cdef float_t *M_mat
+    cdef float_t *I0_mat
+    cdef float_t *W0_mat
 
-    Parameters
-    ----------
-    I_n : numpy.ndarray
-        Measured intensity frames.
-    W : numpy.ndarray
-        Measured frames' whitefield.
-    I0 : numpy.ndarray
-        Reference image of the sample.
-    u : numpy.ndarray
-        Initial pixel mapping.
-    di : numpy.ndarray
-        Sample's translations along the slow detector axis
-        in pixels.
-    dj : numpy.ndarray
-        Sample's translations along the fast detector axis
-        in pixels.
-    sw_ss : int
-        Search window size in pixels along the slow detector
-        axis.
-    sw_fs : int
-        Search window size in pixels along the fast detector
-        axis.
-    ls : float
-        Reference image length scale in pixels.
-    max_iter : int, optional
-        Maximum number of iterations.
-    x_tol : float, optional
-        Tolerance for termination by the change of `u`.
-    num_threads : int, optional
-        Number of threads.
+    with nogil, parallel(num_threads=num_threads):
+        M_mat = <float_t *>malloc(4 * sizeof(float_t))
+        I0_mat = <float_t *>malloc(3 * sizeof(float_t))
+        W0_mat = <float_t *>malloc(3 * sizeof(float_t))
 
-    Returns
-    -------
-    u : numpy.ndarray
-        Updated pixel mapping array.
+        for k in prange(X0, schedule='guided'):
 
-    Notes
-    -----
-    :func:`update_pixel_map_nm` employs finite difference of MSE
-    instead of conventional numerical derivative. Finite difference
-    yields smaller variance in the case of noise present in the data
-    [MW]_:
+            for j in range(Y0):
+                W_sum = 0.0
+                memset(M_mat, 0, 4 * sizeof(float_t))
+                memset(I0_mat, 0, 3 * sizeof(float_t))
+                memset(W0_mat, 0, 3 * sizeof(float_t))
 
-    .. math::
-        \varepsilon (h) = \frac{f(x + h) - f(x)}{h}
+                for i in range(<int>num_threads):
+                    if W_buf[i, j, k] > 0.0:
+                        W_sum = W_sum + W_buf[i, j, k]
+                        w = W_buf[i, j, k] / W_sum
 
-    Where variance is minimized if :math:`h = h_M`:
+                        for t in range(4):
+                            M_mat[t] = M_mat[t] + w * (M_buf[i, j, k, t] - M_mat[t])
+                        
+                        for t in range(3):
+                            I0_mat[t] = I0_mat[t] + w * (I0_buf[i, j, k, t] - I0_mat[t])
+                            W0_mat[t] = W0_mat[t] + w * (W0_buf[i, j, k, t] - W0_mat[t])
 
-    .. math::
-        h_M = 8^{0.25} \sqrt{\frac{\mathrm{Var}[f]}
-        {\left| \max{f^{\prime\prime}} \right|}}
+                var_y = M_mat[2] - M_mat[0] * M_mat[0]
+                var_x = M_mat[3] - M_mat[1] * M_mat[1]
 
-    See Also
-    --------
-    update_pixel_map_gs : Description of error metric which
-        is being minimized.
+                betta_y = (I0_mat[1] - I0_mat[0] * M_mat[0]) / var_y if var_y > 0.0 else 0.0
+                betta_x = (I0_mat[2] - I0_mat[0] * M_mat[1]) / var_x if var_x > 0.0 else 0.0
 
-    References
-    ----------
-    .. [MW] Jorge J. Moré, and Stefan M. Wild, "Estimating Derivatives
-            of Noisy Simulations", ACM Trans. Math. Softw., Vol. 38,
-            Number 3, April 2012.
+                I0_pred = I0_mat[0] - betta_y * (ds_y * j - M_mat[0]) - betta_x * (ds_x * k - M_mat[1])
+
+                betta_y = (W0_mat[1] - W0_mat[0] * M_mat[0]) / var_y if var_y > 0.0 else 0.0
+                betta_x = (W0_mat[2] - W0_mat[0] * M_mat[1]) / var_x if var_x > 0.0 else 0.0
+
+                W0_pred = W0_mat[0] - betta_y * (ds_y * j - M_mat[0]) - betta_x * (ds_x * k - M_mat[1])
+
+                _I0[j, k] = I0_pred / W0_pred if W0_pred > 0.0 else 1.0
+
+        free(M_mat); free(I0_mat); free(W0_mat)
+
+    if return_nm0:
+        return I0, <int>n0, <int>m0
+    else:
+        return I0
+
+cdef double FVU_interp(uint_t[:, :, ::1] I_n, float_t W, float_t[:, ::1] I0, float_t[::1] di, float_t[::1] dj, int j, int k,
+                       float_t ux, float_t uy, double ds_y, double ds_x, double sigma, loss_func f) nogil:
+    """Return fraction of variance unexplained between the validation set I and trained
+    profile I0. Find the predicted values at the points (y, x) with bilinear interpolation.
     """
-    cdef:
-        str dtype = 'float64' if float_t is np.float64_t else 'float32'
-        np.npy_intp a = I_n.shape[0], b = I_n.shape[1], c = I_n.shape[2]
-        np.npy_intp aa = I0.shape[0], bb = I0.shape[1]
-        int j, k, t
-        float_t[:, :, ::1] u = np.empty((b, c, 2), dtype=dtype)
-        float_t[:, ::1] u_buf = np.empty((num_threads, 2), dtype=dtype)
-        float_t[:, ::1] I = np.empty((num_threads, a + 1), dtype=dtype)
-        float_t[:, ::1] sptr = np.zeros((num_threads, 3), dtype=dtype) # ss, fs, l1
-    for k in prange(c, schedule='static', num_threads=num_threads, nogil=True):
-        t = openmp.omp_get_thread_num()
-        for j in range(b):
-            krig_data_c(I[t], I_n, W, u0, j, k, ls)
-            u_buf[t, 0] = u0[0, j, k]; u_buf[t, 1] = u0[1, j, k]
-            newton_1d_c(sptr[t], I[t], I0, u_buf[t], di, dj, max_iter, x_tol, sw_fs)
-            u[0, j, k] = u_buf[t, 0]; u[1, j, k] = u_buf[t, 1]
-    return np.asarray(u)
+    cdef int N = I_n.shape[0], Y0 = I0.shape[0], X0 = I0.shape[1]
+    cdef int i, y0, y1, x0, x1
+    cdef double y, x, dy, dx, I0_bi, err = 0.0
 
-cdef void update_t_c(float_t[:, :, ::1] SS_m, float_t[:, ::1] I, float_t[:, ::1] rss, float_t[:, ::1] I0,
-                     float_t[:, :, ::1] u, float_t[::1] dij, int sw_ss, int sw_fs) nogil:
-    cdef:
-        int ii, jj
-        int ss_min = -sw_ss, fs_min = -sw_fs, ss_max = -sw_ss, fs_max = -sw_fs
-        float_t mse_min = FLOAT_MAX, mse_var = FLOAT_MAX, mse_max = -FLOAT_MAX, l1, mu
-        float_t m_ptr[2]
-        float_t mse_m[7]
-    for ii in range(-sw_ss, sw_ss + 1):
-        for jj in range(-sw_fs, sw_fs + 1):
-            mse_diff_bi(m_ptr, SS_m, I, rss, I0, u, dij[0], dij[1], dij[0] + ii, dij[1] + jj)
-            if m_ptr[0] < mse_min:
-                mse_min = m_ptr[0]; mse_var = m_ptr[1]; ss_min = ii; fs_min = jj
-            if m_ptr[0] > mse_max:
-                mse_max = m_ptr[0]; ss_max = ii; fs_max = jj
-    dij[0] += ss_min; dij[1] += fs_min
-    l1 = 2 * (mse_max - mse_min) / ((ss_max - ss_min)**2 + (fs_max - fs_min)**2)
-    mu = (3 * mse_var**0.5 / l1)**0.33
-    mu = mu if mu > 2 else 2
-    if sw_ss:
-        mse_diff_bi(m_ptr, SS_m, I, rss, I0, u, dij[0], dij[1], dij[0] - mu / 2, dij[1] - mu / 2)
-        mse_m[0] = m_ptr[0]
-        mse_diff_bi(m_ptr, SS_m, I, rss, I0, u, dij[0], dij[1], dij[0] - mu / 2, dij[1])
-        mse_m[1] = m_ptr[0]
-        mse_diff_bi(m_ptr, SS_m, I, rss, I0, u, dij[0], dij[1], dij[0], dij[1] - mu / 2)
-        mse_m[2] = m_ptr[0]
-        mse_m[3] = mse_min
-        mse_diff_bi(m_ptr, SS_m, I, rss, I0, u, dij[0], dij[1], dij[0], dij[1] + mu / 2)
-        mse_m[4] = m_ptr[0]
-        mse_diff_bi(m_ptr, SS_m, I, rss, I0, u, dij[0], dij[1], dij[0] + mu / 2, dij[1])
-        mse_m[5] = m_ptr[0]
-        mse_diff_bi(m_ptr, SS_m, I, rss, I0, u, dij[0], dij[1], dij[0] + mu / 2, dij[1] + mu / 2)
-        mse_m[6] = m_ptr[0]
-        subpixel_ref_2d(dij, mse_m, mu)
-    else:
-        mse_diff_bi(m_ptr, SS_m, I, rss, I0, u, dij[0], dij[1], dij[0], dij[1] - mu / 2)
-        mse_m[0] = m_ptr[0]
-        mse_m[1] = mse_min
-        mse_diff_bi(m_ptr, SS_m, I, rss, I0, u, dij[0], dij[1], dij[0], dij[1] + mu / 2)
-        mse_m[2] = m_ptr[0]
-        subpixel_ref_1d(dij, mse_m, mu)
+    for i in range(N):
+        y = (ux - di[i]) / ds_y
+        x = (uy - dj[i]) / ds_x
 
-def update_translations_gs(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0,
-                           float_t[:, :, ::1] u, float_t[::1] di, float_t[::1] dj,
-                           int sw_ss, int sw_fs, float_t ls, unsigned num_threads=1):
+        if y <= 0.0:
+            dy = 0.0; y0 = 0; y1 = 0
+        elif y >= Y0 - 1.0:
+            dy = 0.0; y0 = Y0 - 1; y1 = Y0 - 1
+        else:
+            dy = y - floor(y)
+            y0 = <int>floor(y); y1 = y0 + 1
+
+        if x <= 0.0:
+            dx = 0.0; x0 = 0; x1 = 0
+        elif x >= X0 - 1.0:
+            dx = 0.0; x0 = X0 - 1; x1 = X0 - 1
+        else:
+            dx = x - floor(x)
+            x0 = <int>floor(x); x1 = x0 + 1
+
+        I0_bi = (1.0 - dy) * (1.0 - dx) * I0[y0, x0] + \
+                (1.0 - dy) * dx * I0[y0, x1] + \
+                dy * (1.0 - dx) * I0[y1, x0] + \
+                dy * dx * I0[y1, x1]
+        err += f((<double>I_n[i, j, k] - W * I0_bi) / sigma)
+    
+    return err / N
+
+cdef double FVU_interp_tr(float_t[:, ::1] errors, uint_t[:, ::1] I_n, float_t[:, ::1] W,
+                          float_t[:, ::1] I0, float_t[:, :, ::1] u, float_t di0, float_t dj0, float_t di,
+                          float_t dj, double ds_y, double ds_x, double sigma, loss_func f) nogil:
+    """Return fraction of variance unexplained between the validation set I and trained
+    profile I0. Find the predicted values at the points (y, x) with bilinear interpolation.
+    """
+    cdef int Y = I_n.shape[0], X = I_n.shape[1], Y0 = I0.shape[0], X0 = I0.shape[1]
+    cdef int j, k, y0, y1, x0, x1
+    cdef double y, x, dy, dx, I0_bi, err0, err1, err = 0.0
+
+    for j in range(Y):
+        for k in range(X):
+            y = (u[0, j, k] - di0) / ds_y
+            x = (u[1, j, k] - dj0) / ds_x
+
+            if y <= 0.0:
+                dy = 0.0; y0 = 0; y1 = 0
+            elif y >= Y0 - 1.0:
+                dy = 0.0; y0 = Y0 - 1; y1 = Y0 - 1
+            else:
+                dy = y - floor(y)
+                y0 = <int>floor(y); y1 = y0 + 1
+
+            if x <= 0.0:
+                dx = 0.0; x0 = 0; x1 = 0
+            elif x >= X0 - 1.0:
+                dx = 0.0; x0 = X0 - 1; x1 = X0 - 1
+            else:
+                dx = x - floor(x)
+                x0 = <int>floor(x); x1 = x0 + 1
+
+            I0_bi = (1.0 - dy) * (1.0 - dx) * I0[y0, x0] + \
+                    (1.0 - dy) * dx * I0[y0, x1] + \
+                    dy * (1.0 - dx) * I0[y1, x0] + \
+                    dy * dx * I0[y1, x1]
+            err0 = f((<double>I_n[j, k] - W[j, k] * I0_bi) / sigma)
+
+            y = (u[0, j, k] - di0) / ds_y
+            x = (u[1, j, k] - dj0) / ds_x
+
+            if y <= 0.0:
+                dy = 0.0; y0 = 0; y1 = 0
+            elif y >= Y0 - 1.0:
+                dy = 0.0; y0 = Y0 - 1; y1 = Y0 - 1
+            else:
+                dy = y - floor(y)
+                y0 = <int>floor(y); y1 = y0 + 1
+
+            if x <= 0.0:
+                dx = 0.0; x0 = 0; x1 = 0
+            elif x >= X0 - 1.0:
+                dx = 0.0; x0 = X0 - 1; x1 = X0 - 1
+            else:
+                dx = x - floor(x)
+                x0 = <int>floor(x); x1 = x0 + 1
+
+            I0_bi = (1.0 - dy) * (1.0 - dx) * I0[y0, x0] + \
+                    (1.0 - dy) * dx * I0[y0, x1] + \
+                    dy * (1.0 - dx) * I0[y1, x0] + \
+                    dy * dx * I0[y1, x1]
+            err1 = f((<double>I_n[j, k] - W[j, k] * I0_bi) / sigma)
+
+            err += (errors[j, k] - err0 + err1)
+
+    return err / (Y * X)
+
+cdef void pm_gsearcher(uint_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0, float_t[:, :, ::1] u,
+                       float_t[:, ::1] derrs, float_t[::1] di, float_t[::1] dj, int j, int k, double sw_y, double sw_x,
+                       unsigned wsize, double ds_y, double ds_x, double sigma, loss_func f) nogil:
+    cdef double err, err0, uy_min = 0.0, ux_min = 0.0, err_min=FLOAT_MAX, ux, uy 
+    cdef double dsw_y = 2.0 * sw_y / (wsize - 1), dsw_x = 2.0 * sw_x / (wsize - 1)
+    cdef int ii, jj
+
+    err0 = FVU_interp(I_n, W[j, k], I0, di, dj, j, k, u[0, j, k],
+                      u[1, j, k], ds_y, ds_x, sigma, f)
+
+    for ii in range(<int>wsize if dsw_y > 0.0 else 1):
+        uy = dsw_y * (ii - 0.5 * (wsize - 1))
+        for jj in range(<int>wsize if dsw_x > 0.0 else 1):
+            ux = dsw_x * (jj - 0.5 * (wsize - 1))
+            err = FVU_interp(I_n, W[j, k], I0, di, dj, j, k, u[0, j, k] + uy,
+                             u[1, j, k] + ux, ds_y, ds_x, sigma, f)
+
+            if err < err_min:
+                uy_min = uy; ux_min = ux; err_min = err
+
+    u[0, j, k] += uy_min; u[1, j, k] += ux_min
+    derrs[j, k] = err0 - err_min if err_min < err0 else 0.0
+
+def pm_gsearch(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None, float_t[:, ::1] I0 not None,
+               float_t[:, :, ::1] u0 not None, float_t[::1] di not None, float_t[::1] dj not None,
+               double sw_y, double sw_x, unsigned grid_size, double ds_y, double ds_x, double sigma,
+               str loss='Huber', unsigned num_threads=1):
+    r"""Update the pixel mapping by minimizing mean-squared-error
+    (MSE). Perform a grid search within the search window of `sw_y`,
+    `sw_x` size along the vertical and fast axes accordingly in order to
+    minimize the MSE at each point of the detector grid separately.
+
+    Args:
+        I_n (numpy.ndarray) : Measured intensity frames.
+        W (numpy.ndarray) : Measured frames' whitefield.
+        I0 (numpy.ndarray) : Reference image of the sample.
+        u (numpy.ndarray) : The discrete geometrical mapping of the detector
+            plane to the reference image.
+        di (numpy.ndarray) : Initial sample's translations along the vertical
+            detector axis in pixels.
+        dj (numpy.ndarray) : Initial sample's translations along the horizontal
+            detector axis in pixels.
+        sw_y (float) : Search window size in pixels along the vertical detector
+            axis.
+        sw_x (float) : Search window size in pixels along the horizontal detector
+            axis.
+        grid_size (int) :  Grid size along one of the detector axes. The grid
+            shape is then (grid_size, grid_size).
+        ds_y (float) : Sampling interval of reference image in pixels along the
+            vertical axis.
+        ds_x (float) : Sampling interval of reference image in pixels along the
+            horizontal axis.
+        sigma (float) : The standard deviation of `I_n`.
+        loss (str) : Choose between the following loss functions:
+
+            * 'Epsilon': Epsilon loss function (epsilon = 0.5)
+            * 'Huber' : Huber loss function (k = 1.345)
+            * 'L1' : L1 norm loss function.
+            * 'L2' : L2 norm loss function.
+
+        num_threads (int) : Number of threads.
+
+    Returns:
+        Tuple[numpy.ndarray, numpy.ndarray] : A tuple of two elements ('u', 'derr').
+        The elements are the following:
+
+        * 'u' : Updated pixel mapping array.
+        * 'derr' : Error decrease for each pixel in the detector grid.
+
+    Notes:
+        The error metric as a function of pixel mapping displacements
+        is given by:
+
+        .. math::
+
+            \varepsilon_{pm}[i, j, i^{\prime}, j^{\prime}] = \frac{1}{N}
+            \sum_{n = 0}^N f\left( \frac{I[n, i, j] - W[i, j]
+            I_{ref}[u[0, i, j] + i^{\prime} - di[n],
+            u[1, i, j] + j^{\prime} - dj[n]]}{\sigma} \right)
+
+        where :math:`f(x)` is L1 norm, L2 norm or Huber loss function.
+    """
+    if ds_y <= 0.0 or ds_x <= 0.0:
+        raise ValueError('Sampling intervals must be positive')
+
+    cdef loss_func f = choose_loss(loss)
+
+    cdef int type_num = np.PyArray_TYPE(W.base)
+    cdef int Y = I_n.shape[1], X = I_n.shape[2], j, k
+
+    cdef np.npy_intp *u_shape = [2, Y, X]
+    cdef np.ndarray u = np.PyArray_SimpleNew(3, u_shape, type_num)
+    cdef np.ndarray derr = np.PyArray_ZEROS(2, u_shape + 1, type_num, 0)
+    cdef float_t[:, :, ::1] _u = u
+    cdef float_t[:, ::1] _derr = derr
+
+    for k in prange(X, schedule='guided', num_threads=num_threads, nogil=True):
+        for j in range(Y):
+            _u[0, j, k] = u0[0, j, k]; _u[1, j, k] = u0[1, j, k]
+            if W[j, k] > 0.0:
+                pm_gsearcher(I_n, W, I0, _u, _derr, di, dj, j, k, sw_y, sw_x,
+                             grid_size, ds_y, ds_x, sigma, f)
+
+    return u, derr
+
+cdef void pm_rsearcher(uint_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0, gsl_rng *r, float_t[:, :, ::1] u,
+                       float_t[:, ::1] derrs, float_t[::1] di, float_t[::1] dj, int j, int k, double sw_y, double sw_x,
+                       unsigned N, double ds_y, double ds_x, double sigma, loss_func f) nogil:
+    cdef double err, err0, err_min=FLOAT_MAX, uy_min = 0.0, ux_min = 0.0, ux, uy
+    cdef int ii
+
+    err0 = FVU_interp(I_n, W[j, k], I0, di, dj, j, k, u[0, j, k],
+                      u[1, j, k], ds_y, ds_x, sigma, f)
+
+    for ii in range(<int>N):
+        uy = 2.0 * sw_y * (gsl_rng_uniform(r) - 0.5)
+        ux = 2.0 * sw_x * (gsl_rng_uniform(r) - 0.5)
+
+        err = FVU_interp(I_n, W[j, k], I0, di, dj, j, k, u[0, j, k] + uy,
+                         u[1, j, k] + ux, ds_y, ds_x, sigma, f)
+        if err < err_min:
+            uy_min = uy; ux_min = ux; err_min = err
+
+    u[0, j, k] += uy_min; u[1, j, k] += ux_min
+    derrs[j, k] = err0 - err_min if err_min < err0 else 0.0
+
+def pm_rsearch(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None, float_t[:, ::1] I0 not None,
+               float_t[:, :, ::1] u0 not None, float_t[::1] di not None, float_t[::1] dj not None,
+               double sw_y, double sw_x, unsigned n_trials, unsigned long seed, double ds_y, double ds_x, double sigma,
+               str loss='Huber', unsigned num_threads=1):
+    r"""Update the pixel mapping by minimizing mean-squared-error (MSE).
+    Perform a random search within the search window of `sw_y`, `sw_x` size
+    along the vertical and fast axes accordingly in order to minimize the MSE
+    at each point of the detector grid separately.
+
+    Args:
+        I_n (numpy.ndarray) : Measured intensity frames.
+        W (numpy.ndarray) : Measured frames' whitefield.
+        I0 (numpy.ndarray) : Reference image of the sample.
+        u (numpy.ndarray) : The discrete geometrical mapping of the detector
+            plane to the reference image.
+        di (numpy.ndarray) : Initial sample's translations along the vertical
+            detector axis in pixels.
+        dj (numpy.ndarray) : Initial sample's translations along the horizontal
+            detector axis in pixels.
+        sw_y (float) : Search window size in pixels along the vertical detector
+            axis.
+        sw_x (float) : Search window size in pixels along the horizontal detector
+            axis.
+        n_trials (int) : Number of points generated at each pixel of the detector grid.
+        seed (int) : Specify seed for the random number generation.
+        ds_y (float) : Sampling interval of reference image in pixels along the
+            vertical axis.
+        ds_x (float) : Sampling interval of reference image in pixels along the
+            horizontal axis.
+        sigma (float) : The standard deviation of `I_n`.
+        loss (str) : Choose between the following loss functions:
+
+            * 'Epsilon': Epsilon loss function (epsilon = 0.5)
+            * 'Huber' : Huber loss function (k = 1.345)
+            * 'L1' : L1 norm loss function.
+            * 'L2' : L2 norm loss function.
+
+        num_threads (int) : Number of threads.
+
+    Returns:
+        Tuple[numpy.ndarray, numpy.ndarray] : A tuple of two elements ('u', 'derr').
+        The elements are the following:
+
+        * 'u' : Updated pixel mapping array.
+        * 'derr' : Error decrease for each pixel in the detector grid.
+
+    Notes:
+        The error metric as a function of pixel mapping displacements
+        is given by:
+
+        .. math::
+
+            \varepsilon_{pm}[i, j, i^{\prime}, j^{\prime}] = \frac{1}{N}
+            \sum_{n = 0}^N f\left( \frac{I[n, i, j] - W[i, j]
+            I_{ref}[u[0, i, j] + i^{\prime} - di[n],
+            u[1, i, j] + j^{\prime} - dj[n]]}{\sigma} \right)
+
+        where :math:`f(x)` is L1 norm, L2 norm or Huber loss function.
+    """
+    if ds_y <= 0.0 or ds_x <= 0.0:
+        raise ValueError('Sampling intervals must be positive')
+
+    cdef loss_func f = choose_loss(loss)
+
+    cdef int type_num = np.PyArray_TYPE(W.base)
+    cdef int Y = I_n.shape[1], X = I_n.shape[2], j, k
+
+    cdef np.npy_intp *u_shape = [2, Y, X]
+    cdef np.ndarray u = np.PyArray_SimpleNew(3, u_shape, type_num)
+    cdef np.ndarray derr = np.PyArray_ZEROS(2, u_shape + 1, type_num, 0)
+    cdef float_t[:, :, ::1] _u = u
+    cdef float_t[:, ::1] _derr = derr
+
+    cdef gsl_rng *r_master = gsl_rng_alloc(gsl_rng_mt19937)
+    gsl_rng_set(r_master, seed)
+    cdef unsigned long thread_seed
+    cdef gsl_rng *r
+
+    with nogil, parallel(num_threads=num_threads):
+        r = gsl_rng_alloc(gsl_rng_mt19937)
+        thread_seed = gsl_rng_get(r_master)
+        gsl_rng_set(r, thread_seed)
+
+        for k in prange(X, schedule='guided'):
+            for j in range(Y):
+                _u[0, j, k] = u0[0, j, k]; _u[1, j, k] = u0[1, j, k]
+                if W[j, k] > 0.0:
+                    pm_rsearcher(I_n, W, I0, r, _u, _derr, di, dj, j, k, sw_y, sw_x,
+                                 n_trials, ds_y, ds_x, sigma, f)
+
+        gsl_rng_free(r)
+
+    gsl_rng_free(r_master)
+
+    return u, derr
+
+cdef void pm_devolver(uint_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0, gsl_rng *r, float_t[:, :, ::1] u,
+                      float_t[:, ::1] derrs, float_t[::1] di, float_t[::1] dj, int j, int k, double sw_y, double sw_x,
+                      unsigned NP, unsigned n_iter, double CR, double F, double ds_y, double ds_x, double sigma, loss_func f) nogil:
+    cdef double err0, err, err_min = FLOAT_MAX
+    cdef int ii, jj, n, a, b
+    cdef double u_min[2]
+    cdef double sw[2]
+    cdef double *pop = <double *>malloc(2 * NP * sizeof(double))
+    cdef double *cost = <double *>malloc(NP * sizeof(double))
+    cdef double *new_pop = <double *>malloc(2 * NP * sizeof(double))
+
+    sw[0] = sw_y; sw[1] = sw_x
+    err0 = FVU_interp(I_n, W[j, k], I0, di, dj, j, k, u[0, j, k],
+                      u[1, j, k], ds_y, ds_x, sigma, f)
+
+    for ii in range(<int>NP):
+        pop[2 * ii] = 2.0 * sw_y * (gsl_rng_uniform(r) - 0.5)
+        pop[2 * ii + 1] = 2.0 * sw_x * (gsl_rng_uniform(r) - 0.5)
+
+        cost[ii] = FVU_interp(I_n, W[j, k], I0, di, dj, j, k, u[0, j, k] + pop[2 * ii],
+                             u[1, j, k] + pop[2 * ii + 1], ds_y, ds_x, sigma, f)
+        
+        if cost[ii] < err_min:
+            u_min[0] = pop[2 * ii]; u_min[1] = pop[2 * ii + 1]; err_min = cost[ii]
+
+    for n in range(<int>n_iter):
+        for ii in range(<int>NP):
+            a = gsl_rng_uniform_int(r, NP)
+            while a == ii:
+                a = gsl_rng_uniform_int(r, NP)
+            
+            b = gsl_rng_uniform_int(r, NP)
+            while b == ii or b == a:
+                b = gsl_rng_uniform_int(r, NP)
+
+            jj = gsl_rng_uniform_int(r, 2)
+            if gsl_rng_uniform(r) < CR:
+                new_pop[2 * ii + jj] = u_min[jj] + F * (pop[2 * a + jj] - pop[2 * b + jj])
+                if new_pop[2 * ii + jj] > sw[jj]: new_pop[2 * ii + jj] = sw[jj]
+                if new_pop[2 * ii + jj] < -sw[jj]: new_pop[2 * ii + jj] = -sw[jj]
+            else:
+                new_pop[2 * ii + jj] = pop[2 * ii + jj]
+            jj = (jj + 1) % 2
+            new_pop[2 * ii + jj] = u_min[jj] + F * (pop[2 * a + jj] - pop[2 * b + jj])
+            if new_pop[2 * ii + jj] > sw[jj]: new_pop[2 * ii + jj] = sw[jj]
+            if new_pop[2 * ii + jj] < -sw[jj]: new_pop[2 * ii + jj] = -sw[jj]
+
+            err = FVU_interp(I_n, W[j, k], I0, di, dj, j, k, u[0, j, k] + new_pop[2 * ii],
+                             u[1, j, k] + new_pop[2 * ii + 1], ds_y, ds_x, sigma, f)
+
+            if err < cost[ii]:
+                cost[ii] = err
+                if err < err_min:
+                    u_min[0] = new_pop[2 * ii]; u_min[1] = new_pop[2 * ii + 1]; err_min = err
+            else:
+                new_pop[2 * ii] = pop[2 * ii]; new_pop[2 * ii + 1] = pop[2 * ii + 1]
+            
+        for ii in range(2 * <int>NP):
+            pop[ii] = new_pop[ii]
+
+    free(pop); free(new_pop); free(cost)
+
+    u[0, j, k] += u_min[0]; u[1, j, k] += u_min[1]
+    derrs[j, k] = err0 - err_min if err_min < err0 else 0.0
+
+def pm_devolution(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None, float_t[:, ::1] I0 not None,
+                  float_t[:, :, ::1] u0 not None, float_t[::1] di not None, float_t[::1] dj not None,
+                  double sw_y, double sw_x, unsigned pop_size, unsigned n_iter, unsigned long seed,
+                  double ds_y, double ds_x, double sigma, double F=0.75, double CR=0.7, str loss='Huber',
+                  unsigned num_threads=1):
+    r"""Update the pixel mapping by minimizing mean-squared-error (MSE). Perform
+    a differential evolution within the search window of `sw_y`, `sw_x` size along
+    the vertical and fast axes accordingly in order to minimize the MSE at each
+    point of the detector grid separately.
+
+    Args:
+        I_n (numpy.ndarray) : Measured intensity frames.
+        W (numpy.ndarray) : Measured frames' whitefield.
+        I0 (numpy.ndarray) : Reference image of the sample.
+        u (numpy.ndarray) : The discrete geometrical mapping of the detector
+            plane to the reference image.
+        di (numpy.ndarray) : Initial sample's translations along the vertical
+            detector axis in pixels.
+        dj (numpy.ndarray) : Initial sample's translations along the horizontal
+            detector axis in pixels.
+        sw_y (float) : Search window size in pixels along the vertical detector
+            axis.
+        sw_x (float) : Search window size in pixels along the horizontal detector
+            axis.
+        pop_size (int) : The total population size. Must be greater or equal to 4.
+        n_iter (int) : The maximum number of generations over which the entire
+            population is evolved.
+        seed (int) : Specify seed for the random number generation.
+        ds_y (float) : Sampling interval of reference image in pixels along the
+            vertical axis.
+        ds_x (float) : Sampling interval of reference image in pixels along the
+            horizontal axis.
+        sigma (float) : The standard deviation of `I_n`.
+        F (float) : The mutation constant. In the literature this is also known as
+            differential weight. If specified as a float it should be in the
+            range [0, 2].
+        CR (float) : The recombination constant, should be in the range [0, 1]. In
+            the literature this is also known as the crossover probability.
+        loss (str) : Choose between the following loss functions:
+
+            * 'Epsilon': Epsilon loss function (epsilon = 0.5)
+            * 'Huber' : Huber loss function (k = 1.345)
+            * 'L1' : L1 norm loss function.
+            * 'L2' : L2 norm loss function.
+
+        num_threads (int) : Number of threads.
+
+    Returns:
+        Tuple[numpy.ndarray, numpy.ndarray] : A tuple of two elements ('u', 'derr').
+        The elements are the following:
+
+        * 'u' : Updated pixel mapping array.
+        * 'derr' : Error decrease for each pixel in the detector grid.
+
+    Notes:
+        The error metric as a function of pixel mapping displacements
+        is given by:
+
+        .. math::
+
+            \varepsilon_{pm}[i, j, i^{\prime}, j^{\prime}] = \frac{1}{N}
+            \sum_{n = 0}^N f\left( \frac{I[n, i, j] - W[i, j]
+            I_{ref}[u[0, i, j] + i^{\prime} - di[n],
+            u[1, i, j] + j^{\prime} - dj[n]]}{\sigma} \right)
+
+        where :math:`f(x)` is L1 norm, L2 norm or Huber loss function.
+    """
+    if ds_y <= 0.0 or ds_x <= 0.0:
+        raise ValueError('Sampling intervals must be positive')
+    if pop_size < 4:
+        raise ValueError('Population size must be greater or equal to 4.')
+    if F < 0.0 or F > 2.0:
+        raise ValueError('The mutation constant F must be in the interval [0.0, 2.0].')
+    if CR < 0.0 or CR > 1.0:
+        raise ValueError('The recombination constant CR must be in the interval [0.0, 1.0].')
+
+    cdef loss_func f = choose_loss(loss)
+
+    cdef int type_num = np.PyArray_TYPE(W.base)
+    cdef int Y = I_n.shape[1], X = I_n.shape[2], j, k
+
+    cdef np.npy_intp *u_shape = [2, Y, X]
+    cdef np.ndarray u = np.PyArray_SimpleNew(3, u_shape, type_num)
+    cdef np.ndarray derr = np.PyArray_ZEROS(2, u_shape + 1, type_num, 0)
+    cdef float_t[:, :, ::1] _u = u
+    cdef float_t[:, ::1] _derr = derr
+
+    cdef gsl_rng *r_master = gsl_rng_alloc(gsl_rng_mt19937)
+    gsl_rng_set(r_master, seed)
+    cdef unsigned long thread_seed
+    cdef gsl_rng *r
+
+    with nogil, parallel(num_threads=num_threads):
+        r = gsl_rng_alloc(gsl_rng_mt19937)
+        thread_seed = gsl_rng_get(r_master)
+        gsl_rng_set(r, thread_seed)
+
+        for k in prange(X, schedule='guided'):
+            for j in range(Y):
+                _u[0, j, k] = u0[0, j, k]; _u[1, j, k] = u0[1, j, k]
+                if W[j, k] > 0.0:
+                    pm_devolver(I_n, W, I0, r, _u, _derr, di, dj, j, k, sw_y, sw_x,
+                                pop_size, n_iter, CR, F, ds_y, ds_x, sigma, f)
+
+        gsl_rng_free(r)
+
+    gsl_rng_free(r_master)
+
+    return u, derr
+
+cdef void tr_updater(float_t[:, ::1] errors, uint_t[:, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0,
+                     float_t[:, :, ::1] u, float_t *di, float_t *dj, double sw_y, double sw_x,
+                     unsigned wsize, double ds_y, double ds_x, double sigma, loss_func f) nogil:
+    cdef double di_min = 0.0, dj_min = 0.0, err_min=FLOAT_MAX, dii, djj
+    cdef double dsw_y = 2.0 * sw_y / (wsize - 1), dsw_x = 2.0 * sw_x / (wsize - 1)
+    cdef int ii, jj
+
+    for ii in range(<int>wsize if dsw_y > 0.0 else 1):
+        dii = dsw_y * (ii - 0.5 * (wsize - 1))
+        for jj in range(<int>wsize if dsw_x > 0.0 else 1):
+            djj = dsw_x * (jj - 0.5 * (wsize - 1))
+            err = FVU_interp_tr(errors, I_n, W, I0, u, di[0], dj[0],
+                                di[0] + dii, dj[0] + djj, ds_y, ds_x, sigma, f)
+
+            if err < err_min:
+                di_min = dii; dj_min = djj; err_min = err
+
+    di[0] += di_min; dj[0] += dj_min
+
+def tr_gsearch(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None, float_t[:, ::1] I0 not None,
+               float_t[:, :, ::1] u not None, float_t[::1] di not None, float_t[::1] dj not None,
+               double sw_y, double sw_x, unsigned grid_size, double ds_y, double ds_x, double sigma,
+               str loss='Huber', unsigned num_threads=1) -> np.ndarray:
     r"""Update the sample pixel translations by minimizing total mean-squared-error
     (:math:$MSE_{total}$). Perform a grid search within the search window of
-    `sw_ss` size in pixels for sample translations along the slow axis, and
-    of `sw_fs` size in pixels for sample translations along the fast axis in
+    `sw_y` size in pixels for sample translations along the vertical axis, and
+    of `sw_x` size in pixels for sample translations along the horizontal axis in
     order to minimize the total MSE.
 
-    Parameters
-    ----------
-    I_n : numpy.ndarray
-        Measured intensity frames.
-    W : numpy.ndarray
-        Measured frames' whitefield.
-    I0 : numpy.ndarray
-        Reference image of the sample.
-    u : numpy.ndarray
-        The pixel mapping between the data at
-        the detector plane and the reference image at
-        the reference plane.
-    di : numpy.ndarray
-        Initial sample's translations along the slow detector
-        axis in pixels.
-    dj : numpy.ndarray
-        Initial sample's translations along the fast detector
-        axis in pixels.
-    sw_ss : int
-        Search window size in pixels along the slow detector
-        axis.
-    sw_fs : int
-        Search window size in pixels along the fast detector
-        axis.
-    ls : float
-        Reference image length scale in pixels.
-    num_threads : int, optional
-        Number of threads.
+    Args:
+        I_n (numpy.ndarray) : Measured intensity frames.
+        W (numpy.ndarray) : Measured frames' whitefield.
+        I0 (numpy.ndarray) : Reference image of the sample.
+        u (numpy.ndarray) : The discrete geometrical mapping of the detector
+            plane to the reference image.
+        di (numpy.ndarray) : Initial sample's translations along the vertical
+            detector axis in pixels.
+        dj (numpy.ndarray) : Initial sample's translations along the horizontal
+            detector axis in pixels.
+        sw_y (float) : Search window size in pixels along the vertical detector
+            axis.
+        sw_x (float) : Search window size in pixels along the horizontal detector
+            axis.
+        grid_size (int) : Grid size along one of the detector axes. The grid shape
+            is then (grid_size, grid_size).
+        ds_y (float) : Sampling interval of reference image in pixels along the
+            vertical axis.
+        ds_x (float) : Sampling interval of reference image in pixels along the
+            horizontal axis.
+        sigma (float) : The standard deviation of `I_n`.
+        loss (str) : Choose between the following loss functions:
 
-    Returns
-    -------
-    dij : numpy.ndarray
-        Updated sample pixel translations.
+            * 'Epsilon': Epsilon loss function (epsilon = 0.5)
+            * 'Huber' : Huber loss function (k = 1.345)
+            * 'L1' : L1 norm loss function.
+            * 'L2' : L2 norm loss function.
 
-    Notes
-    -----
-    The following error metric is being minimized:
+        num_threads (int) : Number of threads.
 
-    .. math::
+    Returns:
+        numpy.ndarray : Updated sample pixel translations.
 
-        MSE_{total} = \frac{1}{N M}\sum_{i, j} \left( \frac{\sum_{n}
-        \left( I_g[n] - I_{ref}[ii_n, jj_n] \right)^2}{\sum_{n}
-        \left(I_g[n] - 1 \right)^2} \right)
-    
-    Where :math:`I_g[n]` is a kriged intensity profile of the
-    particular detector coordinate :math:`I_n[n, i, j]`. Intensity
-    profile :math:`I_n[n, i, j]` is kriged with gaussian radial
-    basis function :math:`\phi`:
+    Notes:
+        The error metric as a function of sample shifts is given by:
 
-    .. math::
-        I_g[n] = \frac{\sum_{\Delta i, \Delta j} I_n[n, i + \Delta i,
-        j + \Delta j] W[i + \Delta i, j + \Delta j] 
-        \phi[\Delta u[0], \Delta u[1]]}
-        {\sum_{\Delta i, \Delta j} W[i + \Delta i, j + \Delta j]^2
-        \phi[\Delta u[0], \Delta u[1]]}
-    
-    .. math::
-        \Delta u[0] = u[0, i + \Delta i, j + \Delta j] - u[0, i, j]
-    
-    .. math::
-        \Delta u[1] = u[1, i + \Delta i, j + \Delta j] - u[1, i, j]
+        .. math::
 
-    .. math::
-        \phi [\Delta ii_{ref}, \Delta jj_{ref}] = 
-        \exp\left[{-\frac{(\Delta ii_{ref})^2 + 
-        (\Delta jj_{ref})^2}{ls^2}}\right]
+            \varepsilon_{tr}[n, di^{\prime}, dj^{\prime}] = \frac{1}{Y X}
+            \sum_{i = 0}^Y \sum_{j = 0}^Y f\left( \frac{I[n, i, j] - W[i, j]
+            I_{ref}[u[0, i, j] - di[n] - di^{\prime},
+            u[1, i, j] - dj[n] - dj^{\prime}]}{\sigma} \right)
+
+        where :math:`f(x)` is L1 norm, L2 norm or Huber loss function.
     """
-    cdef:
-        str dtype = 'float64' if float_t is np.float64_t else 'float32'
-        np.npy_intp a = I_n.shape[0], b = I_n.shape[1], c = I_n.shape[2]
-        int i, j, k, t
-        float_t[:, :, ::1] I = np.empty((a + 1, b, c), dtype=dtype)
-        float_t[:, ::1] I_buf = np.empty((num_threads, a + 1), dtype=dtype)
-        float_t[:, :, ::1] SS_m = np.empty((3, b, c), dtype=dtype)
-        float_t[:, ::1] dij = np.empty((a, 2), dtype=dtype)
-        float_t m_ptr[3]
-    m_ptr[2] = NO_VAR
-    for k in prange(c, schedule='guided', num_threads=num_threads, nogil=True):
+    if ds_y <= 0.0 or ds_x <= 0.0:
+        raise ValueError('Sampling intervals must be positive')
+
+    cdef loss_func f = choose_loss(loss)
+
+    cdef int type_num = np.PyArray_TYPE(W.base)
+    cdef int N = I_n.shape[0], Y = I_n.shape[1], X = I_n.shape[2], i, j, k
+
+    cdef np.npy_intp *buf_shape = [Y, X]
+    cdef float_t[:, ::1] errors = np.PyArray_SimpleNew(2, buf_shape, type_num)
+
+    cdef np.npy_intp *dij_shape = [N, 2]
+    cdef np.ndarray dij = np.PyArray_SimpleNew(2, dij_shape, type_num)
+    cdef float_t[:, ::1] _dij = dij
+
+    for k in prange(X, schedule='guided', num_threads=num_threads, nogil=True):
+        for j in range(Y):
+            if W[j, k] > 0.0:
+                errors[j, k] = FVU_interp(I_n, W[j, k], I0, di, dj, j, k,
+                                          u[0, j, k], u[1, j, k], ds_y, ds_x, sigma, f)
+            else:
+                errors[j, k] = 0.0
+
+    for i in prange(N, schedule='guided', num_threads=num_threads, nogil=True):
+        _dij[i, 0] = di[i]; _dij[i, 1] = dj[i]
+        tr_updater(errors, I_n[i], W, I0, u, &_dij[i, 0], &_dij[i, 1],
+                   sw_y, sw_x, grid_size, ds_y, ds_x, sigma, f)
+
+    return dij
+
+def pm_errors(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None, float_t[:, ::1] I0 not None,
+              float_t[:, :, ::1] u not None, float_t[::1] di not None, float_t[::1] dj not None,
+              double ds_y, double ds_x, double sigma, str loss='Huber', unsigned num_threads=1) -> np.ndarray:
+    r"""Return the residuals for the pixel mapping fit.
+
+    Args:
+        I_n (numpy.ndarray) : Measured intensity frames.
+        W (numpy.ndarray) : Measured frames' whitefield.
+        I0 (numpy.ndarray) : Reference image of the sample.
+        u (numpy.ndarray) : The discrete geometrical mapping of the detector
+            plane to the reference image.
+        di (numpy.ndarray) : Sample's translations along the vertical detector
+            axis in pixels.
+        dj (numpy.ndarray) : Sample's translations along the fast detector
+            axis in pixels.
+        ds_y (float) : Sampling interval of reference image in pixels along
+            the vertical axis.
+        ds_x (float) : Sampling interval of reference image in pixels along
+            the horizontal axis.
+        sigma (float) : The standard deviation of `I_n`.
+        loss (str): Choose between the following loss functions:
+
+            * 'Epsilon': Epsilon loss function (epsilon = 0.5)
+            * 'Huber' : Huber loss function (k = 1.345)
+            * 'L1' : L1 norm loss function.
+            * 'L2' : L2 norm loss function.
+        num_threads (int): Number of threads.
+
+    Returns:
+        numpy.ndarray : Residual profile of the pixel mapping fit.
+
+    See Also:
+        :func:`pyrost.bin.pm_gsearch` : Description of error metric which
+        is being minimized.
+
+    Notes:
+        The error metric is given by:
+
+        .. math::
+
+            \varepsilon_{pm}[i, j] = \frac{1}{N}
+            \sum_{n = 0}^N f\left( \frac{I[n, i, j] - W[i, j]
+            I_{ref}[u[0, i, j] - di[n], u[1, i, j] - dj[n]]}{\sigma}
+            \right)
+
+        where :math:`f(x)` is L1 norm, L2 norm or Huber loss function.
+    """
+    if ds_y <= 0.0 or ds_x <= 0.0:
+        raise ValueError('Sampling intervals must be positive')
+
+    cdef loss_func f = choose_loss(loss)
+
+    cdef int type_num = np.PyArray_TYPE(W.base)
+    cdef int Y = I_n.shape[1], X = I_n.shape[2], j, k
+
+    cdef np.ndarray errs = np.PyArray_SimpleNew(2, <np.npy_intp *>I_n.shape + 1, type_num)
+    cdef float_t[:, ::1] _errs = errs
+
+    for k in prange(X, schedule='guided', num_threads=num_threads, nogil=True):
+        for j in range(Y):
+            if W[j, k] > 0.0:
+                _errs[j, k] = FVU_interp(I_n, W[j, k], I0, di, dj, j, k,
+                                         u[0, j, k], u[1, j, k], ds_y, ds_x, sigma, f)
+            else:
+                _errs[j, k] = 0.0
+
+    return errs
+
+def pm_total_error(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None, float_t[:, ::1] I0 not None,
+                   float_t[:, :, ::1] u not None, float_t[::1] di not None, float_t[::1] dj not None,
+                   double ds_y, double ds_x, double sigma, str loss='Huber', unsigned num_threads=1) -> double:
+    r"""Return the mean residual for the pixel mapping fit.
+
+    Args:
+        I_n (numpy.ndarray) : Measured intensity frames.
+        W (numpy.ndarray) : Measured frames' whitefield.
+        I0 (numpy.ndarray) : Reference image of the sample.
+        u (numpy.ndarray) : The discrete geometrical mapping of the detector
+            plane to the reference image.
+        di (numpy.ndarray) : Sample's translations along the vertical detector
+            axis in pixels.
+        dj (numpy.ndarray) : Sample's translations along the fast detector
+            axis in pixels.
+        ds_y (float) : Sampling interval of reference image in pixels along
+            the vertical axis.
+        ds_x (float) : Sampling interval of reference image in pixels along
+            the horizontal axis.
+        sigma (float) : The standard deviation of `I_n`.
+        loss (str): Choose between the following loss functions:
+
+            * 'Epsilon': Epsilon loss function (epsilon = 0.5)
+            * 'Huber' : Huber loss function (k = 1.345)
+            * 'L1' : L1 norm loss function.
+            * 'L2' : L2 norm loss function.
+        num_threads (int): Number of threads.
+
+    Returns:
+        float : Mean residual value of the pixel mapping fit.
+
+    See Also:
+        :func:`pyrost.bin.pm_gsearch` : Description of error metric which
+        is being minimized.
+
+    Notes:
+        The error metric is given by:
+
+        .. math::
+
+            \varepsilon_{pm}[i, j] = \frac{1}{N}
+            \sum_{n = 0}^N f\left( \frac{I[n, i, j] - W[i, j]
+            I_{ref}[u[0, i, j] - di[n], u[1, i, j] - dj[n]]}{\sigma}
+            \right)
+
+        where :math:`f(x)` is L1 norm, L2 norm or Huber loss function.
+    """
+    if ds_y <= 0.0 or ds_x <= 0.0:
+        raise ValueError('Sampling intervals must be positive')
+
+    cdef loss_func f = choose_loss(loss)
+
+    cdef int type_num = np.PyArray_TYPE(W.base)
+    cdef int Y = I_n.shape[1], X = I_n.shape[2], j, k
+    cdef double err
+
+    for k in prange(X, schedule='guided', num_threads=num_threads, nogil=True):
+        for j in range(Y):
+            if W[j, k] > 0.0:
+                err += FVU_interp(I_n, W[j, k], I0, di, dj, j, k,
+                                  u[0, j, k], u[1, j, k], ds_y, ds_x, sigma, f)
+
+    return err / (X * Y)
+
+cdef void FVU_frame(float_t[:, ::1] errors, float_t[:, ::1] R, float_t[:, ::1] I0,
+                    uint_t[:, ::1] I_n, float_t[:, ::1] W, float_t[:, :, ::1] u, float_t di, float_t dj,
+                    double ds_y, double ds_x, double h, double sigma, loss_func f) nogil:
+    cdef int Y = I_n.shape[0], X = I_n.shape[1]
+    cdef int j, k, jj, kk, j0, k0, jj0, jj1, kk0, kk1
+    cdef int Y0 = I0.shape[0], X0 = I0.shape[1]
+    cdef int dn_y = <int>ceil((4.0 * h) / ds_y), dn_x = <int>ceil((4.0 * h) / ds_x)
+    cdef double y, x, r, I
+
+    for j in range(Y):
+        for k in range(X):
+            y = u[0, j, k] - di
+            x = u[1, j, k] - dj
+
+            j0 = <int>(y / ds_y) + 1
+            k0 = <int>(x / ds_x) + 1
+
+            jj0 = j0 - dn_y if j0 - dn_y > 0 else 0
+            jj1 = j0 + dn_y if j0 + dn_y < Y0 else Y0
+            kk0 = k0 - dn_x if k0 - dn_x > 0 else 0
+            kk1 = k0 + dn_x if k0 + dn_x < X0 else X0
+
+            for jj in range(jj0, jj1):
+                for kk in range(kk0, kk1):
+                    r = rbf((ds_y * jj - y) * (ds_y * jj - y) + (ds_x * kk - x) * (ds_x * kk - x), h)
+                    errors[jj, kk] += r * f((<double>I_n[j, k] - W[j, k] * I0[jj, kk]) / sigma)
+                    R[jj, kk] += r
+
+def ref_errors(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None, float_t[:, ::1] I0 not None,
+               float_t[:, :, ::1] u not None, float_t[::1] di not None, float_t[::1] dj not None,
+               double ds_y, double ds_x, double h, double sigma, str loss='Huber', unsigned num_threads=1) -> np.ndarray:
+    r"""Return the residuals for the reference image regression.
+
+    Args:
+        I_n (numpy.ndarray) :  Measured intensity frames.
+        W (numpy.ndarray) : Measured frames' whitefield.
+        I0 (numpy.ndarray) : Reference image of the sample.
+        u (numpy.ndarray) : The discrete geometrical mapping of the detector
+            plane to the reference image.
+        di (numpy.ndarray) : Sample's translations along the vertical
+            detector axis in pixels.
+        dj (numpy.ndarray): Sample's translations along the fast detector
+            axis in pixels.
+        ds_y (float) : Sampling interval of reference image in pixels along
+            the vertical axis.
+        ds_x (float) : Sampling interval of reference image in pixels along
+            the horizontal axis.
+        h (float) : Kernel bandwidth in pixels.
+        sigma (float) : The standard deviation of `I_n`.
+        loss (str) : Choose between the following loss functions:
+
+            * 'Epsilon': Epsilon loss function (epsilon = 0.5)
+            * 'Huber' : Huber loss function (k = 1.345)
+            * 'L1' : L1 norm loss function.
+            * 'L2' : L2 norm loss function.
+
+        num_threads (int) : Number of threads.
+
+    Returns:
+        numpy.ndarray : Residuals array of the reference image regression.
+
+    Notes:
+        The pixel mapping `u` maps the intensity measurements from the
+        detector plane to the reference plane as follows:
+
+        .. math::
+            i_{ref}[n, i, j] = u[0, i, j] + di[n], \; j_{ref}[n, i, j] = u[1, i, j] + dj[n]
+
+        The error metric is given by:
+
+        .. math::
+
+            \varepsilon_{ref}[i, j] = \sum_{n, i^{\prime}, j^{\prime}}
+            K[i - i_{ref}[n, i^{\prime}, j^{\prime}], 
+            j - j_{ref}[n, i^{\prime}, j^{\prime}], h] \;
+            f\left( \frac{I_n[n, i^{\prime}, j^{\prime}] -
+            W[i^{\prime}, j^{\prime}] I_{ref}[i, j]}{\sigma} \right)
+
+        where :math:`f(x)` is L1 norm, L2 norm or Huber loss function
+        and :math:`K[i, j, h] = \frac{1}{\sqrt{2 \pi}} \exp(-\frac{i^2 + j^2}{h})`
+        is the Gaussian kernel.
+
+    See Also:
+        :func:`pyrost.bin.KR_reference` : Description of the reference image
+        estimator.
+    """
+    if ds_y <= 0.0 or ds_x <= 0.0:
+        raise ValueError('Sampling intervals must be positive')
+
+    cdef loss_func f = choose_loss(loss)
+
+    cdef int type_num = np.PyArray_TYPE(W.base)
+    cdef int N = I_n.shape[0], Y0 = I0.shape[0], X0 = I0.shape[1]
+    cdef int i, j, k, t
+        
+    cdef np.npy_intp *shape = [num_threads, Y0, X0]
+    cdef float_t[:, :, ::1] err_buf = np.PyArray_ZEROS(3, shape, type_num, 0)
+    cdef float_t[:, :, ::1] R_buf = np.PyArray_ZEROS(3, shape, type_num, 0)
+    cdef np.ndarray err = np.PyArray_SimpleNew(2, shape + 1, type_num)
+
+    for i in prange(N, schedule='guided', num_threads=num_threads, nogil=True):
         t = openmp.omp_get_thread_num()
-        for j in range(b):
-            krig_data_c(I_buf[t], I_n, W, u, j, k, ls)
-            mse_bi(m_ptr, I_buf[t], I0, di, dj, u[0, j, k], u[1, j, k])
-            SS_m[0, j, k] = m_ptr[0]; SS_m[1, j, k] = m_ptr[1]
-            for i in range(a + 1):
-                I[i, j, k] = I_buf[t, i]
-    for i in prange(a, schedule='guided', num_threads=num_threads, nogil=True):
-        dij[i, 0] = di[i]; dij[i, 1] = dj[i]
-        update_t_c(SS_m, I[i], I[a], I0, u, dij[i], sw_ss, sw_fs)
-    return np.asarray(dij)
+        FVU_frame(err_buf[t], R_buf[t], I0, I_n[i], W, u, di[i], dj[i],
+                  ds_y, ds_x, h, sigma, f)
 
-def mse_frame(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0,
-              float_t[:, :, ::1] u, float_t[::1] di, float_t[::1] dj, float_t ls, unsigned num_threads=1):
-    """Return the average mean-squared-error (MSE) value per pixel.
+    cdef float_t[:, ::1] _err = err
+    cdef float_t err_sum, R_sum
+    for k in prange(X0, schedule='guided', num_threads=num_threads, nogil=True):
+        for j in range(Y0):
+            err_sum = 0.0; R_sum = 0.0
+            for i in range(<int>num_threads):
+                err_sum = err_sum + err_buf[i, j, k]
+                R_sum = R_sum + R_buf[i, j, k]
 
-    Parameters
-    ----------
-    I_n : numpy.ndarray
-        Measured intensity frames.
-    W : numpy.ndarray
-        Measured frames' whitefield.
-    I0 : numpy.ndarray
-        Reference image of the sample.
-    u : numpy.ndarray
-        The pixel mapping between the data at
-        the detector plane and the reference image at
-        the reference plane.
-    di : numpy.ndarray
-        Sample's translations along the slow detector axis
-        in pixels.
-    dj : numpy.ndarray
-        Sample's translations along the fast detector axis
-        in pixels.
-    ls : float
-        Reference image length scale in pixels.
-    num_threads : int, optional
-        Number of threads.
+            _err[j, k] = err_sum / R_sum if R_sum > 0.0 else 0.0
 
-    Returns
-    -------
-    mse : numpy.ndarray
-        Average MSE per pixel.
+    return err
 
-    See Also
-    --------
-    update_pixel_map_gs : Description of error metric which
-        is being minimized.
+def ref_total_error(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None, float_t[:, ::1] I0 not None,
+                    float_t[:, :, ::1] u not None, float_t[::1] di not None, float_t[::1] dj not None,
+                    double ds_y, double ds_x, double h, double sigma, str loss='Huber', unsigned num_threads=1):
+    r"""Return the mean residual for the reference image regression.
+
+    Args:
+        I_n (numpy.ndarray) :  Measured intensity frames.
+        W (numpy.ndarray) : Measured frames' whitefield.
+        I0 (numpy.ndarray) : Reference image of the sample.
+        u (numpy.ndarray) : The discrete geometrical mapping of the detector
+            plane to the reference image.
+        di (numpy.ndarray) : Sample's translations along the vertical
+            detector axis in pixels.
+        dj (numpy.ndarray): Sample's translations along the fast detector
+            axis in pixels.
+        ds_y (float) : Sampling interval of reference image in pixels along
+            the vertical axis.
+        ds_x (float) : Sampling interval of reference image in pixels along
+            the horizontal axis.
+        h (float) : Kernel bandwidth in pixels.
+        sigma (float) : The standard deviation of `I_n`.
+        loss (str) : Choose between the following loss functions:
+
+            * 'Epsilon': Epsilon loss function (epsilon = 0.5)
+            * 'Huber' : Huber loss function (k = 1.345)
+            * 'L1' : L1 norm loss function.
+            * 'L2' : L2 norm loss function.
+
+        num_threads (int) : Number of threads.
+
+    Returns:
+        float : Mean residual value.
+
+    Notes:
+        The pixel mapping `u` maps the intensity measurements from the
+        detector plane to the reference plane as follows:
+
+        .. math::
+            i_{ref}[n, i, j] = u[0, i, j] + di[n], \; j_{ref}[n, i, j] = u[1, i, j] + dj[n]
+
+        The error metric is given by:
+
+        .. math::
+
+            \varepsilon_{ref}[i, j] = \sum_{n, i^{\prime}, j^{\prime}}
+            K[i - i_{ref}[n, i^{\prime}, j^{\prime}], 
+            j - j_{ref}[n, i^{\prime}, j^{\prime}], h] \;
+            f\left( \frac{I_n[n, i^{\prime}, j^{\prime}] -
+            W[i^{\prime}, j^{\prime}] I_{ref}[i, j]}{\sigma} \right)
+
+        where :math:`f(x)` is L1 norm, L2 norm or Huber loss function
+        and :math:`K[i, j, h] = \frac{1}{\sqrt{2 \pi}} \exp(-\frac{i^2 + j^2}{h})`
+        is the Gaussian kernel.
+
+    See Also:
+        :func:`pyrost.bin.KR_reference` : Description of the reference image
+        estimator.
     """
-    cdef:
-        str dtype = 'float64' if float_t is np.float64_t else 'float32'
-        np.npy_intp a = I_n.shape[0], b = I_n.shape[1], c = I_n.shape[2]
-        np.npy_intp aa = I0.shape[0], bb = I0.shape[1]
-        int j, k, t
-        float_t *mptr
-        float_t[:, ::1] I = np.empty((num_threads, a + 1), dtype=dtype)
-        float_t[:, ::1] mse_f = np.empty((b, c), dtype=dtype)
-    with nogil, parallel(num_threads=num_threads):
-        mptr = <float_t *>malloc(3 * sizeof(float_t))
-        if mptr is NULL:
-            abort()
-        mptr[2] = NO_VAR
-        for k in prange(c, schedule='guided'):
-            t = openmp.omp_get_thread_num()
-            for j in range(b):
-                krig_data_c(I[t], I_n, W, u, j, k, ls)
-                mse_bi(mptr, I[t], I0, di, dj, u[0, j, k], u[1, j, k])
-                mse_f[j, k] = mptr[0] / mptr[1]
-        free(mptr)
-    return np.asarray(mse_f)
+    if ds_y <= 0.0 or ds_x <= 0.0:
+        raise ValueError('Sampling intervals must be positive')
 
-def mse_total(float_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0,
-              float_t[:, :, ::1] u, float_t[::1] di, float_t[::1] dj, float_t ls, unsigned num_threads=1):
-    """Return the average total mean-squared-error (MSE).
+    cdef loss_func f = choose_loss(loss)
 
-    Parameters
-    ----------
-    I_n : numpy.ndarray
-        Measured intensity frames.
-    W : numpy.ndarray
-        Measured frames' whitefield.
-    I0 : numpy.ndarray
-        Reference image of the sample.
-    u : numpy.ndarray
-        The pixel mapping between the data at
-        the detector plane and the reference image at
-        the reference plane.
-    di : numpy.ndarray
-        Sample's translations along the slow detector axis
-        in pixels.
-    dj : numpy.ndarray
-        Sample's translations along the fast detector axis
-        in pixels.
-    ls : float
-        Reference image length scale in pixels.
-    num_threads : int, optional
-        Number of threads.
+    cdef int type_num = np.PyArray_TYPE(W.base)
+    cdef int N = I_n.shape[0], Y0 = I0.shape[0], X0 = I0.shape[1]
+    cdef int i, j, t, k
+        
+    cdef np.npy_intp *shape = [num_threads, Y0, X0]
+    cdef float_t[:, :, ::1] err_buf = np.PyArray_ZEROS(3, shape, type_num, 0)
+    cdef float_t[:, :, ::1] R_buf = np.PyArray_ZEROS(3, shape, type_num, 0)
 
-    Returns
-    -------
-    mse : float
-        Average total MSE.
+    for i in prange(N, schedule='guided', num_threads=num_threads, nogil=True):
+        t = openmp.omp_get_thread_num()
+        FVU_frame(err_buf[t], R_buf[t], I0, I_n[i], W, u, di[i], dj[i],
+                  ds_y, ds_x, h, sigma, f)
 
-    See Also
-    --------
-    update_translations_gs : Description of error metric which
-        is being minimized.
+    cdef double err = 0.0, err2 = 0.0
+    cdef double err_sum, R_sum, err_jk
+    for k in prange(X0, schedule='guided', num_threads=num_threads, nogil=True):
+        for j in range(Y0):
+            err_sum = 0.0; R_sum = 0.0
+            for i in range(<int>num_threads):
+                err_sum = err_sum + err_buf[i, j, k]
+                R_sum = R_sum + R_buf[i, j, k]
+
+            if R_sum > 0.0:
+                err_jk = err_sum / R_sum
+                err += err_jk
+                err2 += err_jk * err_jk
+
+    err /= (X0 * Y0)
+    err2 /= (X0 * Y0)
+
+    return err, sqrt(err2 - err * err)
+
+def ct_integrate(float_t[:, ::1] sy_arr not None, float_t[:, ::1] sx_arr not None, int num_threads=1) -> np.ndarray:
+    """Perform the Fourier Transform wavefront reconstruction [FTI]_ with
+    antisymmetric derivative integration [ASDI]_.
+
+    Args:
+        sx_arr (numpy.ndarray) :  of gradient values along the horizontal axis.
+        sy_arr (numpy.ndarray) : Array of gradient values along the vertical axis.
+        num_threads (int) : Number of threads.
+
+    Returns:
+        numpy.ndarray : Reconstructed wavefront.
+
+    References:
+        .. [FTI] C. Kottler, C. David, F. Pfeiffer, and O. Bunk,
+                "A two-directional approach for grating based
+                differential phase contrast imaging using hard x-rays,"
+                Opt. Express 15, 1175-1181 (2007).
+        .. [ASDI] Pierre Bon, Serge Monneret, and Benoit Wattellier,
+                "Noniterative boundary-artifact-free wavefront
+                reconstruction from its derivatives," Appl. Opt. 51,
+                5698-5704 (2012).
     """
-    cdef:
-        str dtype = 'float64' if float_t is np.float64_t else 'float32'
-        np.npy_intp a = I_n.shape[0], b = I_n.shape[1], c = I_n.shape[2]
-        int j, k, t
-        float_t err = 0
-        float_t *mptr
-        float_t[:, ::1] I = np.empty((num_threads, a + 1), dtype=dtype)
-    with nogil, parallel(num_threads=num_threads):
-        mptr = <float_t *>malloc(3 * sizeof(float_t))
-        if mptr is NULL:
-            abort()
-        mptr[2] = NO_VAR
-        for k in prange(c, schedule='guided'):
-            t = openmp.omp_get_thread_num()
-            for j in range(b):
-                krig_data_c(I[t], I_n, W, u, j, k, ls)
-                mse_bi(mptr, I[t], I0, di, dj, u[0, j, k], u[1, j, k])
-                err += mptr[0] / mptr[1]
-        free(mptr)
-    return err / b / c
+    cdef int type_num = np.PyArray_TYPE(sx_arr.base)
+    cdef np.npy_intp a = sx_arr.shape[0], b = sx_arr.shape[1]
+    cdef int i, j, ii, jj
+    cdef np.npy_intp *asdi_shape = [2 * a, 2 * b]
+    
+    cdef np.ndarray[np.complex128_t, ndim=2] sfy_asdi = np.PyArray_SimpleNew(2, asdi_shape, np.NPY_COMPLEX128)
+    cdef pyfftw.FFTW fftw_obj = pyfftw.FFTW(sfy_asdi, sfy_asdi, axes=(0, 1), threads=num_threads)
+    for i in range(a):
+        for j in range(b):
+            sfy_asdi[i, j] = -sy_arr[a - i - 1, b - j - 1]
+    for i in range(a):
+        for j in range(b):
+            sfy_asdi[i + a, j] = sy_arr[i, b - j - 1]
+    for i in range(a):
+        for j in range(b):
+            sfy_asdi[i, j + b] = -sy_arr[a - i - 1, j]
+    for i in range(a):
+        for j in range(b):
+            sfy_asdi[i + a, j + b] = sy_arr[i, j]
+    fftw_obj._execute()
 
-def ct_integrate(float_t[:, ::1] sx_arr, float_t[:, ::1] sy_arr):
-    """Perform the Fourier Transform wavefront reconstruction [FTI]_
-    with antisymmetric derivative integration [ASDI]_.
+    cdef np.ndarray[np.complex128_t, ndim=2] sfx_asdi = np.PyArray_SimpleNew(2, asdi_shape, np.NPY_COMPLEX128)
+    fftw_obj._update_arrays(sfx_asdi, sfx_asdi)
+    for i in range(a):
+        for j in range(b):
+            sfx_asdi[i, j] = -sx_arr[a - i - 1, b - j - 1]
+    for i in range(a):
+        for j in range(b):
+            sfx_asdi[i + a, j] = -sx_arr[i, b - j - 1]
+    for i in range(a):
+        for j in range(b):
+            sfx_asdi[i, j + b] = sx_arr[a - i - 1, j]
+    for i in range(a):
+        for j in range(b):
+            sfx_asdi[i + a, j + b] = sx_arr[i, j]
+    fftw_obj._execute()
 
-    Parameters
-    ----------
-    sx_arr : numpy.ndarray
-        Array of gradient values along the fast axis.
-
-    sy_arr : numpy.ndarray
-        Array of gradient values along the slow axis.
-
-    Returns
-    -------
-    w : numpy.ndarray
-        Reconstructed wavefront.
-
-    References
-    ----------
-    .. [FTI] C. Kottler, C. David, F. Pfeiffer, and O. Bunk,
-             "A two-directional approach for grating based
-             differential phase contrast imaging using hard x-rays,"
-             Opt. Express 15, 1175-1181 (2007).
-    .. [ASDI] Pierre Bon, Serge Monneret, and Benoit Wattellier,
-              "Noniterative boundary-artifact-free wavefront
-              reconstruction from its derivatives," Appl. Opt. 51,
-              5698-5704 (2012).
-    """
-    cdef:
-        str dtype = 'float64' if float_t is np.float64_t else 'float32'
-        np.npy_intp a = sx_arr.shape[0], b = sx_arr.shape[1]
-        int i, j, ii, jj
-        float_t[:, ::1] s_asdi = np.empty((2 * a, 2 * b), dtype=dtype)
-        complex_t[:, ::1] sf_asdi = np.empty((2 * a, 2 * b), dtype='complex128')
-        float_t xf, yf
-    for i in range(a):
-        for j in range(b):
-            s_asdi[i, j] = -sx_arr[a - i - 1, b - j - 1]
-    for i in range(a):
-        for j in range(b):
-            s_asdi[i + a, j] = sx_arr[i, b - j - 1]
-    for i in range(a):
-        for j in range(b):
-            s_asdi[i, j + b] = -sx_arr[a - i - 1, j]
-    for i in range(a):
-        for j in range(b):
-            s_asdi[i + a, j + b] = sx_arr[i, j]
-    cdef np.ndarray[np.complex128_t, ndim=2] sfx_asdi = np.fft.fft2(s_asdi)
-    for i in range(a):
-        for j in range(b):
-            s_asdi[i, j] = -sy_arr[a - i - 1, b - j - 1]
-    for i in range(a):
-        for j in range(b):
-            s_asdi[i + a, j] = -sy_arr[i, b - j - 1]
-    for i in range(a):
-        for j in range(b):
-            s_asdi[i, j + b] = sy_arr[a - i - 1, j]
-    for i in range(a):
-        for j in range(b):
-            s_asdi[i + a, j + b] = sy_arr[i, j]
-    cdef np.ndarray[np.complex128_t, ndim=2] sfy_asdi = np.fft.fft2(s_asdi)
+    cdef pyfftw.FFTW ifftw_obj = pyfftw.FFTW(sfx_asdi, sfx_asdi, direction='FFTW_BACKWARD', axes=(0, 1), threads=num_threads)
+    cdef double xf, yf, norm = 1.0 / <double>np.PyArray_SIZE(sfx_asdi)
     for i in range(2 * a):
-        xf = <float_t>(i) / 2 / a - i // a
+        yf = 0.5 * <double>i / a - i // a
         for j in range(2 * b):
-            yf = <float_t>(j) / 2 / b - j // b
-            sf_asdi[i, j] = (xf * sfx_asdi[i, j] + yf * sfy_asdi[i, j]) / (2j * pi * (xf**2 + yf**2))
-    sf_asdi[0, 0] = 0
-    return np.asarray(np.fft.ifft2(sf_asdi).real[a:, b:], dtype=dtype)
+            xf = 0.5 * <double>j / b - j // b
+            sfx_asdi[i, j] = norm * (sfy_asdi[i, j] * yf + sfx_asdi[i, j] * xf) / (2j * pi * (xf * xf + yf * yf))
+    sfx_asdi[0, 0] = 0.0 + 0.0j
+    ifftw_obj._execute()
+
+    return np.asarray(sfx_asdi.real[a:, b:], dtype=sx_arr.base.dtype)

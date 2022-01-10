@@ -1,7 +1,7 @@
 MSPropagator
 ============
 
-.. autoclass:: pyrost.simulation.MSPropagator
+.. autoclass:: pyrost.multislice.MSPropagator
     :members:
     :exclude-members: update_inc_wavefront
 
