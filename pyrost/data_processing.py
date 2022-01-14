@@ -879,16 +879,17 @@ class STData(DataContainer):
         r_vals = []
         extra = {'reference_image': [], 'r_image': []}
         kernel = np.ones(int(size)) / size
-        st_obj = self.update_defocus(defoci_x.ravel()[0],
-                                     defoci_y.ravel()[0]).get_st(ds_y=ds_y, ds_x=ds_x,
-                                                                 aberrations=aberrations,
-                                                                 ff_correction=ff_correction)
+        df0_x, df0_y = defoci_x.ravel()[0], defoci_y.ravel()[0]
+        st_obj = self.update_defocus(df0_x, df0_y).get_st(ds_y=ds_y, ds_x=ds_x,
+                                                          aberrations=aberrations,
+                                                          ff_correction=ff_correction)
 
-        for defocus_x, defocus_y in tqdm(zip(defoci_x.ravel(), defoci_y.ravel()),
-                                           total=len(defoci_x), disable=not verbose,
-                                           desc='Generating defocus sweep'):
-            st_obj.di_pix *= np.abs(defoci_y.ravel()[0] / defocus_y)
-            st_obj.dj_pix *= np.abs(defoci_x.ravel()[0] / defocus_x)
+        for df1_x, df1_y in tqdm(zip(defoci_x.ravel(), defoci_y.ravel()),
+                               total=len(defoci_x), disable=not verbose,
+                               desc='Generating defocus sweep'):
+            st_obj.di_pix *= np.abs(df0_y / df1_y)
+            st_obj.dj_pix *= np.abs(df0_x / df1_x)
+            df0_x, df0_y = df1_x, df1_y
             st_obj.update_reference.inplace_update(hval=hval, method=ref_method)
             extra['reference_image'].append(st_obj.reference_image)
             mean = st_obj.reference_image.copy()

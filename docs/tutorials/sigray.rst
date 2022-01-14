@@ -34,8 +34,8 @@ the data, and crop it using a region of interest as follows:
 
     >>> data = data.update_mask(pmax=99.999, update='multiply')
     >>> data = data.integrate_data(axis=0)
-    >>> data = data.crop_data(roi=(0, 1, 200, 1240))
-    >>> data = data.mirror_data(axis=0)
+    >>> data = data.crop_data(roi=(0, 1, 200, 1200))
+    >>> data = data.mirror_data(axis=1)
 
     >>> fig, ax = plt.subplots(figsize=(14, 6))
     >>> ax.imshow(data.get('data')[:, 0])
@@ -77,9 +77,9 @@ contrast (the higher is the value the sharper is the reference profile).
 
 Let's update the data container with the defocus distance we got. 
 
-    .. code-block:: python
-    
-        >>> data = data.update_defocus(defocus)
+.. code-block:: python
+
+    >>> data = data.update_defocus(defocus)
 
 Speckle tracking update
 -----------------------
@@ -92,7 +92,7 @@ method. For more information about the parameters see the section :ref:`diatom-s
 
     >>> st_obj = data.get_st()
     >>> st_res = st_obj.iter_update_gd(h0=8., blur=12., sw_x=5, n_iter=150)
-    >>> data = data.update_phase(st_res)
+    >>> data.update_phase(st_res)
 
     >>> fig, axes = plt.subplots(1, 2, figsize=(16, 6))
     >>> axes[0].plot(np.arange(st_res.reference_image.shape[1]) - st_res.m0,
