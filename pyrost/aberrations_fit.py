@@ -292,8 +292,8 @@ class AberrationsFit(DataContainer):
                 if attr in ['phase', 'pixels', 'pixel_aberrations', 'theta_ab']:
                     val = val[self.roi[0]:self.roi[1]]
             return val
-        else:
-            return value
+
+        return value
 
     def model(self, fit: np.ndarray) -> np.ndarray:
         """Return the polynomial function values of lens' deviation angles fit.
@@ -384,10 +384,13 @@ class AberrationsFit(DataContainer):
                                           xtol=xtol, ftol=ftol, loss=loss)
         ph_fit = self.pix_to_phase(fit)
         c_3, c_4 = 0., 0.
+
         if ph_fit.size >= 4:
             c_3 = ph_fit[-4] * (self.distance / self.pixel_size)**3 * 1e-9
+
         if ph_fit.size >= 5:
             c_4 = ph_fit[-5] * (self.distance / self.pixel_size)**4 * 1e-12
+
         return {'c_3': c_3, 'c_4': c_4, 'fit': fit, 'ph_fit': ph_fit,
                 'rel_err': np.abs(err / fit), 'r_sq': r_sq}
 
@@ -439,9 +442,12 @@ class AberrationsFit(DataContainer):
                                              loss=loss)
         fit = self.phase_to_pix(ph_fit)
         c_3, c_4 = 0., 0.
+
         if ph_fit.size >= 4:
             c_3 = ph_fit[-4] * (self.distance / self.pixel_size)**3 * 1e-9
+
         if ph_fit.size >= 5:
             c_4 = ph_fit[-5] * (self.distance / self.pixel_size)**4 * 1e-12
+
         return {'c_3': c_3, 'c_4': c_4, 'fit': fit, 'ph_fit': ph_fit,
                 'rel_err': np.abs(err / ph_fit)[:-1], 'r_sq': r_sq}

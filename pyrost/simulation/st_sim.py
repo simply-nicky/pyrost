@@ -516,7 +516,7 @@ def main():
     parser.add_argument('--offset', type=float,
                         help="Sample's offset at the beginning and the end of the scan [um]")
     parser.add_argument('-p', '--ptych', action='store_true', help="Generate ptychograph data")
-    parser.set_defaults(**STParams().export_dict())
+    parser.set_defaults(**STParams.import_default().export_dict())
 
     args = vars(parser.parse_args())
     if args['ini_file']:
