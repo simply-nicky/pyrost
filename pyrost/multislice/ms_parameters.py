@@ -13,7 +13,7 @@ Examples:
 from __future__ import annotations
 import os
 import re
-from typing import Dict, Optional, Union
+from typing import Dict, List, Optional, Union
 import numpy as np
 from ..ini_parser import INIParser, ROOT_PATH
 from ..bin import next_fast_len
@@ -253,6 +253,9 @@ class Material(BasicElement):
     FORMULA_MATCHER = '(' + '|'.join(ELEMENTS[1:]) + ')'
     NUM_MATCHER = r'\d+'
 
+    elements    : List[Element]
+    quantities  : List[int]
+
     def __init__(self, formula: str, density: float, dbase: str='Chantler') -> None:
         """
         Args:
@@ -343,8 +346,23 @@ class MSParams(INIParser):
                 'material2/formula': 'str', 'material2/density': 'float', 'mll/n_min': 'int',
                 'mll/n_max': 'int', 'mll': 'float'}
 
-    def __init__(self, multislice: Dict[str, float], mll_mat1: Dict[str, Union[str, float]],
-                 mll_mat2: Dict[str, Union[str, float]], mll: Dict[str, Union[int, float]]) -> None:
+    # multislice attributes
+    x_min       : float
+    x_max       : float
+    x_step      : float
+    z_step      : float
+    wl          : float
+
+    # mll attributes
+    n_min       : int
+    n_max       : int
+    focus       : float
+    mll_sigma   : float
+    mll_depth   : float
+    mll_wl      : float
+
+    def __init__(self, multislice: Dict[str, float], mll_mat1: Material,
+                 mll_mat2: Material, mll: Dict[str, Union[int, float]]) -> None:
         """
         Args:
             multislice : A dictionary of multislice simulation parameters. The following

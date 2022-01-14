@@ -48,7 +48,6 @@ class STSim(DataContainer):
         **Necessary attributes**:
 
         * backend : the backend library for the FFT implementation.
-        * num_threads : Number of threads used in the calculations.
         * params : Experimental parameters.
 
         **Optional attributes**:
@@ -62,6 +61,7 @@ class STSim(DataContainer):
           y axis.
         * lens_wfx : Wavefront at the lens plane along the x axis.
         * lens_wfy : Wavefront at the lens plane along the y axis.
+        * num_threads : Number of threads used in the calculations.
         * n_x : Wavefront size along the x axis.
         * n_y : Wavefront size along the y axis.
         * roi : Region of interest in detector plane.
@@ -75,18 +75,23 @@ class STSim(DataContainer):
     init_set = {'bars', 'det_wfx', 'det_wfy', 'det_ix', 'det_iy', 'lens_wfx',
                 'lens_wfy', 'roi', 'smp_pos', 'smp_profile', 'smp_wfx', 'smp_wfy'}
 
-    inits = {'bars'       : lambda obj: obj.params.bar_positions(dist=obj.params.defocus),
-             'lens_wfx'   : lambda obj: obj.params.lens_x_wavefront(),
-             'lens_wfy'   : lambda obj: obj.params.lens_y_wavefront(),
-             'smp_wfx'    : lambda obj: obj._sample_x_wavefront(),
-             'smp_wfy'    : lambda obj: obj._sample_y_wavefront(),
-             'smp_pos'    : lambda obj: obj.params.sample_positions(),
-             'smp_profile': lambda obj: obj._sample_profile(),
-             'det_wfx'    : lambda obj: obj._detector_x_wavefront(),
-             'det_wfy'    : lambda obj: obj._detector_y_wavefront(),
-             'det_ix'     : lambda obj: obj._detector_x_intensity(),
-             'det_iy'     : lambda obj: obj._detector_y_intensity(),
-             'roi'        : lambda obj: obj.find_beam_roi()}
+    # Necessary attributes
+    backend     : str
+    params      : STParams
+
+    # Automatically generated attributes
+    bars        : np.ndarray
+    det_ix      : np.ndarray
+    det_iy      : np.ndarray
+    det_wfx     : np.ndarray
+    det_wfy     : np.ndarray
+    lens_wfx    : np.ndarray
+    lens_wfy    : np.ndarray
+    roi         : np.ndarray
+    smp_pos     : np.ndarray
+    smp_profile : np.ndarray
+    smp_wfx     : np.ndarray
+    smp_wfy     : np.ndarray
 
     def __init__(self, params: STParams, backend: str='numpy',
                  **kwargs: Union[int, np.ndarray]) -> None:
@@ -104,7 +109,16 @@ class STSim(DataContainer):
         if not backend in self.backends:
             err_msg = f'backend must be one of the following: {str(self.backends):s}'
             raise ValueError(err_msg)
-        super(STSim, self).__init__(backend=backend, params=params, **kwargs)
+
+        init_funcs = {'bars': lambda: self.params.bar_positions(dist=self.params.defocus),
+                      'lens_wfx': self.params.lens_x_wavefront, 'lens_wfy': self.params.lens_y_wavefront,
+                      'smp_wfx': self._sample_x_wavefront, 'smp_wfy': self._sample_y_wavefront,
+                      'smp_pos': self.params.sample_positions, 'smp_profile': self._sample_profile,
+                      'det_wfx': self._detector_x_wavefront, 'det_wfy': self._detector_y_wavefront,
+                      'det_ix': self._detector_x_intensity, 'det_iy': self._detector_y_intensity,
+                      'roi': self.find_beam_roi}
+
+        super(STSim, self).__init__(init_funcs=init_funcs, backend=backend, params=params, **kwargs)
 
     def _sample_x_wavefront(self) -> np.ndarray:
         dx0 = 2.0 * self.params.ap_x / self.x_size
@@ -502,7 +516,7 @@ def main():
     parser.add_argument('--offset', type=float,
                         help="Sample's offset at the beginning and the end of the scan [um]")
     parser.add_argument('-p', '--ptych', action='store_true', help="Generate ptychograph data")
-    parser.set_defaults(**STParams().export_dict())
+    parser.set_defaults(**STParams.import_default().export_dict())
 
     args = vars(parser.parse_args())
     if args['ini_file']:

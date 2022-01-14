@@ -46,6 +46,11 @@ class CXIProtocol(INIParser):
     fmt_dict = {'config': 'str', 'datatypes': 'str', 'default_paths': 'str',
                 'is_data': 'str'}
 
+    datatypes       : Dict[str, str]
+    default_paths   : Dict[str, str]
+    config          : Dict[str, str]
+    is_data         : Dict[str, str]
+
     def __init__(self, datatypes: Dict[str, str], default_paths: Dict[str, str],
                  is_data: Dict[str, str], float_precision: str='float64') -> None:
         """

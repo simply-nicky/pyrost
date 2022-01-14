@@ -69,7 +69,6 @@ class SpeckleTracking(DataContainer):
     attr_set = {'data', 'dj_pix', 'di_pix', 'ds_y', 'ds_x', 'num_threads',
                 'parent', 'pixel_map', 'sigma', 'whitefield'}
     init_set = {'error', 'hval', 'n0', 'm0', 'reference_image'}
-    inits = {}
 
     def __init__(self, parent: ReferenceType, **kwargs: Union[int, float, np.ndarray]) -> None:
         """

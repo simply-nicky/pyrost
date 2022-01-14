@@ -45,6 +45,42 @@ class STParams(INIParser):
                 'source': 'float', 'lens': 'float', 'barcode': 'float',
                 'system': 'int'}
 
+    # exp_geom attributes
+    defocus     : float
+    det_dist    : float
+    n_frames    : int
+    step_size   : float
+    step_rnd    : float
+
+    # detector attributes
+    detx_size   : int
+    dety_size   : int
+    pix_size    : float
+
+    # source attributes
+    p0          : float
+    th_s        : float
+    wl          : float
+
+    # lens attributes
+    alpha       : float
+    ap_x        : float
+    ap_y        : float
+    focus       : float
+    ab_cnt      : float
+
+    # barcode attributes
+    bar_atn     : float
+    bar_rnd     : float
+    bar_sigma   : float
+    bar_size    : float
+    bulk_atn    : float
+    offset      : float
+
+    # system attributes
+    num_threads : int
+    seed        : int
+
     def __init__(self, barcode: Dict[str, float], detector: Dict[str, Union[int, float]],
                  exp_geom: Dict[str, Union[int, float]], lens: Dict[str, float],
                  source: Dict[str, float], system: Dict[str, int]) -> None:
@@ -52,7 +88,7 @@ class STParams(INIParser):
         Args:
             barcode : A dictionary of barcode sample parameters. The following elements
                 are accepted:
-                
+
                 * 'bar_size' : Average bar's size [um].
                 * 'bar_sigma' : Bar bluriness width [um].
                 * 'bar_atn' : Bar's attenuation coefficient [0.0 - 1.0].
@@ -171,10 +207,8 @@ class STParams(INIParser):
     def update_threads(self, num_threads: Optional[int]=None) -> None:
         """Update number of threads used in calculcations.
 
-        Parameters
-        ----------
-        num_threads : New seed value. Equals to the number of CPU
-            cores in the system if not provided.
+        Args:
+            num_threads : Number of threads used in the computations.
         """
         if num_threads is None or num_threads <= 0 or num_threads > 64:
             num_threads = np.clip(1, 64, cpu_count())
@@ -329,8 +363,8 @@ class STParams(INIParser):
         return np.tan(th_lb) * dist, np.tan(th_ub) * dist
 
     def bar_positions(self, dist: float, rnd_dev: bool=True) -> np.ndarray:
-        """Generate a coordinate array of barcode's bar positions at
-        distance `dist` from focal plane.
+        """Generate a coordinate array of barcode's bar positions at distance
+        `dist` from focal plane.
 
         Args:
             dist : Distance from the focal plane [um].
@@ -360,8 +394,7 @@ class STParams(INIParser):
         return self.step_size * (np.arange(self.n_frames) + rnd_arr)
 
     def barcode_profile(self, x_arr: np.ndarray, dx: float, bars: np.ndarray) -> np.ndarray:
-        """Generate a barcode's transmission profile at `x_arr`
-        coordinates.
+        """Generate a barcode's transmission profile at `x_arr` coordinates.
 
         Args:
             x_arr : Array of the coordinates, where the transmission
@@ -373,8 +406,8 @@ class STParams(INIParser):
             Barcode's transmission profile.
 
         See Also:
-            :func:`pyrost.bin.barcode_profile` : Full details of barcode's transmission
-            profile generation algorithm.
+            :func:`pyrost.bin.barcode_profile` : Full details of barcode's
+            transmission profile generation algorithm.
         """
         b_prof = barcode_profile(x_arr=x_arr, bars=bars, bulk_atn=self.bulk_atn,
                                  bar_atn=self.bar_atn, bar_sigma=0.0,
