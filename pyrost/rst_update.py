@@ -129,8 +129,7 @@ class SpeckleTracking(DataContainer):
                                           ds_x=self.ds_x, h=hval, num_threads=self.num_threads)
         else:
             raise ValueError('Method keyword is invalid')
-        return {'hval': hval, 'n0': n0, 'm0': m0,
-                'reference_image': I0, 'errors': None}
+        return {'hval': hval, 'n0': n0, 'm0': m0, 'reference_image': I0}
 
     @dict_to_object
     def update_pixel_map(self, sw_x: float, sw_y: float=0.0, blur: float=0.0, integrate: bool=False,

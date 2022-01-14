@@ -87,7 +87,7 @@ class DataContainer:
     """
     attr_set, init_set = set(), set()
 
-    def __init__(self, init_funcs: Dict[str, Callable]={}, **kwargs: Any) -> None:
+    def __init__(self, **kwargs: Any) -> None:
         """
         Args:
             kwargs : Values of the attributes specified in `attr_set` and
@@ -101,12 +101,22 @@ class DataContainer:
             if kwargs.get(attr, None) is None:
                 raise ValueError(f'Attribute {attr} has not been provided')
 
-            self.__setattr__(attr, kwargs.get(attr))
-
         for attr in self.init_set:
-            self.__setattr__(attr, kwargs.get(attr))
+            self.__dict__[attr] = None
 
-        for attr, init_func in init_funcs.items():
+        for attr in kwargs:
+            if attr in self:
+                self.__setattr__(attr, kwargs.get(attr))
+            else:
+                raise ValueError(f'Parameter {attr} is invalid')
+
+        self.init_funcs = {}
+
+    def _init_functions(self, **kwargs: Callable) -> None:
+        self.init_funcs.update(**kwargs)
+
+    def _init_attributes(self) -> None:
+        for attr, init_func in self.init_funcs.items():
             if self.__dict__.get(attr, None) is None:
                 self.__setattr__(attr, init_func())
 
