@@ -110,15 +110,17 @@ class STSim(DataContainer):
             err_msg = f'backend must be one of the following: {str(self.backends):s}'
             raise ValueError(err_msg)
 
-        init_funcs = {'bars': lambda: self.params.bar_positions(dist=self.params.defocus),
-                      'lens_wfx': self.params.lens_x_wavefront, 'lens_wfy': self.params.lens_y_wavefront,
-                      'smp_wfx': self._sample_x_wavefront, 'smp_wfy': self._sample_y_wavefront,
-                      'smp_pos': self.params.sample_positions, 'smp_profile': self._sample_profile,
-                      'det_wfx': self._detector_x_wavefront, 'det_wfy': self._detector_y_wavefront,
-                      'det_ix': self._detector_x_intensity, 'det_iy': self._detector_y_intensity,
-                      'roi': self.find_beam_roi}
+        super(STSim, self).__init__(backend=backend, params=params, **kwargs)
 
-        super(STSim, self).__init__(init_funcs=init_funcs, backend=backend, params=params, **kwargs)
+        self._init_functions(bars=lambda: self.params.bar_positions(dist=self.params.defocus),
+                             lens_wfx=self.params.lens_x_wavefront, lens_wfy=self.params.lens_y_wavefront,
+                             smp_wfx=self._sample_x_wavefront, smp_wfy=self._sample_y_wavefront,
+                             smp_pos=self.params.sample_positions, smp_profile=self._sample_profile,
+                             det_wfx=self._detector_x_wavefront, det_wfy=self._detector_y_wavefront,
+                             det_ix=self._detector_x_intensity, det_iy=self._detector_y_intensity,
+                             roi=self.find_beam_roi)
+
+        self._init_attributes()
 
     def _sample_x_wavefront(self) -> np.ndarray:
         dx0 = 2.0 * self.params.ap_x / self.x_size
@@ -305,28 +307,17 @@ class STConverter:
         * defocus_x : Defocus distance along the horizontal detector axis.
         * defocus_y : Defocus distance along the vertical detector axis.
         * distance : Sample-to-detector distance.
-        * energy : Incoming beam photon energy [eV].
-        * good_frames : An array of good frames' indices.
-        * mask : Bad pixels mask.
         * roi : Region of interest in the detector plane.
         * translations : Sample's translations.
         * wavelength : Incoming beam's wavelength.
-        * whitefield : Measured frames' whitefield.
-        * x_pixel_size : Pixel's size along the horizontal detector
-          axis.
-        * y_pixel_size : Pixel's size along the vertical detector
-          axis.
+        * x_pixel_size : Pixel's size along the horizontal detector axis.
+        * y_pixel_size : Pixel's size along the vertical detector axis.
     """
     unit_vector_fs = np.array([1, 0, 0])
     unit_vector_ss = np.array([0, -1, 0])
     templates_dir = os.path.join(ROOT_PATH, 'ini_templates')
-    e_to_wl = 1.2398419843320026e-06 # [eV * m]
 
-    write_attrs = {'basis_vectors', 'data', 'defocus', 'distance',
-                   'energy', 'good_frames', 'mask', 'roi', 'translations',
-                   'wavelength', 'whitefield', 'x_pixel_size', 'y_pixel_size'}
-
-    def __init__(self, protocol: Optional[CXIProtocol]=CXIProtocol.import_default(),
+    def __init__(self, protocol: CXIProtocol=CXIProtocol.import_default(),
                  coord_ratio: float=1e-6) -> None:
         """
         Args:
@@ -379,10 +370,6 @@ class STConverter:
 
         # Initialize data
         data_dict['data'] = data
-        data_dict['good_frames'] = np.arange(data.shape[0],
-                                             dtype=self.protocol.get_dtype('good_frames'))
-        data_dict['mask'] = np.ones(data.shape, dtype=self.protocol.get_dtype('mask'))
-        data_dict['whitefield'] = median(mask=data_dict['mask'], data=data, axis=0, num_threads=st_params.num_threads)
 
         # Initialize defocus distances
         data_dict['defocus_x'] = self.crd_rat * st_params.defocus
@@ -391,9 +378,8 @@ class STConverter:
         # Initialize sample-to-detector distance
         data_dict['distance'] = self.crd_rat * st_params.det_dist
 
-        # Initialize beam's wavelength and energy
+        # Initialize beam's wavelength
         data_dict['wavelength'] = self.crd_rat * st_params.wl
-        data_dict['energy'] = self.e_to_wl / data_dict['wavelength']
 
         # Initialize region of interest
         if data_dict['data'].shape[1] == 1:

@@ -215,14 +215,16 @@ class MSPropagator(DataContainer):
             num_threads : Number of threads used in the calculations.
             kwargs : Attributes specified in `init_set`.
         """
-        init_funcs = {'num_threads': lambda: np.clip(1, 64, cpu_count()),
-                      'x_arr': self.params.get_xcoords, 'z_arr': self.params.get_zcoords,
-                      'fx_arr': lambda: np.fft.fftfreq(self.size, self.params.x_step),
-                      'kernel': lambda: self.params.get_kernel(self.fx_arr) / self.fx_arr.size,
-                      'wf_inc': self._inc_wavefront}
-
-        super(MSPropagator, self).__init__(init_funcs=init_funcs, params=params, sample=sample,
+        super(MSPropagator, self).__init__(params=params, sample=sample,
                                            num_threads=num_threads, **kwargs)
+
+        self._init_functions(num_threads=lambda: np.clip(1, 64, cpu_count()),
+                             x_arr=self.params.get_xcoords, z_arr=self.params.get_zcoords,
+                             fx_arr=lambda: np.fft.fftfreq(self.size, self.params.x_step),
+                             kernel=lambda: self.params.get_kernel(self.fx_arr) / self.fx_arr.size,
+                             wf_inc=self._inc_wavefront)
+
+        self._init_attributes()
 
     def _inc_wavefront(self):
         wf_inc = np.ones(self.x_arr.shape, dtype=np.complex128)

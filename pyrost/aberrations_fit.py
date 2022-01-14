@@ -180,15 +180,21 @@ class AberrationsFit(DataContainer):
         Raises:
             ValueError : If any of the necessary attributes has not been provided.
         """
-        init_funcs = {'det_ap'  : lambda: self.pixel_size / self.distance,
-                      'ref_ap'  : lambda: np.abs(self.det_ap * self.defocus / self.distance),
-                      'roi'     : lambda: np.array([0, self.pixels.size]),
-                      'thetas'  : lambda: self.pixels * self.det_ap,
-                      'theta_ab': lambda: self.pixel_aberrations * self.ref_ap,
-                      'phase'   : lambda: 2.0 * np.pi / self.wavelength * np.cumsum(self.theta_ab * self.pixel_size)}
+        super(AberrationsFit, self).__init__(parent=parent, **kwargs)
 
-        super(AberrationsFit, self).__init__(init_funcs=init_funcs, parent=parent, **kwargs)
+        self._init_functions(det_ap=lambda: self.pixel_size / self.distance,
+                             ref_ap=lambda: np.abs(self.det_ap * self.defocus / self.distance),
+                             roi=lambda: np.array([0, self.pixels.size]),
+                             thetas=lambda: self.pixels * self.det_ap,
+                             theta_ab=lambda: self.pixel_aberrations * self.ref_ap,
+                             phase=lambda: self.wnumber * np.cumsum(self.theta_ab * self.pixel_size))
+
+        self._init_attributes()
         self.phase -= self.phase.mean()
+
+    @property
+    def wnumber(self) -> float:
+        return 2.0 * np.pi / self.wavelength
 
     @dict_to_object
     def crop_data(self, roi: Iterable) -> AberrationsFit:
@@ -317,7 +323,7 @@ class AberrationsFit(DataContainer):
             Lens` phase aberrations fit coefficients.
         """
         nfit = np.zeros(fit.size + 1)
-        nfit[:-1] = 2 * np.pi / self.wavelength * fit * self.ref_ap * self.pixel_size
+        nfit[:-1] = self.wnumber * fit * self.ref_ap * self.pixel_size
         nfit[:-1] /= np.arange(1, fit.size + 1)[::-1]
         nfit[-1] = -self.model(nfit).mean()
         return nfit
@@ -332,7 +338,7 @@ class AberrationsFit(DataContainer):
         Returns:
             Lens' pixel aberrations fit coefficients.
         """
-        fit = ph_fit[:-1] * self.wavelength / (2 * np.pi * self.ref_ap * self.pixel_size)
+        fit = ph_fit[:-1] * self.wavelength / (2.0 * np.pi * self.ref_ap * self.pixel_size)
         fit *= np.arange(1, ph_fit.size)[::-1]
         return fit
 

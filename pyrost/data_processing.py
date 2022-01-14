@@ -502,22 +502,17 @@ class STData(DataContainer):
             ValueError : If any of the necessary attributes specified in :class:`pyrost.STData`
             notes have not been provided.
         """
-        init_funcs = {'num_threads': lambda: np.clip(1, 64, cpu_count()),
-                      'roi'        : lambda: np.array([0, self.data.shape[1], 0, self.data.shape[2]]),
-                      'good_frames': lambda: np.arange(self.data.shape[0]),
-                      'mask'       : lambda: np.ones(self.data.shape, dtype=bool),
-                      'whitefield' : lambda: median(data=self.data[self.good_frames], axis=0,
-                                                    mask=self.mask[self.good_frames],
-                                                    num_threads=self.num_threads),
-                      'sigma'      : lambda: np.std(self.data[:, self.roi[0]:self.roi[1],
-                                                                 self.roi[2]:self.roi[3]] * \
-                                                    self.mask[:, self.roi[0]:self.roi[1],
-                                                                 self.roi[2]:self.roi[3]]),
-                      'defocus_y'  : lambda: self.get('defocus_x', None),
-                      'pixel_map'  : self._pixel_map,
-                      'pixel_translations': self._pixel_translations}
+        super(STData, self).__init__(protocol=protocol, **kwargs)
 
-        super(STData, self).__init__(init_funcs=init_funcs, protocol=protocol, **kwargs)
+        self._init_functions(num_threads=lambda: np.clip(1, 64, cpu_count()),
+                             roi=lambda: np.array([0, self.data.shape[1], 0, self.data.shape[2]]),
+                             good_frames=lambda: np.arange(self.data.shape[0]),
+                             mask=lambda: np.ones(self.data.shape, dtype=bool),
+                             whitefield=self._whitefield, defocus_y=lambda: self.get('defocus_x', None),
+                             sigma=lambda: np.std(self.get('data') * self.get('mask')),
+                             pixel_map=self._pixel_map, pixel_translations=self._pixel_translations)
+
+        self._init_attributes()
 
     @property
     def _isdefocus(self) -> bool:
@@ -539,13 +534,18 @@ class STData(DataContainer):
         return pixel_translations
 
     def _pixel_map(self) -> np.ndarray:
-        pixel_map = np.indices(self.whitefield.shape, dtype=float)
+        pixel_map = np.indices(self.data.shape[1:], dtype=float)
         if self._isdefocus:
             if self.defocus_y < 0.0 and pixel_map[0, 0, 0] < pixel_map[0, -1, 0]:
                 pixel_map = np.flip(pixel_map, axis=1)
             if self.defocus_x < 0.0 and pixel_map[1, 0, 0] < pixel_map[1, 0, -1]:
                 pixel_map = np.flip(pixel_map, axis=2)
         return pixel_map
+
+    def _whitefield(self) -> np.ndarray:
+        return median(data=self.data[self.good_frames], axis=0,
+                      mask=self.mask[self.good_frames],
+                      num_threads=self.num_threads)
 
     def __setattr__(self, attr: str, value: Any) -> None:
         if attr in self and 'protocol' in self.__dict__:
