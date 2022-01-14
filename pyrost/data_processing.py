@@ -61,6 +61,13 @@ class CXILoader(CXIProtocol):
     fmt_dict = {'config': 'str', 'datatypes': 'str', 'default_paths': 'str',
                 'load_paths': 'str', 'is_data': 'str', 'policy': 'str'}
 
+    datatypes       : Dict[str, str]
+    default_paths   : Dict[str, str]
+    load_paths      : Dict[str, List[str]]
+    config          : Dict[str, str]
+    is_data         : Dict[str, str]
+    policy          : Dict[str, str]
+
     def __init__(self, protocol: CXIProtocol, load_paths: Dict[str, List[str]],
                  policy: Dict[str, Union[str, bool]]) -> None:
         """
@@ -453,20 +460,34 @@ class STData(DataContainer):
                 'mask', 'num_threads', 'phase', 'pixel_aberrations', 'pixel_map',
                 'pixel_translations', 'reference_image', 'roi', 'sigma', 'whitefield'}
 
-    inits = {'num_threads': lambda obj: np.clip(1, 64, cpu_count()),
-             'roi'        : lambda obj: np.array([0, obj.data.shape[1], 0, obj.data.shape[2]]),
-             'good_frames': lambda obj: np.arange(obj.data.shape[0]),
-             'mask'       : lambda obj: np.ones(obj.data.shape, dtype=bool),
-             'whitefield' : lambda obj: median(data=obj.data[obj.good_frames], axis=0,
-                                               mask=obj.mask[obj.good_frames],
-                                               num_threads=obj.num_threads),
-             'sigma'      : lambda obj: np.std(obj.data[:, obj.roi[0]:obj.roi[1],
-                                                        obj.roi[2]:obj.roi[3]] * \
-                                               obj.mask[:, obj.roi[0]:obj.roi[1],
-                                                        obj.roi[2]:obj.roi[3]]),
-             'defocus_y'  : lambda obj: obj.get('defocus_x', None),
-             'pixel_map'  : lambda obj: obj._pixel_map(),
-             'pixel_translations': lambda obj: obj._pixel_translations()}
+    # Necessary attributes
+    protocol            : CXIProtocol
+    basis_vectors       : np.ndarray
+    data                : np.ndarray
+    distance            : np.ndarray
+    translations        : np.ndarray
+    wavelength          : float
+    x_pixel_size        : float
+    y_pixel_size        : float
+
+    # Automatially generated attributes
+    num_threads         : int
+    roi                 : np.ndarray
+    good_frames         : np.ndarray
+    mask                : np.ndarray
+    whitefield          : np.ndarray
+    sigma               : float
+    pixel_map           : np.ndarray
+    pixel_translations  : np.ndarray
+
+    # Optional attributes
+    defocus_x           : Optional[float]
+    defocus_y           : Optional[float]
+    error_frame         : Optional[np.ndarray]
+    flatfields          : Optional[np.ndarray]
+    phase               : Optional[np.ndarray]
+    pixel_aberrations   : Optional[np.ndarray]
+    reference_image     : Optional[np.ndarray]
 
     def __init__(self, protocol: CXIProtocol=CXIProtocol.import_default(),
                  **kwargs: Union[int, float, np.ndarray]) -> None:
@@ -481,7 +502,22 @@ class STData(DataContainer):
             ValueError : If any of the necessary attributes specified in :class:`pyrost.STData`
             notes have not been provided.
         """
-        super(STData, self).__init__(protocol=protocol, **kwargs)
+        init_funcs = {'num_threads': lambda: np.clip(1, 64, cpu_count()),
+                      'roi'        : lambda: np.array([0, self.data.shape[1], 0, self.data.shape[2]]),
+                      'good_frames': lambda: np.arange(self.data.shape[0]),
+                      'mask'       : lambda: np.ones(self.data.shape, dtype=bool),
+                      'whitefield' : lambda: median(data=self.data[self.good_frames], axis=0,
+                                                    mask=self.mask[self.good_frames],
+                                                    num_threads=self.num_threads),
+                      'sigma'      : lambda: np.std(self.data[:, self.roi[0]:self.roi[1],
+                                                                 self.roi[2]:self.roi[3]] * \
+                                                    self.mask[:, self.roi[0]:self.roi[1],
+                                                                 self.roi[2]:self.roi[3]]),
+                      'defocus_y'  : lambda: self.get('defocus_x', None),
+                      'pixel_map'  : self._pixel_map,
+                      'pixel_translations': self._pixel_translations}
+
+        super(STData, self).__init__(init_funcs=init_funcs, protocol=protocol, **kwargs)
 
     @property
     def _isdefocus(self) -> bool:

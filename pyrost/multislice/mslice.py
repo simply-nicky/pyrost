@@ -57,6 +57,11 @@ class MLL(DataContainer):
     attr_set = {'layers', 'mat1_r', 'mat2_r', 'sigma'}
     en_to_wl = 1.239841929761768 # h * c / e [eV * um]
 
+    layers  : np.ndarray
+    mat1_r  : complex
+    mat2_r  : complex
+    sigma   : float
+
     def __init__(self, mat1_r: complex, mat2_r: complex, sigma: float,
                  layers: np.ndarray) -> None:
         super(MLL, self).__init__(mat1_r=mat1_r, mat2_r=mat2_r, sigma=sigma,
@@ -213,16 +218,31 @@ class MSPropagator(DataContainer):
     init_set = {'beam_profile', 'fx_arr', 'kernel', 'num_threads', 'smp_profile', 'x_arr',
                 'wf_inc', 'z_arr'}
 
-    inits = {'num_threads'  : lambda obj: np.clip(1, 64, cpu_count()),
-             'x_arr'        : lambda obj: obj.params.get_xcoords(),
-             'z_arr'        : lambda obj: obj.params.get_zcoords(),
-             'fx_arr'       : lambda obj: np.fft.fftfreq(obj.size, obj.params.x_step),
-             'kernel'       : lambda obj: obj.params.get_kernel(obj.fx_arr) / obj.fx_arr.size,
-             'wf_inc'       : lambda obj: obj._inc_wavefront()}
+    # Necessary attributes
+    params          : MSParams
+    sample          : MLL
+
+    # Automatically generated attributes
+    num_threads     : int
+    fx_arr          : np.ndarray
+    kernel          : np.ndarray
+    wf_inc          : np.ndarray
+    x_arr           : np.ndarray
+    z_arr           : np.ndarray
+
+    # Optional attributes
+    beam_profile    : Optional[np.ndarray]
+    smp_profile     : Optional[np.ndarray]
 
     def __init__(self, params: MSParams, sample: MLL, num_threads: Optional[int]=None,
                  **kwargs: np.ndarray) -> None:
-        super(MSPropagator, self).__init__(params=params, sample=sample,
+        init_funcs = {'num_threads': lambda: np.clip(1, 64, cpu_count()),
+                      'x_arr': self.params.get_xcoords, 'z_arr': self.params.get_zcoords,
+                      'fx_arr': lambda: np.fft.fftfreq(self.size, self.params.x_step),
+                      'kernel': lambda: self.params.get_kernel(self.fx_arr) / self.fx_arr.size,
+                      'wf_inc': self._inc_wavefront}
+
+        super(MSPropagator, self).__init__(init_funcs=init_funcs, params=params, sample=sample,
                                            num_threads=num_threads, **kwargs)
 
     def _inc_wavefront(self):

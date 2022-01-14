@@ -45,6 +45,42 @@ class STParams(INIParser):
                 'source': 'float', 'lens': 'float', 'barcode': 'float',
                 'system': 'int'}
 
+    # exp_geom attributes
+    defocus     : float
+    det_dist    : float
+    n_frames    : int
+    step_size   : float
+    step_rnd    : float
+
+    # detector attributes
+    detx_size   : int
+    dety_size   : int
+    pix_size    : float
+
+    # source attributes
+    p0          : float
+    th_s        : float
+    wl          : float
+
+    # lens attributes
+    alpha       : float
+    ap_x        : float
+    ap_y        : float
+    focus       : float
+    ab_cnt      : float
+
+    # barcode attributes
+    bar_atn     : float
+    bar_rnd     : float
+    bar_sigma   : float
+    bar_size    : float
+    bulk_atn    : float
+    offset      : float
+
+    # system attributes
+    num_threads : int
+    seed        : int
+
     def __init__(self, barcode: Dict[str, float], detector: Dict[str, Union[int, float]],
                  exp_geom: Dict[str, Union[int, float]], lens: Dict[str, float],
                  source: Dict[str, float], system: Dict[str, int]) -> None:

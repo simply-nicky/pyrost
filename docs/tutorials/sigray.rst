@@ -37,7 +37,7 @@ the data, and crop it using a region of interest as follows:
     >>> data = data.crop_data(roi=(0, 1, 200, 1200))
     >>> data = data.mirror_data(axis=1)
 
-    >>> fig, ax = plt.subplots(figsize=(14, 6))
+    >>> fig, ax = plt.subplots(figsize=(12, 2))
     >>> ax.imshow(data.get('data')[:, 0])
     >>> ax.set_title('Ptychograph', fontsize=20)
     >>> ax.set_xlabel('horizontal axis', fontsize=15)
@@ -69,6 +69,7 @@ contrast (the higher is the value the sharper is the reference profile).
     >>> ax.set_xlabel('Defocus distance, [mm]', fontsize=20)
     >>> ax.set_title('Average gradient magnitude squared', fontsize=20)
     >>> ax.tick_params(labelsize=15)
+    >>> ax.grid(True)
     >>> plt.show()
 
 .. image:: ../figures/sweep_scan_sigray.png
@@ -91,10 +92,10 @@ method. For more information about the parameters see the section :ref:`diatom-s
 .. code-block:: python
 
     >>> st_obj = data.get_st()
-    >>> st_res = st_obj.iter_update_gd(h0=8., blur=12., sw_x=5, n_iter=150)
+    >>> st_res = st_obj.iter_update_gd(h0=15., blur=12., sw_x=5)
     >>> data.update_phase(st_res)
 
-    >>> fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+    >>> fig, axes = plt.subplots(1, 2, figsize=(12, 4))
     >>> axes[0].plot(np.arange(st_res.reference_image.shape[1]) - st_res.m0,
     >>>              st_res.reference_image[0])
     >>> axes[0].set_title('Reference image', fontsize=20)
@@ -103,6 +104,7 @@ method. For more information about the parameters see the section :ref:`diatom-s
     >>> for ax in axes:
     >>>     ax.tick_params(labelsize=15)
     >>>     ax.set_xlabel('Fast axis, pixels', fontsize=15)
+    >>>     ax.grid(True)
     >>> plt.show()
 
 .. image:: ../figures/sigray_res.png
@@ -133,19 +135,20 @@ and to the phase profile with :func:`pyrost.AberrationsFit.fit_phase`:
     >>> fit = fit_obj.fit(max_order=3)
 
     >>> fig, axes = plt.subplots(1, 2, figsize=(12, 4))
-    >>> axes[0].plot(fit_obj.thetas, fit_obj.theta_aberrations * 1e9, 'b')
+    >>> axes[0].plot(fit_obj.thetas, fit_obj.theta_ab * 1e9, 'b')
     >>> axes[0].plot(fit_obj.thetas, fit_obj.model(fit['fit']) * fit_obj.ref_ap * 1e9,
-    >>>              'b--', label=fr"RST $c_4 = {fit['c_4']:.4f} rad/mrad^4$")
+    >>>              'b--', label=fr"RST $c_4$ = {fit['c_4']:.4f} rad/mrad^4")
     >>> axes[0].set_title('Angular displacements, nrad', fontsize=20)
     >>> 
     >>> axes[1].plot(fit_obj.thetas, fit_obj.phase, 'b')
     >>> axes[1].plot(fit_obj.thetas, fit_obj.model(fit['ph_fit']), 'b--',
-    >>>              label=fr"RST $c_4={fit['c_4']:.4f} rad/mrad^4$")
+    >>>              label=fr"RST $c_4$ ={fit['c_4']:.4f} rad/mrad^4")
     >>> axes[1].set_title('Phase, rad', fontsize=20)
     >>> for ax in axes:
     >>>     ax.legend(fontsize=15)
     >>>     ax.tick_params(labelsize=15)
     >>>     ax.set_xlabel('Scattering angles, rad', fontsize=15)
+    >>>     ax.grid(True)
     >>> plt.show() 
 
 .. image:: ../figures/sigray_fits.png

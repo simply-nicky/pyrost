@@ -41,6 +41,10 @@ class LogProtocol(INIParser):
     unit_dict = {'percent': 1e-2, 'mm,mdeg': 1e-3, 'µm,um,udeg,µdeg': 1e-6,
                  'nm,ndeg': 1e-9, 'pm,pdeg': 1e-12}
 
+    datatypes   : Dict[str, str]
+    log_keys    : Dict[str, List[str]]
+    part_keys   : Dict[str, str]
+
     def __init__(self, datatypes: Dict[str, str], log_keys: Dict[str, List[str]],
                  part_keys: Dict[str, str]) -> None:
         """

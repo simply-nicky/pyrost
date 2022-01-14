@@ -152,12 +152,22 @@ class AberrationsFit(DataContainer):
     x_lookup = {'defocus': 'defocus_x', 'pixel_size': 'x_pixel_size'}
     y_lookup = {'defocus': 'defocus_y', 'pixel_size': 'y_pixel_size'}
 
-    inits = {'det_ap'  : lambda obj: obj.pixel_size / obj.distance,
-             'ref_ap'  : lambda obj: np.abs(obj.det_ap * obj.defocus / obj.distance),
-             'roi'     : lambda obj: np.array([0, obj.pixels.size]),
-             'thetas'  : lambda obj: obj.pixels * obj.det_ap,
-             'theta_ab': lambda obj: obj.pixel_aberrations * obj.ref_ap,
-             'phase'   : lambda obj: 2.0 * np.pi / obj.wavelength * np.cumsum(obj.theta_ab)}
+    # Necessary attributes
+    parent              : ReferenceType
+    defocus             : float
+    distance            : float
+    pixels              : np.ndarray
+    pixel_aberrations   : np.ndarray
+    pixel_size          : float
+    wavelength          : float
+
+    # Automatically generated attributes
+    det_ap              : float
+    phase               : np.ndarray
+    ref_ap              : float
+    roi                 : np.ndarray
+    thetas              : np.ndarray
+    theta_ab            : np.ndarray
 
     def __init__(self, parent: ReferenceType, **kwargs: Union[float, np.ndarray]) -> None:
         """
@@ -170,7 +180,14 @@ class AberrationsFit(DataContainer):
         Raises:
             ValueError : If any of the necessary attributes has not been provided.
         """
-        super(AberrationsFit, self).__init__(parent=parent, **kwargs)
+        init_funcs = {'det_ap'  : lambda: self.pixel_size / self.distance,
+                      'ref_ap'  : lambda: np.abs(self.det_ap * self.defocus / self.distance),
+                      'roi'     : lambda: np.array([0, self.pixels.size]),
+                      'thetas'  : lambda: self.pixels * self.det_ap,
+                      'theta_ab': lambda: self.pixel_aberrations * self.ref_ap,
+                      'phase'   : lambda: 2.0 * np.pi / self.wavelength * np.cumsum(self.theta_ab * self.pixel_size)}
+
+        super(AberrationsFit, self).__init__(init_funcs=init_funcs, parent=parent, **kwargs)
         self.phase -= self.phase.mean()
 
     @dict_to_object
@@ -183,7 +200,7 @@ class AberrationsFit(DataContainer):
         Returns:
             New :class:`AberrationsFit` object with the updated `roi`.
         """
-        return {'st_data': self._reference, 'roi': np.asarray(roi, dtype=int)}
+        return {'roi': np.asarray(roi, dtype=int)}
 
     @dict_to_object
     def remove_linear_term(self, fit: Optional[np.ndarray]=None, xtol: float=1e-14,
@@ -222,8 +239,7 @@ class AberrationsFit(DataContainer):
                                    roi=self.roi, max_order=1, xtol=xtol,
                                    ftol=ftol, loss=loss)[0]
         pixel_aberrations = self.pixel_aberrations - self.model(fit)
-        return {'st_data': self._reference, 'pixel_aberrations': pixel_aberrations,
-                'theta_ab': None, 'phase': None}
+        return {'pixel_aberrations': pixel_aberrations, 'theta_ab': None, 'phase': None}
 
     @dict_to_object
     def update_center(self, center: float) -> AberrationsFit:
@@ -240,11 +256,11 @@ class AberrationsFit(DataContainer):
         """
         if center <= self.pixels[0]:
             pixels = self.pixels - center
-            return {'st_data': self._reference, 'pixels': pixels}
+            return {'pixels': pixels}
         elif center >= self.pixels[-1]:
             pixels = center - self.pixels
             idxs = np.argsort(self.pixels)
-            return {'st_data': self._reference, 'pixels': pixels[idxs], 'thetas': None,
+            return {'pixels': pixels[idxs], 'thetas': None,
                     'pixel_aberrations': -self.pixel_aberrations[idxs], 'theta_ab': None}
         else:
             raise ValueError('Origin must be outside of the region of interest')
@@ -256,8 +272,7 @@ class AberrationsFit(DataContainer):
         Returns:
             New :class:`AberrationsFit` object with the updated `phase`.
         """
-        return {'st_data': self._reference, 'theta_ab': None,
-                'phase': None}
+        return {'theta_ab': None, 'phase': None}
 
     def get(self, attr: str, value: Optional[Any]=None) -> Any:
         """Return a dataset with `mask` and `roi` applied. Return `value`

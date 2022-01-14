@@ -179,7 +179,7 @@ class INIParser:
             return fmt(string.strip())
 
     @classmethod
-    def _import_ini(cls, protocol_file: str) -> Dict:
+    def _import_ini(cls, protocol_file: str) -> Dict[str, Dict[str, Any]]:
         ini_parser = cls.read_ini(protocol_file)
         kwargs = {}
         for section in cls.attr_dict:
