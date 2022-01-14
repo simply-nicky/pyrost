@@ -48,7 +48,6 @@ class STSim(DataContainer):
         **Necessary attributes**:
 
         * backend : the backend library for the FFT implementation.
-        * num_threads : Number of threads used in the calculations.
         * params : Experimental parameters.
 
         **Optional attributes**:
@@ -62,6 +61,7 @@ class STSim(DataContainer):
           y axis.
         * lens_wfx : Wavefront at the lens plane along the x axis.
         * lens_wfy : Wavefront at the lens plane along the y axis.
+        * num_threads : Number of threads used in the calculations.
         * n_x : Wavefront size along the x axis.
         * n_y : Wavefront size along the y axis.
         * roi : Region of interest in detector plane.

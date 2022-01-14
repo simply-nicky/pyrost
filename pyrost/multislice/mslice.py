@@ -25,7 +25,7 @@ Examples:
 """
 from __future__ import annotations
 from multiprocessing import cpu_count
-from typing import Iterable, Optional, Tuple, Union
+from typing import Iterable, Optional, Tuple
 from tqdm.auto import tqdm
 import numpy as np
 from .ms_parameters import MSParams
@@ -36,23 +36,17 @@ class MLL(DataContainer):
     """
     Multilayer Laue lens class.
 
-    Parameters
-    ----------
-    layers : numpy.ndarray
-        MLL's bilayers x coordinates [um].
-    mat1_r, mat2_r : complex
-        Fresnel transmission coefficients for each of the materials,
-        that the MLL's bilayers are composed of. The coefficients are the
-        ratio of a wavefield propagating through a single slice of the
-        lens.
-    sigma : float
-        Bilayer's interdiffusion length [um].
-
-    Attributes
-    ----------
-    attr_set : set
-        Set of the attributes in the container which are necessary
-        to initialize in the constructor.
+    Attributes:
+        layers : MLL's bilayers x coordinates [um].
+        mat1_r: Fresnel transmission coefficients for the first material,
+            that the MLL's bilayers are composed of. The coefficients are the
+            ratio of a wavefield propagating through a single slice of the
+            lens.
+        mat2_r: Fresnel transmission coefficients for the second material,
+            that the MLL's bilayers are composed of. The coefficients are the
+            ratio of a wavefield propagating through a single slice of the
+            lens.
+        sigma : Bilayer's interdiffusion length [um].
     """
     attr_set = {'layers', 'mat1_r', 'mat2_r', 'sigma'}
     en_to_wl = 1.239841929761768 # h * c / e [eV * um]
@@ -64,30 +58,39 @@ class MLL(DataContainer):
 
     def __init__(self, mat1_r: complex, mat2_r: complex, sigma: float,
                  layers: np.ndarray) -> None:
+        """
+        Args:
+            mat1_r: Fresnel transmission coefficients for the first material,
+                that the MLL's bilayers are composed of. The coefficients are the
+                ratio of a wavefield propagating through a single slice of the
+                lens.
+            mat2_r: Fresnel transmission coefficients for the second material,
+                that the MLL's bilayers are composed of. The coefficients are the
+                ratio of a wavefield propagating through a single slice of the
+                lens.
+            sigma : Bilayer's interdiffusion length [um].
+            layers : MLL's bilayers x coordinates [um].
+        """
         super(MLL, self).__init__(mat1_r=mat1_r, mat2_r=mat2_r, sigma=sigma,
                                   layers=layers)
 
     @classmethod
     def import_params(cls, params: MSParams) -> MLL:
-        """Return a new :class:`MLL` object import from the
-        :class:`MSParams` multislice parameters object.
+        """Return a new :class:`MLL` object import from the :class:`MSParams`
+        multislice parameters object.
 
-        Parameters
-        ----------
-        params : MSParams
-            Experimental parameters of the multislice beam
-            propagation simulation.
+        Args:
+            params : Experimental parameters of the multislice beam
+                propagation simulation.
 
-        Returns
-        -------
-        mll : MLL
+        Returns:
             New :class:`MLL` object.
         """
         n_arr = np.arange(params.n_min, params.n_max)
         z_coords = params.z_step * np.arange(params.mll_depth // params.z_step)
         layers = np.sqrt(n_arr * params.focus * params.mll_wl + \
-                              n_arr**2 * params.mll_wl**2 / 4)
-        layers = layers * (1 - z_coords[:, None] / (2 * params.focus))
+                         0.25 * n_arr**2 * params.mll_wl**2)
+        layers = layers * (1.0 - z_coords[:, None] / (2.0 * params.focus))
         mat1_r = params.get_mat1_r(cls.en_to_wl / params.wl)
         mat2_r = params.get_mat2_r(cls.en_to_wl / params.wl)
         sigma = params.mll_sigma
@@ -103,34 +106,26 @@ class MLL(DataContainer):
     def update_interdiffusion(self, sigma: float) -> MLL:
         """Return a new :class:`MLL` object with the updated `sigma`.
 
-        Parameters
-        ----------
-        sigma : float
-            Bilayer's interdiffusion length [um].
+        Args:
+            sigma : Bilayer's interdiffusion length [um].
 
-        Returns
-        -------
-        mll : MLL
+        Returns:
             New :class:`MLL` object with the updated `sigma`.
         """
         return {'sigma': sigma}
 
     @dict_to_object
     def update_materials(self, mat1_r: complex, mat2_r: complex) -> MLL:
-        """Return a new :class:`MLL` object with the updated materials
-        `mat1_r` and `mat2_r`.
+        """Return a new :class:`MLL` object with the updated materials `mat1_r`
+        and `mat2_r`.
 
-        Parameters
-        ----------
-        mat1_r, mat2_r : complex
-            Fresnel transmission coefficients for each of the materials,
-            that the MLL's bilayers are composed of. The coefficients are the
-            ratio of a wavefield propagating through a single slice of the
-            lens.
+        Args:
+            mat1_r, mat2_r : Fresnel transmission coefficients for each of the
+                materials, that the MLL's bilayers are composed of. The coefficients
+                are the ratio of a wavefield propagating through a single slice of
+                the lens.
 
-        Returns
-        -------
-        mll : MLL
+        Returns:
             New :class:`MLL` object with the updated `mat1_r` and `mat2_r`.
         """
         return {'mat1_r': mat1_r, 'mat2_r': mat2_r}
@@ -139,9 +134,7 @@ class MLL(DataContainer):
         """Return the pair of bounds (x_min, x_max) of the MLL
         along the x axis.
 
-        Returns
-        -------
-        x_min, x_max : float
+        Returns:
             MLL's bounds along the x axis [um].
         """
         return (self.layers.min(), self.layers.max())
@@ -151,18 +144,12 @@ class MLL(DataContainer):
         """Return a generator, that yields transmission profiles of
         the lens at each slice and writes to `output` array.
 
-        Parameters
-        ----------
-        x_arr : numpy.ndarray
-            Coordinates array [um].
-        output: numpy.ndarray
-            Output array.
-        num_threads : int, optional
-            Number of threads.
+        Args:
+            x_arr : Coordinates array [um].
+            output : Output array.
+            num_threads : Number of threads.
 
-        Returns
-        -------
-        slices : iterable
+        Returns:
             The generator, which yields lens' transmission profiles.
         """
         for idx, layer in enumerate(self.layers):
@@ -176,43 +163,27 @@ class MSPropagator(DataContainer):
     Generates beam profile, that propagates through the sample
     using multislice approach.
 
-    Parameters
-    ----------
-    params : MSParams
-        Experimental parameters
-    sample : MLL
-        Sample class, that generates the sample's
-        transmission profile.
-    num_threads : int, optional
-        Number of threads used in the calculations.
-    **kwargs : dict
-        Attributes specified in `init_set`.
+    Attributes:
+        attr_set : Set of attributes in the container which are necessary
+            to initialize in the constructor.
+        init_set : Set of optional data attributes.
 
-    Attributes
-    ----------
-    attr_set : set
-        Set of attributes in the container which are necessary
-        to initialize in the constructor.
-    init_set : set
-        Set of optional data attributes.
+    Notes:
+        **Necessary attributes**:
 
-    Notes
-    -----
-    Necessary attributes:
+        * sample : Sample's transmission profile generator.
+        * num_threads : Number of threads used in the calculations.
+        * params : Experimental parameters.
 
-    * sample : Sample's transmission profile generator.
-    * num_threads : Number of threads used in the calculations.
-    * params : Experimental parameters.
+        **Optional attributes**:
 
-    Optional attributes:
-
-    * beam_profile : Beam profiles at each slice.
-    * fx_arr : Spatial frequencies array [um^-1].
-    * kernel : Diffraction kernel.
-    * smp_profile : Sample's transmission profile at each slice.
-    * x_arr : Coordinates array in the transverse plane [um].
-    * wf_inc : Wavefront at the entry surface.
-    * z_arr : Coordinates array along the propagation axis [um].
+        * beam_profile : Beam profiles at each slice.
+        * fx_arr : Spatial frequencies array [um^-1].
+        * kernel : Diffraction kernel.
+        * smp_profile : Sample's transmission profile at each slice.
+        * x_arr : Coordinates array in the transverse plane [um].
+        * wf_inc : Wavefront at the entry surface.
+        * z_arr : Coordinates array along the propagation axis [um].
     """
     attr_set = {'params', 'sample'}
     init_set = {'beam_profile', 'fx_arr', 'kernel', 'num_threads', 'smp_profile', 'x_arr',
@@ -236,6 +207,14 @@ class MSPropagator(DataContainer):
 
     def __init__(self, params: MSParams, sample: MLL, num_threads: Optional[int]=None,
                  **kwargs: np.ndarray) -> None:
+        """
+        Args:
+            params : Experimental parameters.
+            sample : Sample class, that generates the sample's
+                transmission profile.
+            num_threads : Number of threads used in the calculations.
+            kwargs : Attributes specified in `init_set`.
+        """
         init_funcs = {'num_threads': lambda: np.clip(1, 64, cpu_count()),
                       'x_arr': self.params.get_xcoords, 'z_arr': self.params.get_zcoords,
                       'fx_arr': lambda: np.fft.fftfreq(self.size, self.params.x_step),
@@ -260,14 +239,10 @@ class MSPropagator(DataContainer):
     def update_inc_wavefront(self, wf_inc: np.ndarray) -> MSPropagator:
         """Return a new :class:`MSPropagator` object with the updated `wf_inc`.
 
-        Parameters
-        ----------
-        wf_inc : numpy.ndarray
-            Wavefront at the entry surface.
+        Args:
+            wf_inc : Wavefront at the entry surface.
 
-        Returns
-        -------
-        MSPropagator
+        Returns:
             A new :class:`MSPropagator` object with the updated `wf_inc`.
         """
         if wf_inc.shape != self.x_arr.shape:
@@ -280,10 +255,8 @@ class MSPropagator(DataContainer):
         """Generate the transmission profile of the sample. The results are
         written to `smp_profile` attribute.
 
-        Parameters
-        ----------
-        verbose : bool, optional
-            Set verbosity of the computation process.
+        Args:
+            verbose : Set verbosity of the computation process.
         """
         self.smp_profile = empty_aligned((self.sample.n_slices, self.x_arr.size),
                                          dtype='complex128')
@@ -303,10 +276,8 @@ class MSPropagator(DataContainer):
         written to `beam_profile` attribute. Generates `smp_profile`
         attribute if it wasn't initialized before.
 
-        Parameters
-        ----------
-        verbose : bool, optional
-            Set verbosity of the computation process.
+        Args:
+            verbose : Set verbosity of the computation process.
         """
         self.beam_profile = empty_aligned((self.sample.n_slices + 1, self.x_arr.size),
                                           dtype='complex128')
@@ -344,37 +315,33 @@ class MSPropagator(DataContainer):
 
     def beam_downstream(self, z_arr: np.ndarray, step: Optional[float]=None,
                         return_coords: bool=True, verbose: bool=True,
-                        backend: str='fftw') -> Union[Tuple[np.ndarray, np.ndarray], np.ndarray]:
-        """Return the wavefront at distance `z_arr` downstream from
-        the exit surface using Rayleigh-Sommerfeld convolution.
+                        backend: str='fftw') -> Tuple[np.ndarray, np.ndarray]:
+        """Return the wavefront at distance `z_arr` downstream from the exit
+        surface using Rayleigh-Sommerfeld convolution.
 
-        Parameters
-        ----------
-        z_arr : numpy.ndarray
-            Array of distances [um].
-        step : float, optional
-            Sampling interval of the downstream coordinate array [um].
-            Equals to the sampling interval at the exit surface if it's
-            None.
-        return_coords : bool, optional
-            Return the coordinates array of the downstream plane.
-        verbose : bool, optional
-            Set verbosity of the computation process.
+        Args:
+            z_arr : Array of distances [um].
+            step : Sampling interval of the downstream coordinate array [um].
+                Equals to the sampling interval at the exit surface if it's
+                None.
+            return_coords : Return the coordinates array of the downstream
+                plane.
+            verbose : Set verbosity of the computation process.
+            backend : Choose between numpy ('numpy') or FFTW ('fftw') library
+                for the FFT implementation.
 
-        Returns
-        -------
-        wavefronts : numpy.ndarray
-            Set of wavefronts calculated at the distance `z_arr`
-            downstream from the exit surface.
-        x_arr : numpy.ndarray
-            Array of coordinates at the plane downstream [um].
-            Only if `return_coords` is True.
+        Raises:
+            AttributeError : If `beam_profile` has not been generated. Call
+                :func:`MSPropagator.beam_propagate` to generate.
 
-        Raises
-        ------
-        AttributeError
-            If `beam_profile` has not been generated. Call
-            :func:`MSPropagator.beam_propagate` to generate.
+        Returns:
+            A tuple of two elements ('wavefronts', 'x_arr'). The elements
+            are the following:
+
+            * 'wavefronts' : Set of wavefronts calculated at the distance
+              `z_arr` downstream from the exit surface.
+            * 'x_arr' : Array of coordinates at the plane downstream [um].
+              Only if `return_coords` is True.
         """
         if self.beam_profile is None:
             raise AttributeError('The beam profile has not been generated')
