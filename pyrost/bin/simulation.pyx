@@ -321,7 +321,7 @@ def fraunhofer_wp(np.ndarray wft not None, double dx0, double dx, double z,
 def gaussian_kernel(double sigma, unsigned order=0, double truncate=4.):
     """Discrete Gaussian kernel.
     
-    Parameters:
+    Args:
         sigma (float) : Standard deviation for Gaussian kernel.
         order (int) : The order of the filter. An order of 0 corresponds to
             convolution with a Gaussian kernel. A positive order corresponds
