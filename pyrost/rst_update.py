@@ -204,14 +204,16 @@ class SpeckleTracking(DataContainer):
         if self.reference_image is None:
             raise AttributeError('The reference image has not been generated')
 
-        grid_size = extra_args.get('grid_size', max(int(0.5 * sw_x + sw_y), 2))
-        n_trials = extra_args.get('n_trials', max(int(0.25 * (sw_x + sw_y)**2), 2))
         n_iter = extra_args.get('n_iter', 5)
-        pop_size = extra_args.get('pop_size', max(int(0.25 * (sw_x + sw_y)**2) / n_iter, 4))
         mutation = extra_args.get('mutation', 0.75)
         recombination = extra_args.get('recombination', 0.7)
         seed = extra_args.get('seed', np.random.default_rng().integers(0, np.iinfo(np.int_).max,
                                                                        endpoint=False))
+
+        kdim = 0.5 if sw_y else 1.0
+        grid_size = extra_args.get('grid_size', max(int(kdim * (sw_x + sw_y)), 2))
+        n_trials = extra_args.get('n_trials', max(int(kdim**2 * (sw_x + sw_y)**2), 2))
+        pop_size = extra_args.get('pop_size', max(int(kdim**2 * (sw_x + sw_y)**2) / n_iter, 4))
 
         if method == 'gsearch':
             pm, derr = pm_gsearch(I_n=self.data, W=self.whitefield, I0=self.reference_image,
@@ -373,8 +375,8 @@ class SpeckleTracking(DataContainer):
         else:
             raise ValueError('kind keyword is invalid')
 
-    def find_hopt(self, h0: float=1.0, alpha: float=0.5, method: str='KerReg', loss: str='Epsilon',
-                  epsilon: float=1e-4, verbose: bool=False) -> float:
+    def find_hopt(self, h0: float=1.0, alpha: float=0.5, method: str='KerReg',
+                  loss: str='Epsilon', epsilon: float=1e-4, verbose: bool=False) -> float:
         """Find the optimal kernel bandwidth using the BFGS algorithm.
 
         Args:
@@ -405,30 +407,27 @@ class SpeckleTracking(DataContainer):
         return hopt.item()
 
     def iter_update_gd(self, sw_x: float, sw_y: float=0.0, blur: float=0.0,
-                       h0: Optional[float]=None, n_iter: int=30, f_tol: float=0.,
+                       h0: Optional[float]=None, n_iter: int=30, f_tol: float=1e-8,
                        ref_method: str='KerReg', pm_method: str='gsearch',
                        pm_args: Dict[str, Union[bool, int, float, str]]={},
                        options: Dict[str, Union[bool, float, str]]={},
                        verbose: bool=True) -> Tuple[SpeckleTracking, Dict[str, List[float]]]:
-        """Perform iterative Robust Speckle Tracking update. `h0` and
-        `blur` define high frequency cut-off to supress the noise. `h0`
-        is iteratively updated by dint of Gradient Descent. Iterative update
-        terminates when the difference between total mean-squared-error (MSE)
-        values of the two last iterations is less than `f_tol`.
+        """Perform iterative Robust Speckle Tracking update. `h0` and `blur` define
+        high frequency cut-off to supress the noise. `h0` is iteratively updated by
+        dint of Gradient Descent. Iterative update terminates when the change of the
+        total mean-squared-error (MSE) becomes too small (see `f_tol` for more info).
 
         Args:
-            sw_x : Search window size in pixels along the horizontal
-                detector axis.
-            sw_y : Search window size in pixels along the vertical detector
-                axis.
-            blur : Smoothing kernel bandwidth used in `pixel_map`
-                regularisation. The value is given in pixels.
-            h0 : Smoothing kernel bandwidth used in `reference_image`
-                estimation. The value is given in pixels. The value
-                is estimated using :func:`SpeckleTracking.find_hopt`
-                by default.
+            sw_x : Search window size in pixels along the horizontal detector axis.
+            sw_y : Search window size in pixels along the vertical detector axis.
+            blur : Smoothing kernel bandwidth used in `pixel_map` regularisation.
+                The value is given in pixels.
+            h0 : Smoothing kernel bandwidth used in `reference_image` estimation.
+                The value is given in pixels. The value is estimated with
+                :func:`SpeckleTracking.find_hopt` by default.
             n_iter : Maximum number of iterations.
-            f_tol : Tolerance for termination by the change of the total MSE.
+            f_tol : Tolerance for termination by the change of the total MSE. The
+                iteration stops when ``(f^k - f^{k+1})/max{|f^k|,|f^{k+1}|,1} <= ftol``.
             ref_method : `reference_image` update algorithm. The following
                 keyword values are allowed:
 
@@ -557,14 +556,14 @@ class SpeckleTracking(DataContainer):
         obj = self.update_reference(hval=h0, method=ref_method)
         obj.update_errors.inplace_update(loss=pm_loss)
 
-        extra = {'errors': [obj.error], 'hvals': [h0]}
+        errors = [obj.error,]
+        hvals = [h0,]
 
         itor = tqdm(range(1, n_iter + 1), disable=not verbose,
                     bar_format='{desc} {percentage:3.0f}% {bar} ' \
                     'Iteration {n_fmt} / {total_fmt} [{elapsed}<{remaining}, {rate_fmt}{postfix}]')
         if verbose:
-            print(f"Initial MSE = {extra['errors'][-1]:.6f}, "\
-                  f"Initial h0 = {extra['hvals'][-1]:.2f}")
+            print(f"Initial MSE = {errors[-1]:.6f}, Initial h0 = {hvals[-1]:.2f}")
 
         for _ in itor:
             # Update pixel_map
@@ -592,51 +591,48 @@ class SpeckleTracking(DataContainer):
                                                    method=ref_method, loss=ref_loss)
 
             h0 = h0 - step * gfk
-            extra['hvals'].append(h0)
+            hvals.append(h0)
 
             # Update reference_image
             new_obj.update_reference.inplace_update(hval=h0, method=ref_method)
 
             new_obj.update_errors.inplace_update(loss=pm_loss)
-            extra['errors'].append(new_obj.error)
+            errors.append(new_obj.error)
             if verbose:
-                itor.set_description(f"Total MSE = {extra['errors'][-1]:.6f}, "\
-                                     f"hval = {extra['hvals'][-1]:.2f}")
+                itor.set_description(f"Total MSE = {errors[-1]:.6f}, hval = {hvals[-1]:.2f}")
 
             # Break if function tolerance is satisfied
-            if (extra['errors'][-2] - extra['errors'][-1]) > f_tol:
+            if (errors[-2] - errors[-1]) / max(errors[-2], errors[-1]) > f_tol:
                 obj = new_obj
 
             else:
                 break
 
         if return_extra:
-            return obj, extra
+            return obj, {'errors': errors, 'hvals': hvals}
         return obj
 
     def iter_update(self, sw_x: float, sw_y: float=0.0, blur: float=0.0,
-                    h0: Optional[float]=None, n_iter: int=30, f_tol: float=0.,
+                    h0: Optional[float]=None, n_iter: int=30, f_tol: float=1e-8,
                     ref_method: str='KerReg', pm_method: str='gsearch',
                     pm_args: Dict[str, Union[bool, int, float, str]]={},
                     options: Dict[str, Union[bool, float, str]]={},
                     verbose: bool=True) -> Tuple[SpeckleTracking, List[float]]:
-        """Perform iterative Robust Speckle Tracking update. `h0` and
-        `blur` define high frequency cut-off to supress the noise and stay
-        constant during the update. Iterative update terminates when
-        the difference between total mean-squared-error (MSE) values
-        of the two last iterations is less than `f_tol`.
+        """Perform iterative Robust Speckle Tracking update. `h0` and `blur` define
+        high frequency cut-off to supress the noise and stay constant during the
+        update. Iterative update terminates when the change of the total
+        mean-squared-error (MSE) becomes too small (see `f_tol` for more info).
 
         Args:
-            sw_x : Search window size in pixels along the horizontal detector
-                axis.
-            sw_y : Search window size in pixels along the vertical detector
-                axis.
-            blur : Smoothing kernel bandwidth used in `pixel_map`
-                regularisation. The value is given in pixels.
-            h0 : Smoothing kernel bandwidth used in `reference_image`
-                regression. The value is given in pixels.
+            sw_x : Search window size in pixels along the horizontal detector axis.
+            sw_y : Search window size in pixels along the vertical detector axis.
+            blur : Smoothing kernel bandwidth used in `pixel_map` regularisation.
+                The value is given in pixels.
+            h0 : Smoothing kernel bandwidth used in `reference_image` regression.
+                The value is given in pixels.
             n_iter : Maximum number of iterations.
-            f_tol : Tolerance for termination by the change of the total MSE.
+            f_tol : Tolerance for termination by the change of the total MSE. The
+                iteration stops when ``(f^k - f^{k+1})/max{|f^k|,|f^{k+1}|,1} <= ftol``.
             ref_method : `reference_image` update algorithm. The following keyword
                 values are allowed:
 
@@ -764,7 +760,7 @@ class SpeckleTracking(DataContainer):
                 itor.set_description(f"Total MSE = {errors[-1]:.6f}")
 
             # Break if function tolerance is satisfied
-            if (errors[-2] - errors[-1]) > f_tol:
+            if (errors[-2] - errors[-1]) / max(errors[-2], errors[-1]) > f_tol:
                 obj = new_obj
 
             else:
