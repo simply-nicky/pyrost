@@ -1,4 +1,4 @@
-#cython: language_level=3, boundscheck=False, wraparound=False, initializedcheck=False, cdivision=True, embedsignature=True
+#cython: language_level=3, boundscheck=True, wraparound=False, initializedcheck=False, cdivision=True, embedsignature=True, linetrace=True, profile=True
 cdef extern from "Python.h":
     int Py_AtExit(void(*func)())
 

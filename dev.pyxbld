@@ -17,4 +17,5 @@ def make_ext(modname, pyxfilename):
                      include_dirs=[numpy.get_include(),
                                    os.path.join(sys.prefix, 'include'),
                                    os.path.join(os.path.dirname(__file__),
-                                   'pyrost/include')])
+                                   'pyrost/include')],
+                     define_macros=[('CYTHON_TRACE', '1'), ('CYTHON_TRACE_NOGIL', '1')])

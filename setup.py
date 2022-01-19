@@ -13,7 +13,8 @@ else:
 
 ext = '.pyx' if USE_CYTHON else '.c'
 extension_args = {'language': 'c',
-                  'extra_compile_args': ['-fopenmp', '-std=c99', '-Wno-unreachable-code', '-Wno-sometimes-uninitialized', '-Wno-unused-variable'],
+                  'extra_compile_args': ['-fopenmp', '-std=c99', '-Wno-unreachable-code', '-Wno-maybe-uninitialized',
+                                         '-Wno-sometimes-uninitialized', '-Wno-unused-variable'],
                   'extra_link_args': ['-lgomp', '-Wl,-rpath,/usr/local/lib'],
                   'libraries': ['gsl', 'gslcblas', 'fftw3', 'fftw3_omp'],
                   'library_dirs': ['/usr/local/lib',

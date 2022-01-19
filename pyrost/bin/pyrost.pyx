@@ -649,6 +649,8 @@ def pm_gsearch(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None, float
     """
     if ds_y <= 0.0 or ds_x <= 0.0:
         raise ValueError('Sampling intervals must be positive')
+    if grid_size <= 1:
+        raise ValueError('grid_size must be more than 1')
 
     cdef loss_func f = choose_loss(loss)
 
@@ -752,6 +754,8 @@ def pm_rsearch(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None, float
     """
     if ds_y <= 0.0 or ds_x <= 0.0:
         raise ValueError('Sampling intervals must be positive')
+    if n_trials <= 1:
+        raise ValueError('n_tirals must be more than 1')
 
     cdef loss_func f = choose_loss(loss)
 
@@ -1038,6 +1042,8 @@ def tr_gsearch(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None, float
     """
     if ds_y <= 0.0 or ds_x <= 0.0:
         raise ValueError('Sampling intervals must be positive')
+    if grid_size <= 1:
+        raise ValueError('grid_size must be more than 1')
 
     cdef loss_func f = choose_loss(loss)
 

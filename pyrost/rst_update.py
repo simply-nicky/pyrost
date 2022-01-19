@@ -204,8 +204,8 @@ class SpeckleTracking(DataContainer):
         if self.reference_image is None:
             raise AttributeError('The reference image has not been generated')
 
-        grid_size = extra_args.get('grid_size', int(0.5 * sw_x + sw_y))
-        n_trials = extra_args.get('n_trials', int(0.25 * (sw_x + sw_y)**2))
+        grid_size = extra_args.get('grid_size', max(int(0.5 * sw_x + sw_y), 2))
+        n_trials = extra_args.get('n_trials', max(int(0.25 * (sw_x + sw_y)**2), 2))
         n_iter = extra_args.get('n_iter', 5)
         pop_size = extra_args.get('pop_size', max(int(0.25 * (sw_x + sw_y)**2) / n_iter, 4))
         mutation = extra_args.get('mutation', 0.75)
