@@ -438,7 +438,7 @@ class STData(DataContainer):
         * defocus_y : Defocus distance for the vertical detector axis [m].
         * error_frame : MSE (mean-squared-error) of the reference image
           and pixel mapping fit per pixel.
-        * flatfields : Set of flatfields for each of the measured images.
+        * whitefields : Set of dynamic whitefields for each of the measured images.
         * good_frames : An array of good frames' indices.
         * mask : Bad pixels mask.
         * num_threads : Number of threads used in computations.
@@ -451,14 +451,13 @@ class STData(DataContainer):
           plane in pixels.
         * reference_image : The unabberated reference image of the sample.
         * roi : Region of interest in the detector plane.
-        * sigma : Standard deviation of measured frames.
         * whitefield : Measured frames' whitefield.
     """
     attr_set = {'protocol', 'basis_vectors', 'data', 'distance', 'translations', 'wavelength',
                 'x_pixel_size', 'y_pixel_size'}
-    init_set = {'defocus_x', 'defocus_y', 'error_frame', 'flatfields', 'good_frames',
-                'mask', 'num_threads', 'phase', 'pixel_aberrations', 'pixel_map',
-                'pixel_translations', 'reference_image', 'roi', 'sigma', 'whitefield'}
+    init_set = {'defocus_x', 'defocus_y', 'error_frame', 'good_frames', 'mask', 'num_threads',
+                'phase', 'pixel_aberrations', 'pixel_map', 'pixel_translations',
+                'reference_image', 'roi', 'whitefield', 'whitefields'}
 
     # Necessary attributes
     protocol            : CXIProtocol
@@ -476,7 +475,6 @@ class STData(DataContainer):
     good_frames         : np.ndarray
     mask                : np.ndarray
     whitefield          : np.ndarray
-    sigma               : float
     pixel_map           : np.ndarray
     pixel_translations  : np.ndarray
 
@@ -484,10 +482,10 @@ class STData(DataContainer):
     defocus_x           : Optional[float]
     defocus_y           : Optional[float]
     error_frame         : Optional[np.ndarray]
-    flatfields          : Optional[np.ndarray]
     phase               : Optional[np.ndarray]
     pixel_aberrations   : Optional[np.ndarray]
     reference_image     : Optional[np.ndarray]
+    whitefields         : Optional[np.ndarray]
 
     def __init__(self, protocol: CXIProtocol=CXIProtocol.import_default(),
                  **kwargs: Union[int, float, np.ndarray]) -> None:
@@ -509,7 +507,6 @@ class STData(DataContainer):
                              good_frames=lambda: np.arange(self.data.shape[0]),
                              mask=lambda: np.ones(self.data.shape, dtype=bool),
                              whitefield=self._whitefield, defocus_y=lambda: self.get('defocus_x', None),
-                             sigma=lambda: np.std(self.get('data') * self.get('mask')),
                              pixel_map=self._pixel_map, pixel_translations=self._pixel_translations)
 
         self._init_attributes()
@@ -594,7 +591,7 @@ class STData(DataContainer):
         Returns:
             New :class:`STData` object with the updated `roi`.
         """
-        return {'roi': np.asarray(roi, dtype=int), 'flatfields': None, 'sigma': None}
+        return {'roi': np.asarray(roi, dtype=int), 'whitefields': None}
 
     @dict_to_object
     def integrate_data(self, axis: int=0) -> STData:
@@ -615,8 +612,8 @@ class STData(DataContainer):
         data[self.good_frames, self.roi[0]:self.roi[1],
              self.roi[2]:self.roi[3]] = self.get('data') * self.get('mask')
         return {'data': np.sum(data, axis=axis + 1, keepdims=True),
-                'flatfields': None, 'mask': None, 'pixel_map': None,
-                'pixel_translations': None, 'roi': roi, 'sigma': None,
+                'whitefields': None, 'mask': None, 'pixel_map': None,
+                'pixel_translations': None, 'roi': roi,
                 'whitefield': None}
 
     @dict_to_object
@@ -713,7 +710,7 @@ class STData(DataContainer):
         else:
             raise ValueError('Invalid update keyword')
 
-        return {'mask': mask_full, 'sigma': None, 'whitefield': None}
+        return {'mask': mask_full, 'whitefield': None}
 
     @dict_to_object
     def update_whitefield(self) -> STData:
@@ -1004,7 +1001,7 @@ class STData(DataContainer):
                         out=data, casting='unsafe')
         dij_pix = np.ascontiguousarray(np.swapaxes(self.get('pixel_translations'), 0, 1))
         return SpeckleTracking(parent=ref(self), data=data, dj_pix=dij_pix[1], di_pix=dij_pix[0],
-                               num_threads=self.num_threads, pixel_map=pixel_map, sigma=self.sigma,
+                               num_threads=self.num_threads, pixel_map=pixel_map,
                                ds_y=ds_y, ds_x=ds_x, whitefield=whitefield)
 
     def get_fit(self, center: int=0, axis: int=1) -> AberrationsFit:

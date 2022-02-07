@@ -320,30 +320,31 @@ def cxi_converter_sigray(scan_num: int, dir_path: str='/gpfs/cfel/group/cxi/labs
     data_dict['x_pixel_size'] *= 1e-6
     data_dict['y_pixel_size'] *= 1e-6
 
+    n_frames = data_dict['data'].shape[0]
     pix_vec = np.tile(np.array([[data_dict['x_pixel_size'], data_dict['y_pixel_size'], 0]]),
-                      (data_dict['data'].shape[0], 1))
+                      (n_frames, 1))
     data_dict['basis_vectors'] = np.stack([pix_vec * ss_vec, pix_vec * fs_vec], axis=1)
 
     with np.load(os.path.join(ROOT_PATH, 'data/sigray_mask.npz')) as mask_file:
         if mask_file['mask'].shape == data_dict['data'].shape[1:]:
             data_dict['mask'] = np.tile(mask_file['mask'][None],
-                                        (data_dict['data'].shape[0], 1, 1))
+                                        (n_frames, 1, 1))
 
     x_sample = log_attrs['Session logged attributes'].get('x_sample', 0.0)
     y_sample = log_attrs['Session logged attributes'].get('y_sample', 0.0)
     z_sample = log_attrs['Session logged attributes'].get('z_sample', 0.0)
     data_dict['translations'] = np.tile([[x_sample, y_sample, z_sample]],
-                                        (data_dict['data'].shape[0], 1))
+                                        (n_frames, 1))
     for data_key, log_dset in log_data.items():
         for log_key in log_prt.log_keys['x_sample']:
             if log_key in data_key:
-                data_dict['translations'][:, 0] = log_dset
+                data_dict['translations'][:, 0] = log_dset[:n_frames]
         for log_key in log_prt.log_keys['y_sample']:
             if log_key in data_key:
-                data_dict['translations'][:, 1] = log_dset
+                data_dict['translations'][:, 1] = log_dset[:n_frames]
         for log_key in log_prt.log_keys['z_sample']:
             if log_key in data_key:
-                data_dict['translations'][:, 2] = log_dset
+                data_dict['translations'][:, 2] = log_dset[:n_frames]
 
     if data_dict.get('distance', None) is None:
         if lens == 'up':

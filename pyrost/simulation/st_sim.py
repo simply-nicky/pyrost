@@ -31,7 +31,7 @@ from ..data_container import DataContainer, dict_to_object
 from ..data_processing import STData
 from .st_parameters import STParams
 from ..bin import rsc_wp, fraunhofer_wp, fft_convolve
-from ..bin import make_frames, median, gaussian_gradient_magnitude
+from ..bin import make_frames, gaussian_gradient_magnitude
 
 class STSim(DataContainer):
     """One-dimensional Speckle Tracking scan simulation class.

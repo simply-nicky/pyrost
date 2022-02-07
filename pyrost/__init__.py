@@ -15,5 +15,6 @@ from .cxi_protocol import CXIProtocol
 from .log_protocol import LogProtocol, cxi_converter_sigray, tilt_converter_sigray
 from .data_processing import STData, CXILoader
 from .rst_update import SpeckleTracking
+from .bfgs import BFGS
 from .aberrations_fit import AberrationsFit
 from . import bin

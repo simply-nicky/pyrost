@@ -2,6 +2,7 @@ import os
 import shutil
 from datetime import datetime
 import pytest
+import numpy as np
 import pyrost as rst
 import pyrost.simulation as st_sim
 
@@ -112,9 +113,10 @@ def test_st_update_exp(path, roi, defocus, loader):
     assert st_obj.pixel_map.dtype == loader.get_dtype('pixel_map')
 
 @pytest.mark.standalone
-def test_full(converter, ptych, sim_obj):
+def test_full(converter: st_sim.STConverter, ptych: np.ndarray, sim_obj: st_sim.STSim) -> None:
     data = converter.export_data(ptych, sim_obj)
     assert data.data.dtype == converter.protocol.get_dtype('data')
+    data = data.update_mask()
     st_obj = data.get_st()
     st_res = st_obj.iter_update_gd(sw_x=10, h0=15, blur=2.0, verbose=True, n_iter=10)
     data.update_phase(st_res)

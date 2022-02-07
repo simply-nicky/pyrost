@@ -8,11 +8,11 @@ from typing import Dict, List, Optional, Tuple, Union
 from weakref import ReferenceType
 from tqdm.auto import tqdm
 import numpy as np
-from scipy.optimize import approx_fprime, fmin_bfgs, line_search
 from .data_container import DataContainer, dict_to_object
+from .bfgs import BFGS
 from .bin import (gaussian_filter, KR_reference, LOWESS_reference, pm_gsearch,
                   pm_rsearch, pm_devolution, tr_gsearch, pm_errors, pm_total_error,
-                  ref_errors, ref_total_error, ct_integrate)
+                  ref_errors, ct_integrate)
 
 class SpeckleTracking(DataContainer):
     """Wrapper class for the  Robust Speckle Tracking algorithm.
@@ -67,8 +67,9 @@ class SpeckleTracking(DataContainer):
 
     """
     attr_set = {'data', 'dj_pix', 'di_pix', 'ds_y', 'ds_x', 'num_threads',
-                'parent', 'pixel_map', 'sigma', 'whitefield'}
-    init_set = {'error', 'hval', 'n0', 'm0', 'reference_image'}
+                'parent', 'pixel_map', 'whitefield'}
+    init_set = {'error', 'hval', 'n0', 'm0', 'reference_image', 'sigma', 'test_mask',
+                'train_mask'}
 
     def __init__(self, parent: ReferenceType, **kwargs: Union[int, float, np.ndarray]) -> None:
         """
@@ -83,16 +84,33 @@ class SpeckleTracking(DataContainer):
                 provided.
         """
         super(SpeckleTracking, self).__init__(parent=parent, **kwargs)
+        self._init_functions(sigma=lambda: np.sqrt(self.whitefield),
+                             test_mask=self._test_mask,
+                             train_mask=lambda: ~self.test_mask)
+        self._init_attributes()
+
+    def _test_mask(self, test_ratio=0.2):
+        idxs = np.random.choice(self.whitefield.size, size=int(self.whitefield.size * test_ratio),
+                                replace=False)
+        idxs = np.unravel_index(idxs, self.whitefield.shape)
+        test_mask = np.zeros(self.whitefield.shape, dtype=bool)
+        test_mask[idxs] = True
+        return test_mask
 
     def __repr__(self) -> str:
         with np.printoptions(threshold=6, edgeitems=2, suppress=True, precision=3):
             return {key: val.ravel() if isinstance(val, np.ndarray) else val
-                    for key, val in self.attr_dict.items()}.__repr__()
+                    for key, val in self.items()}.__repr__()
 
     def __str__(self) -> str:
         with np.printoptions(threshold=6, edgeitems=2, suppress=True, precision=3):
             return {key: val.ravel() if isinstance(val, np.ndarray) else val
-                    for key, val in self.attr_dict.items()}.__str__()
+                    for key, val in self.items()}.__str__()
+
+    @dict_to_object
+    def test_train_split(self, test_ratio=0.1):
+        test_mask = self._test_mask(test_ratio)
+        return {'test_mask': test_mask, 'train_mask': ~test_mask}
 
     @dict_to_object
     def update_reference(self, hval: float, method: str='KerReg') -> SpeckleTracking:
@@ -132,9 +150,9 @@ class SpeckleTracking(DataContainer):
         return {'hval': hval, 'n0': n0, 'm0': m0, 'reference_image': I0}
 
     @dict_to_object
-    def update_pixel_map(self, sw_x: float, sw_y: float=0.0, blur: float=0.0, integrate: bool=False,
-                         method: str='gsearch', extra_args: Dict[str, Union[int, float]]={},
-                         loss: str='Huber') -> SpeckleTracking:
+    def update_pixel_map(self, search_window: Tuple[float, float, float], blur: float=0.0,
+                         integrate: bool=False, method: str='gsearch',
+                         extra_args: Dict[str, Union[int, float]]={}) -> SpeckleTracking:
         """Return a new :class:`SpeckleTracking` object with
         the updated `pixel_map`.
 
@@ -176,12 +194,6 @@ class SpeckleTracking(DataContainer):
                 * 'seed' : Specify seed for the random number generation.
                   Generated automatically if not provided.
 
-            loss : Choose between the following loss functions:
-
-                * 'Epsilon': Epsilon loss function (epsilon = 0.25)
-                * 'Huber' : Huber loss function (k = 1.345)
-                * 'L1' : L1 norm loss function.
-                * 'L2' : L2 norm loss function.
 
         Returns:
             A new :class:`SpeckleTracking` object with the updated
@@ -209,31 +221,31 @@ class SpeckleTracking(DataContainer):
         recombination = extra_args.get('recombination', 0.7)
         seed = extra_args.get('seed', np.random.default_rng().integers(0, np.iinfo(np.int_).max,
                                                                        endpoint=False))
-
-        kdim = 0.5 if sw_y else 1.0
-        grid_size = extra_args.get('grid_size', max(int(kdim * (sw_x + sw_y)), 2))
-        n_trials = extra_args.get('n_trials', max(int(kdim**2 * (sw_x + sw_y)**2), 2))
-        pop_size = extra_args.get('pop_size', max(int(kdim**2 * (sw_x + sw_y)**2) / n_iter, 4))
+        grid_size = extra_args.get('grid_size', (int(0.5 * search_window[0]) + 1,
+                                                 int(0.5 * search_window[1]) + 1,
+                                                 int(50.0 * search_window[2]) + 1))
+        n_trials = extra_args.get('n_trials', max(np.prod(grid_size), 2))
+        pop_size = extra_args.get('pop_size', max(n_trials / n_iter, 4))
 
         if method == 'gsearch':
-            pm, derr = pm_gsearch(I_n=self.data, W=self.whitefield, I0=self.reference_image,
-                                   u0=self.pixel_map, di=self.di_pix - self.n0,
-                                   dj=self.dj_pix - self.m0, sw_y=sw_y, sw_x=sw_x,
-                                   grid_size=grid_size, ds_y=self.ds_y, ds_x=self.ds_x,
-                                   sigma=self.sigma, loss=loss, num_threads=self.num_threads)
+            pm, sigma, derr = pm_gsearch(I_n=self.data, W=self.whitefield, I0=self.reference_image,
+                                         u0=self.pixel_map, di=self.di_pix - self.n0,
+                                         dj=self.dj_pix - self.m0, search_window=search_window,
+                                         grid_size=grid_size, ds_y=self.ds_y, ds_x=self.ds_x,
+                                         sigma=self.sigma, num_threads=self.num_threads)
         elif method == 'rsearch':
-            pm, derr = pm_rsearch(I_n=self.data, W=self.whitefield, I0=self.reference_image,
-                                   u0=self.pixel_map, di=self.di_pix - self.n0,
-                                   dj=self.dj_pix - self.m0, sw_y=sw_y, sw_x=sw_x,
-                                   n_trials=n_trials, seed=seed, ds_y=self.ds_y, ds_x=self.ds_x,
-                                   sigma=self.sigma, loss=loss, num_threads=self.num_threads)
+            pm, sigma, derr = pm_rsearch(I_n=self.data, W=self.whitefield, I0=self.reference_image,
+                                         u0=self.pixel_map, di=self.di_pix - self.n0,
+                                         dj=self.dj_pix - self.m0, search_window=search_window,
+                                         n_trials=n_trials, seed=seed, ds_y=self.ds_y, ds_x=self.ds_x,
+                                         sigma=self.sigma, num_threads=self.num_threads)
         elif method == 'de':
-            pm, derr  = pm_devolution(I_n=self.data, W=self.whitefield, I0=self.reference_image,
-                                      u0=self.pixel_map, di=self.di_pix - self.n0,
-                                      dj=self.dj_pix - self.m0, sw_y=sw_y, sw_x=sw_x,
-                                      pop_size=pop_size, n_iter=n_iter, seed=seed, ds_y=self.ds_y,
-                                      ds_x=self.ds_x, sigma=self.sigma, F=mutation, CR=recombination,
-                                      loss=loss, num_threads=self.num_threads)
+            pm, sigma, derr = pm_devolution(I_n=self.data, W=self.whitefield, I0=self.reference_image,
+                                            u0=self.pixel_map, di=self.di_pix - self.n0,
+                                            dj=self.dj_pix - self.m0, search_window=search_window,
+                                            pop_size=pop_size, n_iter=n_iter, seed=seed,
+                                            ds_y=self.ds_y, ds_x=self.ds_x, sigma=self.sigma,
+                                            F=mutation, CR=recombination, num_threads=self.num_threads)
         else:
             raise ValueError('Method keyword is invalid')
 
@@ -242,6 +254,8 @@ class SpeckleTracking(DataContainer):
             norm = gaussian_filter(derr, (blur, blur))
             dpm = gaussian_filter(dpm * derr, (0, blur, blur),
                                   num_threads=self.num_threads) / norm
+            sigma = gaussian_filter(sigma * derr, (blur, blur),
+                                    num_threads=self.num_threads) / norm
 
         uy_avg, ux_avg = dpm.mean(axis=(1, 2))
         pm[0] = (dpm[0] - uy_avg) + self.pixel_map[0]
@@ -252,20 +266,12 @@ class SpeckleTracking(DataContainer):
             pm[0] = np.gradient(phi, axis=0)
             pm[1] = np.gradient(phi, axis=1)
 
-        return {'pixel_map': pm}
+        return {'pixel_map': pm, 'sigma': sigma}
 
     @dict_to_object
-    def update_errors(self, loss: str='Huber') -> SpeckleTracking:
+    def update_errors(self) -> SpeckleTracking:
         """Return a new :class:`SpeckleTracking` object with
         the updated mean residual `error`.
-
-        Args:
-            loss : Choose between the following loss functions:
-
-                * 'Epsilon': Epsilon loss function (epsilon = 0.25)
-                * 'Huber' : Huber loss function (k = 1.345)
-                * 'L1' : L1 norm loss function.
-                * 'L2' : L2 norm loss function.
 
         Returns:
             A new :class:`SpeckleTracking` object with the updated
@@ -286,13 +292,12 @@ class SpeckleTracking(DataContainer):
         error = pm_total_error(I_n=self.data, W=self.whitefield,
                                I0=self.reference_image, u=self.pixel_map,
                                di=self.di_pix - self.n0, dj=self.dj_pix - self.m0,
-                               ds_y=self.ds_y, ds_x=self.ds_x, sigma=self.sigma, loss=loss,
+                               ds_y=self.ds_y, ds_x=self.ds_x, sigma=self.sigma,
                                num_threads=self.num_threads)
         return {'error': error}
 
     @dict_to_object
-    def update_translations(self, sw_x: float, sw_y: float=0.0, blur=0.0,
-                            loss: str='Huber') -> SpeckleTracking:
+    def update_translations(self, sw_x: float, sw_y: float=0.0, blur=0.0) -> SpeckleTracking:
         """Return a new :class:`SpeckleTracking` object with
         the updated sample pixel translations (`di_pix`, `dj_pix`).
 
@@ -303,12 +308,6 @@ class SpeckleTracking(DataContainer):
                 axis.
             blur : Smoothing kernel bandwidth used in `dj_pix` and `di_pix`
                 post-update. The value is given in pixels.
-            loss : Choose between the following loss functions:
-
-                * 'Epsilon': Epsilon loss function (epsilon = 0.25)
-                * 'Huber' : Huber loss function (k = 1.345)
-                * 'L1' : L1 norm loss function.
-                * 'L2' : L2 norm loss function.
 
         Returns:
             A new :class:`SpeckleTracking` object with the updated
@@ -326,7 +325,7 @@ class SpeckleTracking(DataContainer):
         dij = tr_gsearch(I_n=self.data, W=self.whitefield, I0=self.reference_image,
                          u=self.pixel_map, di=self.di_pix - self.n0, dj=self.dj_pix - self.m0,
                          sw_y=sw_y, sw_x=sw_x, ds_y=self.ds_y, ds_x=self.ds_x,
-                         sigma=self.sigma, loss=loss, num_threads=self.num_threads)
+                         sigma=self.sigma, num_threads=self.num_threads)
 
         di_pix = np.ascontiguousarray(dij[:, 0]) + self.n0
         dj_pix = np.ascontiguousarray(dij[:, 1]) + self.m0
@@ -338,18 +337,12 @@ class SpeckleTracking(DataContainer):
 
         return {'di_pix': di_pix, 'dj_pix': dj_pix}
 
-    def error_profile(self, kind: str='pixel_map', loss: str='Huber') -> np.ndarray:
+    def error_profile(self, kind: str='pixel_map') -> np.ndarray:
         """Return a residual profile.
 
         Args:
             kind : Choose between generating the error metric of the pixel mapping
                 ('pixel_map') or reference image ('reference_image')update.
-            loss : Choose between the following loss functions:
-
-                * 'Epsilon': Epsilon loss function (epsilon = 0.25)
-                * 'Huber' : Huber loss function (k = 1.345)
-                * 'L1' : L1 norm loss function.
-                * 'L2' : L2 norm loss function.
 
         Raises:
             AttributeError : If `reference_image` was not generated beforehand.
@@ -364,19 +357,20 @@ class SpeckleTracking(DataContainer):
             return pm_errors(I_n=self.data, W=self.whitefield,
                              I0=self.reference_image, u=self.pixel_map,
                              di=self.di_pix - self.n0, dj=self.dj_pix - self.m0,
-                             ds_y=self.ds_y, ds_x=self.ds_x, sigma=self.sigma, loss=loss,
+                             ds_y=self.ds_y, ds_x=self.ds_x, sigma=self.sigma,
                              num_threads=self.num_threads)
         elif kind == 'reference':
             return ref_errors(I_n=self.data, W=self.whitefield, h=self.hval,
                               I0=self.reference_image, u=self.pixel_map,
                               di=self.di_pix - self.n0, dj=self.dj_pix - self.m0,
-                              ds_y=self.ds_y, ds_x=self.ds_x, sigma=self.sigma, loss=loss,
+                              ds_y=self.ds_y, ds_x=self.ds_x, sigma=self.sigma,
                               num_threads=self.num_threads)
         else:
             raise ValueError('kind keyword is invalid')
 
-    def find_hopt(self, h0: float=1.0, alpha: float=0.5, method: str='KerReg',
-                  loss: str='Epsilon', epsilon: float=1e-4, verbose: bool=False) -> float:
+    def find_hopt(self, h0: float=1.0, method: str='KerReg',
+                  epsilon: float=1e-4, maxiter: int=50, gtol: float=1e-5,
+                  verbose: bool=False) -> float:
         """Find the optimal kernel bandwidth using the BFGS algorithm.
 
         Args:
@@ -388,13 +382,6 @@ class SpeckleTracking(DataContainer):
                 * 'KerReg' : Kernel regression algorithm.
                 * 'LOWESS' : Local weighted linear regression.
 
-            loss : Choose between the following loss functions:
-
-                * 'Epsilon': Epsilon loss function (epsilon = 0.25).
-                * 'Huber' : Huber loss function (k = 1.345).
-                * 'L1' : L1 norm loss function.
-                * 'L2' : L2 norm loss function.
-
             epsilon : The step size used in the estimation of the fitness
                 gradient.
             verbose : Print convergence message if True.
@@ -402,11 +389,21 @@ class SpeckleTracking(DataContainer):
         Returns:
             Optimal kernel bandwidth in pixels.
         """
-        hopt = fmin_bfgs(self.ref_total_error, h0, disp=verbose, args=(alpha, method, loss),
+        optimizer = BFGS(lambda hval: self.CV(hval, method), h0,
                          epsilon=epsilon)
-        return hopt.item()
+        itor = tqdm(range(maxiter), disable=not verbose,
+                    bar_format='{desc} {percentage:3.0f}% {bar} Iteration {n_fmt}'\
+                               ' / {total_fmt} [{elapsed}<{remaining}, {rate_fmt}{postfix}]')
+        for _ in itor:
+            optimizer.step()
+            if verbose:
+                itor.set_description(f"hopt = {optimizer.state_dict()['xk'].item():.3f}, " \
+                                     f"gnorm = {optimizer.state_dict()['gnorm'].item():.3e}")
+            if optimizer.state_dict()['gnorm'] < gtol:
+                break
+        return optimizer.state_dict()['xk'].item()
 
-    def iter_update_gd(self, sw_x: float, sw_y: float=0.0, blur: float=0.0,
+    def iter_update_gd(self, search_window: Tuple[float, float, float], blur: float=0.0,
                        h0: Optional[float]=None, n_iter: int=30, f_tol: float=1e-8,
                        ref_method: str='KerReg', pm_method: str='gsearch',
                        pm_args: Dict[str, Union[bool, int, float, str]]={},
@@ -464,34 +461,12 @@ class SpeckleTracking(DataContainer):
                   should be in the range [0, 1]. The default value is 0.7.
                 * 'seed' : Specify seed for the random number generation.
                   Generated automatically if not provided.
-                * 'loss': Choose between the following loss functions
-                  for the target function of the pixel mapping
-                  estimator:
-
-                  * 'Epsilon': Epsilon loss function (epsilon = 0.25)
-                  * 'Huber' : Huber loss function (k = 1.345)
-                  * 'L1' : L1 norm loss function.
-                  * 'L2' : L2 norm loss function.
-
-                  The default value is 'Huber'.
 
             options : Extra options. Accepts the following keyword arguments:
 
-                * 'alpha' : Weight of the variance term in kernel bandwidth
-                  selector.
                 * 'h0' : Initial guess of the optimal bandwidth in
                   :func:`SpeckleTracking.find_hopt`. The value is used
                   if `h0` is None.
-                * 'loss': Choose between the following loss functions
-                  for the target function of the reference image
-                  estimator:
-
-                  * 'Epsilon': Epsilon loss function (epsilon = 0.25)
-                  * 'Huber' : Huber loss function (k = 1.345)
-                  * 'L1' : L1 norm loss function.
-                  * 'L2' : L2 norm loss function.
-
-                  The default value is 'Epsilon'.
                 * 'epsilon' : Increment to `h0` to use for determining the
                   function gradient for `h0` update algorithm. The default
                   value is 1.4901161193847656e-08.
@@ -518,43 +493,23 @@ class SpeckleTracking(DataContainer):
               Only if `return_extra` is True.
         """
         integrate = pm_args.get('integrate', False)
-        pm_loss = pm_args.get('loss', 'Huber')
-
-        alpha = options.get('alpha', 0.5)
         epsilon = options.get('epsilon', 1e-4)
-        ref_loss = options.get('loss', 'Epsilon')
-        step = options.get('step')
         update_translations = options.get('update_translations', False)
         return_extra = options.get('return_extra', False)
-
-        if step is None:
-            if verbose:
-                print('Calculating a step size...')
-            _h0 = 1.0 if h0 is None else h0
-            fprime = lambda x, alpha, method, loss: approx_fprime(x, self.ref_total_error,
-                                                                  epsilon, alpha, method,
-                                                                  loss).item()
-
-            fk = self.ref_total_error(_h0, alpha=alpha, method=ref_method,
-                                    loss=ref_loss)
-            gfk = (self.ref_total_error(_h0 + epsilon, alpha=alpha,
-                                        method=ref_method, loss=ref_loss) - fk) / epsilon
-            step = line_search(self.ref_total_error, fprime, xk=_h0, maxiter=15,
-                               pk=-gfk, gfk=gfk, args=(alpha, ref_method, ref_loss))
-            step = 1.0 if step[0] is None else step[0]
-            if verbose:
-                print(f'step = {step:.0f}')
 
         if h0 is None:
             if verbose:
                 print("Finding the optimum kernel bandwidth...")
-            h0 = self.find_hopt(alpha=alpha, method=ref_method,
-                                loss=ref_loss, epsilon=epsilon, verbose=verbose)
+            h0 = self.find_hopt(method=ref_method, epsilon=epsilon,
+                                verbose=verbose)
             if verbose:
                 print(f"New hopt = {h0:.3f}")
 
+        optimizer = BFGS(lambda hval: self.CV(hval, ref_method),
+                         h0, epsilon=epsilon)
+
         obj = self.update_reference(hval=h0, method=ref_method)
-        obj.update_errors.inplace_update(loss=pm_loss)
+        obj.update_errors.inplace_update()
 
         errors = [obj.error,]
         hvals = [h0,]
@@ -567,36 +522,23 @@ class SpeckleTracking(DataContainer):
 
         for _ in itor:
             # Update pixel_map
-            new_obj = obj.update_pixel_map(sw_x=sw_x, sw_y=sw_y, blur=blur, integrate=integrate,
-                                           method=pm_method, extra_args=pm_args, loss=pm_loss)
+            new_obj = obj.update_pixel_map(search_window=search_window, blur=blur, integrate=integrate,
+                                           method=pm_method, extra_args=pm_args)
 
             # Update di_pix, dj_pix
             if update_translations:
-                new_obj.update_translations.inplace_update(sw_y=sw_y, sw_x=sw_x,
-                                                           blur=blur, loss=pm_loss)
+                new_obj.update_translations.inplace_update(sw_y=search_window[0], sw_x=search_window[1],
+                                                           blur=blur)
 
             # Update hval and step
-            fk = new_obj.ref_total_error(h0, alpha=alpha, method=ref_method,
-                                     loss=ref_loss)
-            gfk = (new_obj.ref_total_error(h0 + epsilon, alpha=alpha,
-                                           method=ref_method, loss=ref_loss) - fk) / epsilon
-            while step * gfk > h0 - 0.1:
-                step *= 0.5
-
-            new_fval = new_obj.ref_total_error(h0 - step * gfk, alpha=alpha,
-                                               method=ref_method, loss=ref_loss)
-            while new_fval > fk - 1e-4 * step * gfk * gfk:
-                step *= 0.5
-                new_fval = new_obj.ref_total_error(h0 - step * gfk, alpha=alpha,
-                                                   method=ref_method, loss=ref_loss)
-
-            h0 = h0 - step * gfk
+            optimizer.step()
+            h0 = optimizer.state_dict()['xk'].item()
             hvals.append(h0)
 
             # Update reference_image
             new_obj.update_reference.inplace_update(hval=h0, method=ref_method)
 
-            new_obj.update_errors.inplace_update(loss=pm_loss)
+            new_obj.update_errors.inplace_update()
             errors.append(new_obj.error)
             if verbose:
                 itor.set_description(f"Total MSE = {errors[-1]:.6f}, hval = {hvals[-1]:.2f}")
@@ -612,7 +554,7 @@ class SpeckleTracking(DataContainer):
             return obj, {'errors': errors, 'hvals': hvals}
         return obj
 
-    def iter_update(self, sw_x: float, sw_y: float=0.0, blur: float=0.0,
+    def iter_update(self, search_window: Tuple[float, float, float], blur: float=0.0,
                     h0: Optional[float]=None, n_iter: int=30, f_tol: float=1e-8,
                     ref_method: str='KerReg', pm_method: str='gsearch',
                     pm_args: Dict[str, Union[bool, int, float, str]]={},
@@ -669,29 +611,9 @@ class SpeckleTracking(DataContainer):
                   should be in the range [0, 1]. The default value is 0.7.
                 * 'seed' : Specify seed for the random number generation.
                   Generated automatically if not provided.
-                * 'loss': Choose between the following loss functions
-                  for the target function of the pixel mapping
-                  estimator:
-
-                  * 'Epsilon': Epsilon loss function (epsilon = 0.25)
-                  * 'Huber' : Huber loss function (k = 1.345)
-                  * 'L1' : L1 norm loss function.
-                  * 'L2' : L2 norm loss function.
-
-                  The default value is 'Huber'.
 
             options : Extra options. Accepts the following keyword arguments:
 
-                * 'loss': Choose between the following loss functions
-                  for the target function of the reference image
-                  estimator:
-
-                  * 'Epsilon': Epsilon loss function (epsilon = 0.25)
-                  * 'Huber' : Huber loss function (k = 1.345)
-                  * 'L1' : L1 norm loss function.
-                  * 'L2' : L2 norm loss function.
-
-                  The default value is 'Epsilon'.
                 * 'epsilon' : Increment to `h0` to use for determining the
                   function gradient for `h0` update algorithm. The default
                   value is 1.4901161193847656e-08.
@@ -716,20 +638,19 @@ class SpeckleTracking(DataContainer):
               'return_extra' in `options` is True.
         """
         integrate = pm_args.get('integrate', False)
-        pm_loss = pm_args.get('loss', 'Huber')
-
-        alpha = options.get('alpha', 0.5)
         epsilon = options.get('epsilon', 1e-4)
-        ref_loss = options.get('loss', 'Epsilon')
         update_translations = options.get('update_translations', False)
         return_extra = options.get('return_extra', False)
 
         if h0 is None:
-            h0 = self.find_hopt(alpha=alpha, method=ref_method,
-                                loss=ref_loss, epsilon=epsilon, verbose=verbose)
+            if verbose:
+                print("Finding the optimum kernel bandwidth...")
+            h0 = self.find_hopt(method=ref_method, epsilon=epsilon, verbose=verbose)
+            if verbose:
+                print(f"New hopt = {h0:.3f}")
 
         obj = self.update_reference(hval=h0, method=ref_method)
-        obj.update_errors.inplace_update(loss=pm_loss)
+        obj.update_errors.inplace_update()
         errors = [obj.error]
 
         itor = tqdm(range(1, n_iter + 1), disable=not verbose,
@@ -742,17 +663,17 @@ class SpeckleTracking(DataContainer):
 
         for _ in itor:
             # Update pixel_map
-            new_obj = obj.update_pixel_map(sw_x=sw_x, sw_y=sw_y, blur=blur, integrate=integrate,
-                                           method=pm_method, extra_args=pm_args, loss=pm_loss)
+            new_obj = obj.update_pixel_map(search_window=search_window, blur=blur, integrate=integrate,
+                                           method=pm_method, extra_args=pm_args)
 
             # Update di_pix, dj_pix
             if update_translations:
-                new_obj.update_translations.inplace_update(sw_y=sw_y, sw_x=sw_x,
-                                                           blur=blur, loss=pm_loss)
+                new_obj.update_translations.inplace_update(sw_y=search_window[0], sw_x=search_window[1],
+                                                           blur=blur)
 
             # Update reference_image
             new_obj.update_reference.inplace_update(hval=h0, method=ref_method)
-            new_obj.update_errors.inplace_update(loss=pm_loss)
+            new_obj.update_errors.inplace_update()
 
             # Calculate errors
             errors.append(new_obj.error)
@@ -770,10 +691,10 @@ class SpeckleTracking(DataContainer):
             return obj, errors
         return obj
 
-    def ref_total_error(self, hval: float, alpha: float=0.5, method: str='KerReg',
-                        loss: str='Epsilon') -> float:
-        """Generate a reference image with the given kernel
-        bandwidth `h` and return a mean residual.
+    def CV(self, hval: float, method: str='KerReg') -> float:
+        """Return cross-validation error for the given kernel bandwidth `hval`.
+        Generate a reference error based on the training subset and find the
+        error for the test error.
 
         Args:
             hval : `reference_image` kernel bandwidths in pixels.
@@ -783,67 +704,52 @@ class SpeckleTracking(DataContainer):
                 * 'KerReg' : Kernel regression algorithm.
                 * 'LOWESS' : Local weighted linear regression.
 
-            loss : Choose between the following loss functions:
-
-                * 'Epsilon': Epsilon loss function (epsilon = 0.25)
-                * 'Huber' : Huber loss function (k = 1.345)
-                * 'L1' : L1 norm loss function.
-                * 'L2' : L2 norm loss function.
-
         Returns:
-            Mean residual value.
+            Cross-validation error.
 
         Raises:
             ValueError : If `method` keyword value is not valid.
 
         See Also:
-            :func:`pyrost.bin.ref_total_error` : Full details of the error metric.
+            :func:`pyrost.bin.pm_total_error` : Full details of the error metric.
         """
-        if alpha < 0.0 or alpha > 1.0:
-            raise ValueError('alpha must be in the [0.0, 1.0] interval.')
         if method == 'KerReg':
-            I0, n0, m0 = KR_reference(I_n=self.data, W=self.whitefield, u=self.pixel_map,
-                                      di=self.di_pix, dj=self.dj_pix, ds_y=self.ds_y,
-                                      ds_x=self.ds_x, h=hval, num_threads=self.num_threads)
+            I0, n0, m0 = KR_reference(I_n=self.data, W=self.whitefield * self.train_mask,
+                                      u=self.pixel_map, di=self.di_pix, dj=self.dj_pix,
+                                      ds_y=self.ds_y, ds_x=self.ds_x, h=hval,
+                                      num_threads=self.num_threads)
         elif method == 'LOWESS':
-            I0, n0, m0 = LOWESS_reference(I_n=self.data, W=self.whitefield, u=self.pixel_map,
-                                          di=self.di_pix, dj=self.dj_pix, ds_y=self.ds_y,
-                                          ds_x=self.ds_x, h=hval, num_threads=self.num_threads)
+            I0, n0, m0 = LOWESS_reference(I_n=self.data, W=self.whitefield * self.train_mask,
+                                          u=self.pixel_map, di=self.di_pix, dj=self.dj_pix,
+                                          ds_y=self.ds_y, ds_x=self.ds_x, h=hval,
+                                          num_threads=self.num_threads)
         else:
             raise ValueError('Method keyword is invalid')
-        mean, var = ref_total_error(I_n=self.data, W=self.whitefield, I0=I0, u=self.pixel_map,
-                                    di=self.di_pix - n0, dj=self.dj_pix - m0,
-                                    ds_y=self.ds_y, ds_x=self.ds_x, h=hval, sigma=self.sigma,
-                                    loss=loss, num_threads=self.num_threads)
-        return (1.0 - alpha) * mean + alpha * var
+        error = pm_total_error(I_n=self.data, W=self.whitefield * self.test_mask, I0=I0,
+                               u=self.pixel_map, di=self.di_pix - n0, dj=self.dj_pix - m0,
+                               ds_y=self.ds_y, ds_x=self.ds_x, sigma=self.sigma,
+                               num_threads=self.num_threads)
+        return error
 
-    def ref_error_curve(self, harr: np.ndarray, alpha: float=0.5, method: str='KerReg',
-                        loss: str='Epsilon') -> np.ndarray:
-        """Return a mean-squared-error (MSE) survace.
+    def CV_curve(self, harr: np.ndarray, method: str='KerReg') -> np.ndarray:
+        """Return a set cross-validation errors for a set of kernel
+        bandwidths.
 
         Args:
             harr : Set of `reference_image` kernel bandwidths in pixels.
-            alpha : Weight of the variance term in the error metric.
             method : `reference_image` update algorithm. The following keyword
                 values are allowed:
 
                 * 'KerReg' : Kernel regression algorithm.
                 * 'LOWESS' : Local weighted linear regression.
-            loss : Choose between the following loss functions:
-
-                * 'Epsilon': Epsilon loss function (epsilon = 0.25)
-                * 'Huber' : Huber loss function (k = 1.345)
-                * 'L1' : L1 norm loss function.
-                * 'L2' : L2 norm loss function.
 
         Returns:
-            A mean-squared-error (MSE) surface.
+            An array of cross-validation errors.
 
         See Also:
-            :func:`pyrost.bin.ref_total_error` : Full details of the error metric.
+            :func:`pyrost.bin.pm_total_error` : Full details of the error metric.
         """
         mse_list = []
         for hval in np.array(harr, ndmin=1):
-            mse_list.append(self.ref_total_error(hval, alpha=alpha,
-                                                 method=method, loss=loss))
+            mse_list.append(self.CV(hval, method=method))
         return np.array(mse_list)
