@@ -8,40 +8,40 @@ Core classes
 
 The following classes are central to pyrost module:
 
-* :class:`pyrost.STData` is the main data container, which provides an interface for the preprocessing of a XST dataset and can output an object, that performs the main loop of RST update.
-* :class:`pyrost.SpeckleTracking` performs the reference image and mapping updates and allows to perform the iterative RST update.
+* :class:`pyrost.STData` is the main data container, which provides an interface for the preprocessing of a
+  PXST dataset and can output an object, that performs the main loop of R-PXST update.
+* :class:`pyrost.SpeckleTracking` performs the reference image and mapping updates and allows to perform the
+  iterative R-PXST update.
 
 :class:`STData <pyrost.STData>`
 -------------------------------
 
-:class:`pyrost.STData` contains various functions that are necessary to conduct an initial
-data processing and create several maps and quantities that are needed prior to the
-main speckle tracking update algorithm, such as the sample defocus or the
-whitefield image:
+:class:`pyrost.STData` contains various functions that are necessary to conduct an initial data processing
+and create several maps and quantities that are needed prior to the main speckle tracking update algorithm,
+such as the sample defocus or the white-field image:
 
-* :func:`pyrost.STData.update_mask` generates a pixel mask that excludes bad and hot pixels
-  from the following analysis.
-* :func:`pyrost.STData.defocus_sweep` can help to estimate the focus-to-sample distance by
-  generating a reference image together with calculating a mean local variance of the image
-  for a set of distances. The mean local variance serves as a figure of merit of how sharp
-  or blurry the reference image is. In the end, the defocus distance which yields the sharpest
-  reference image is chosen.
-* :func:`pyrost.STData.update_whitefield` generates a whitefield image by taking a median through
-  a stack of measured frames.
-* If the flat-fields are dynamically varying from a frame to a frame, :func:`pyrost.STData.update_flatfields`
-  method can generate a flat-field for each frame separately based on Principal Component Analysis
+* :func:`pyrost.STData.update_mask` generates a pixel mask that excludes bad and hot pixels from the following
+  analysis.
+* :func:`pyrost.STData.defocus_sweep` can help to estimate the focus-to-sample distance by generating a
+  reference image together with calculating a mean local variance of the image for a set of distances. The mean
+  local variance serves as a figure of merit of how sharp or blurry the reference image is. In the end, the
+  defocus distance which yields the sharpest reference image is chosen.
+* :func:`pyrost.STData.update_whitefield` generates a white-field image by taking a median through a stack of
+  measured frames.
+* If the white-field is dynamically varying from a frame to a frame, :func:`pyrost.STData.update_whitefields`
+  method can generate a set of white-fields for each frame separately based on Principal Component Analysis
   approach [PCA]_ or by applying median filtering through a stack of frames.
 
 :class:`SpeckleTracking <pyrost.SpeckleTracking>`
 -------------------------------------------------
 
-:class:`pyrost.SpeckleTracking` provides an interface to perform the reference image
-and lens wavefront reconstruction and offers two methods (:func:`pyrost.SpeckleTracking.iter_update`,
-:func:`pyrost.SpeckleTracking.iter_update_gd`) to perform the iterative RST update until the error metric
-converges to a minimum. The typical reconstruction cycle consists of:
+:class:`pyrost.SpeckleTracking` provides an interface to perform the reference image and lens wavefront
+reconstruction and offers two methods (:func:`pyrost.SpeckleTracking.train`, func:`pyrost.SpeckleTracking.train_adapt`)
+to perform the iterative R-PXST update until the error metric converges to a minimum. The typical reconstruction
+cycle consists of:
 
 * Estimating an optimal kernel bandwidth for the reference image estimate (:func:`pyrost.SpeckleTracking.find_hopt`,
-  in :func:`pyrost.SpeckleTracking.iter_update_gd` only).
+  in :func:`pyrost.SpeckleTracking.train_adapt` only).
 * Generating the reference image (:func:`pyrost.SpeckleTracking.update_reference`).
 * Updating the discrete (pixel) mapping between a stack of frames and the generated reference image
   (:func:`pyrost.SpeckleTracking.update_pixel_map`).
@@ -60,9 +60,9 @@ Pixel mapping update
 ++++++++++++++++++++
 
 :func:`pyrost.SpeckleTracking.update_pixel_map` updates the pixel mapping at each pixel separately by
-minimizing the error metric as a function of the map function. The minimization procedure may be performed
-by *grid search*, *random search* or *differential evolution* algorithms. The algorithm is selected with
-`method` argument.
+minimizing the Huber error metric as a function of the map function. The minimization procedure may be
+performed by *grid search*, *random search* or *differential evolution* algorithms. The algorithm is selected
+with `method` argument.
 
 The updated pixel mapping usually requires a further regularisation by the help of weighted
 kernel smoothing. the kernel bandwidth is defined by `blur` argument.

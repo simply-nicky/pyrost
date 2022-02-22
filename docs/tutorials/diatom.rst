@@ -122,13 +122,13 @@ speckle tracking algorithm [ST]_.
 
 For the speckle tracking update you've got two options to choose from:
 
-    * :func:`pyrost.SpeckleTracking.iter_update` : performs the iterative reference image
+    * :func:`pyrost.SpeckleTracking.train` : performs the iterative reference image
       and pixel mapping updates with the constant kernel bandwidths for the reference image
       estimator (`h0`).
 
-    * :func:`pyrost.SpeckleTracking.iter_update_gd` : does ditto, but updates the bandwidth
-      value for the reference image estimator at each iteration by the help of gradient descent
-      to attain the minimal mean-squared-error value.
+    * :func:`pyrost.SpeckleTracking.train_adapt` : does ditto, but updates the bandwidth
+      value for the reference image estimator at each iteration by the help of the BFGS method
+      to attain the minimal error value.
 
 .. note:: You should pay outmost attention to choosing the right kernel bandwidth of the
     reference image estimator (`h0` in :func:`pyrost.SpeckleTracking.update_reference`). Essentially it
@@ -149,8 +149,8 @@ For the speckle tracking update you've got two options to choose from:
 .. code-block:: python
 
     >>> st_obj = data.get_st()
-    >>> st_res = st_obj.iter_update(sw_x=15, sw_y=15, h0=1.2, blur=8.0,
-                                    verbose=True, n_iter=5)
+    >>> st_res = st_obj.train(sw_x=15, sw_y=15, h0=1.2, blur=8.0,
+                              verbose=True, n_iter=5)
 
     >>> fig, ax = plt.subplots(figsize=(10, 10))
     >>> ax.imshow(st_res.reference_image[700:1200, 100:700], vmin=0.7, vmax=1.3,

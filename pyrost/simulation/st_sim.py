@@ -23,12 +23,11 @@ Examples:
 from __future__ import annotations
 import os
 import argparse
-from typing import Dict, Optional, Union
-import h5py
+from typing import Optional, Union
 import numpy as np
-from ..cxi_protocol import CXIProtocol, ROOT_PATH
+from ..cxi_protocol import CXIProtocol, CXIStore
 from ..data_container import DataContainer, dict_to_object
-from ..data_processing import STData
+from ..data_processing import STData, Crop
 from .st_parameters import STParams
 from ..bin import rsc_wp, fraunhofer_wp, fft_convolve
 from ..bin import make_frames, gaussian_gradient_magnitude
@@ -209,7 +208,7 @@ class STSim(DataContainer):
                                              num_threads=self.params.num_threads)
         y0 = (np.argmax(grad_y[:cnt_y]) * self.params.dety_size) // self.y_size
         y1 = ((cnt_y + np.argmax(grad_y[cnt_y:])) * self.params.dety_size) // self.y_size
-        return np.array([y0, y1, x0, x1])
+        return np.array([[y0, x0], [y1, x1]])
 
     @property
     def x_size(self) -> int:
@@ -287,7 +286,7 @@ class STSim(DataContainer):
         data = self.frames(wfieldx=wfieldx, wfieldy=wfieldy, apply_noise=apply_noise)
         return data.sum(axis=1)[:, None]
 
-class STConverter:
+class STConverter(DataContainer):
     """
     Converter class to export simulated data from :class:`STSim` to a CXI
     file. :class:`STConverter` also exports experimental parameters and the
@@ -315,158 +314,99 @@ class STConverter:
     """
     unit_vector_fs = np.array([1, 0, 0])
     unit_vector_ss = np.array([0, -1, 0])
-    templates_dir = os.path.join(ROOT_PATH, 'ini_templates')
+    attr_set = {'sim_obj', 'data', 'crd_rat'}
+    init_set = {'basis_vectors', 'defocus_x', 'defocus_y', 'distance', 'translations',
+                'transform', 'wavelength', 'x_pixel_size', 'y_pixel_size'}
 
-    def __init__(self, protocol: CXIProtocol=CXIProtocol.import_default(),
-                 coord_ratio: float=1e-6) -> None:
+    # Necessary attributes
+    sim_obj         : STSim
+    data            : np.ndarray
+    crd_rat         : float
+
+    # Automatically generated attributes
+    basis_vectors   : np.ndarray
+    defocus_x       : float
+    defocus_y       : float
+    distance        : float
+    transform       : Crop
+    translations    : np.ndarray
+    wavelength      : float
+    x_pixel_size    : float
+    y_pixel_size    : float
+
+    def __init__(self, sim_obj: STSim, data: np.ndarray, crd_rat: float=1e-6) -> None:
         """
         Args:
             protocol : CXI protocol, which contains all the attribute's paths and data types.
-            coord_ratio : Coordinates ratio between the simulated and saved data.
+            crd_rat : Coordinates ratio between the simulated and saved data.
         """
-        self.protocol, self.crd_rat = protocol, coord_ratio
+        super(STConverter, self).__init__(sim_obj=sim_obj, data=data, crd_rat=crd_rat)
 
-    def _ini_parsers(self, st_params: STParams) -> Dict[str, dict]:
-        ini_parsers = {}
-        for filename in os.listdir(self.templates_dir):
-            path = os.path.join(self.templates_dir, filename)
-            if os.path.isfile(path) and filename.endswith('.ini'):
-                template = os.path.splitext(filename)[0]
-                ini_parsers[template] = self.protocol.parser_from_template(path)
-            else:
-                raise RuntimeError("Wrong template file: {:s}".format(path))
-        ini_parsers['parameters'] = st_params.export_ini()
-        ini_parsers['protocol'] = self.protocol.export_ini()
-        return ini_parsers
+        self._init_functions(defocus_x=lambda: self.crd_rat * self.sim_obj.params.defocus,
+                             defocus_y=lambda: self.crd_rat * self.sim_obj.params.defocus,
+                             distance=lambda: self.crd_rat * self.sim_obj.params.det_dist,
+                             wavelength=lambda: self.crd_rat * self.sim_obj.params.wl,
+                             x_pixel_size=lambda: self.crd_rat * self.sim_obj.params.pix_size,
+                             y_pixel_size=lambda: self.crd_rat * self.sim_obj.params.pix_size,
+                             basis_vectors=self._basis_vectors, transform=self._crop,
+                             translations=self._translations)
 
-    def export_dict(self, data: np.ndarray, roi: np.ndarray, smp_pos: np.ndarray,
-                    st_params: STParams) -> Dict[str, Union[np.ndarray, float]]:
-        """Export simulated data `data` (fetched from :func:`STSim.frames`
-        or :func:`STSim.ptychograph`) and `st_params` to :class:`dict` object.
+        self._init_attributes()
 
-        Args:
-            data : Simulated stack of frames.
-            roi : Region of interest in detector plane. The values are
-                given in pixels as following : [`x0`, `x1`, `y0`, `y1`].
-            smp_pos : Sample translations.
-            st_params : Set of simulation parameters.
+    def _basis_vectors(self):
+        pix_vec = np.array([self.y_pixel_size, self.x_pixel_size, 0])
+        vec_fs = np.tile(pix_vec * self.unit_vector_fs, (self.sim_obj.params.n_frames, 1))
+        vec_ss = np.tile(pix_vec * self.unit_vector_ss, (self.sim_obj.params.n_frames, 1))
+        return np.stack((vec_ss, vec_fs), axis=1)
 
-        Returns:
-            Dictionary with all the data from `data` and `st_params`.
+    def _crop(self):
+        crop = Crop(self.sim_obj.roi)
+        if self.data.shape[1] == 1:
+            crop = crop.integrate(axis=0)
+        return crop
 
-        See Also:
-            :class:`STConverter` : full list of the attributes stored in the output
-            dictionary.
-        """
-        data_dict = {}
+    def _translations(self):
+        t_arr = np.zeros((self.sim_obj.params.n_frames, 3))
+        t_arr[:, 0] = -self.sim_obj.smp_pos
+        return self.crd_rat * t_arr
 
-        # Initialize basis vectors
-        pix_vec = self.crd_rat * np.array([st_params.pix_size, st_params.pix_size, 0])
-        data_dict['x_pixel_size'] = pix_vec[0]
-        data_dict['y_pixel_size'] = pix_vec[1]
-        vec_fs = np.tile(pix_vec * self.unit_vector_fs, (st_params.n_frames, 1))
-        vec_ss = np.tile(pix_vec * self.unit_vector_ss, (st_params.n_frames, 1))
-        data_dict['basis_vectors'] = np.stack((vec_ss, vec_fs), axis=1)
-
-        # Initialize data
-        data_dict['data'] = data
-
-        # Initialize defocus distances
-        data_dict['defocus_x'] = self.crd_rat * st_params.defocus
-        data_dict['defocus_y'] = self.crd_rat * st_params.defocus
-
-        # Initialize sample-to-detector distance
-        data_dict['distance'] = self.crd_rat * st_params.det_dist
-
-        # Initialize beam's wavelength
-        data_dict['wavelength'] = self.crd_rat * st_params.wl
-
-        # Initialize region of interest
-        if data_dict['data'].shape[1] == 1:
-            data_dict['roi'] = np.clip([0, 1, roi[2], roi[3]], 0, data_dict['data'].shape[2])
-        else:
-            data_dict['roi'] = np.clip(roi, 0, data_dict['data'].shape[2])
-
-        # Initialize sample translations
-        t_arr = np.zeros((st_params.n_frames, 3), dtype=self.protocol.get_dtype('translations'))
-        t_arr[:, 0] = -smp_pos
-        data_dict['translations'] = self.crd_rat * t_arr
-        return data_dict
-
-    def export_data(self, data: np.ndarray, sim_obj: STSim) -> STData:
+    def export_data(self, out_path: str, apply_transform: bool=True,
+                    protocol: CXIProtocol=CXIProtocol.import_default()) -> STData:
         """Export simulated data `data` (fetched from :func:`STSim.frames`
         or :func:`STSim.ptychograph`) and a :class:`STSim` object `sim_obj`
         to a data container.
 
         Args:
-            data : Simulated stack of frames.
-            sim_obj : Speckle tracking simulation object.
+            out_path : Path to the folder, where all the files are saved.
+            protocol : CXI file protocol.
 
         Returns:
             Data container :class:`pyrost.STData` with all the data from `data`
             and `sim_obj`.
         """
-        return STData(protocol=self.protocol, **self.export_dict(data, roi=sim_obj.roi,
-                      smp_pos=sim_obj.smp_pos, st_params=sim_obj.params))
+        files = CXIStore(out_path, out_path, protocol=protocol)
+        data = self.data
+        if apply_transform:
+            data = self.transform.forward(data)
+        data_dict = {attr: self.get(attr) for attr in self.init_set}
+        return STData(files=files, data=data, **data_dict)
 
-    def save(self, data: np.ndarray, roi: np.ndarray, smp_pos: np.ndarray, st_params: STParams,
-             dir_path: str) -> None:
+    def save(self, out_path: str, apply_transform: bool=True,
+             protocol: CXIProtocol=CXIProtocol.import_default()) -> None:
         """Export simulated data `data` (fetched from :func:`STSim.frames`
         or :func:`STSim.ptychograph`), `smp_pos`, and `st_params` to `dir_path`
         folder.
 
         Args:
-            data : Simulated stack of frames.
-            roi : Region of interest in detector plane. The values are given in
-                pixels as following : [`x0`, `x1`, `y0`, `y1`].
-            smp_pos : Sample translations.
-            st_params : Set of simulation parameters.
-            dir_path : Path to the folder, where all the files are saved.
+            out_path : Path to the folder, where all the files are saved.
+            protocol : CXI file protocol.
 
         Returns:
             None
-
-        See Also:
-            :func:`STConverter.save_sim` : Full list of the files saved in
-            `dir_path`.
         """
-        os.makedirs(dir_path, exist_ok=True)
-        for name, parser in self._ini_parsers(st_params).items():
-            ini_path = os.path.join(dir_path, name + '.ini')
-            with open(ini_path, 'w') as ini_file:
-                parser.write(ini_file)
-        data_dict = self.export_dict(data, roi, smp_pos, st_params)
-        with h5py.File(os.path.join(dir_path, 'data.cxi'), 'w') as cxi_file:
-            for attr in data_dict:
-                self.protocol.write_cxi(attr, data_dict[attr], cxi_file)
-
-    def save_sim(self, data: np.ndarray, sim_obj: STSim, dir_path: str) -> None:
-        """Export simulated data `data` (fetched from :func:`STSim.frames` or
-        :func:`STSim.ptychograph`) and a :class:`STSim` object `sim_obj` to
-        `dir_path` folder.
-
-        Args:
-            data : Simulated stack of frames.
-            sim_obj : Speckle tracking simulation object.
-            dir_path : Path to the folder, where all the files are saved.
-
-        Returns:
-            None
-
-        Notes:
-            List of the files saved in `dir_path`:
-
-            * 'data.cxi' : CXI file with all the data attributes.
-            * 'protocol.ini' : CXI protocol.
-            * 'parameters.ini' : experimental parameters.
-            * {'calc_error.ini', 'calculate_phase.ini', 'generate_pixel_map.ini',
-              'make_reference.ini', 'speckle_gui.ini', 'update_pixel_map.ini',
-              'update_translations.ini', 'zernike.ini'} : INI files to work with
-              Andrew's `speckle_tracking <https://github.com/andyofmelbourne/speckle-tracking>`_
-              GUI.
-        """
-        self.save(data=data, roi=sim_obj.roi, smp_pos=sim_obj.smp_pos,
-                  st_params=sim_obj.params, dir_path=dir_path)
+        data = self.export_data(out_path=out_path, protocol=protocol,
+                                apply_transform=apply_transform)
+        data.save()
 
 def main():
     """Main fuction to run Speckle Tracking simulation and save the results to a CXI file.
@@ -510,11 +450,10 @@ def main():
     else:
         st_params = STParams(**args)
 
-    st_converter = STConverter()
     sim_obj = STSim(st_params)
     if args['ptych']:
         data = sim_obj.ptychograph()
     else:
         data = sim_obj.frames()
-    st_converter.save_sim(data, sim_obj, args['out_path'])
+    STConverter(sim_obj, data).save(args['out_path'])
     print(f"The simulation results have been saved to {os.path.abspath(args['out_path']):s}")

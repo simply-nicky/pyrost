@@ -2,10 +2,13 @@
 """
 from __future__ import annotations
 from typing import (Any, Callable, Dict, ItemsView, Iterable,
-                    KeysView, Optional, ValuesView, TypeVar, Type)
+                    KeysView, List, Optional, ValuesView, TypeVar, Type)
 
-Desc = TypeVar('Desc')
 T = TypeVar('T')
+
+class BoundMethod:
+    __func__: Callable[..., Dict]
+    __self__: T
 
 class dict_to_object:
     """Dictionary to a new object dictionary. Creates a new object with
@@ -14,38 +17,20 @@ class dict_to_object:
     Attributes:
         finstance : Class bound method.
     """
-    def __init__(self, finstance: Desc) -> None:
+    sig_attrs = {'__annotations__', '__doc__', '__module__', '__name__',
+                 '__qualname__'}
+
+    def __init__(self, finstance: BoundMethod) -> None:
         """
         Args:
             finstance : Class bound method
         """
         self.finstance = finstance
+        for attr in self.sig_attrs:
+            self.__dict__[attr] = getattr(finstance, attr)
 
     def __get__(self, instance: T, cls: Type[T]):
-        return return_obj_method(self.finstance.__get__(instance, cls), instance, cls)
-
-class return_obj_method:
-    """Factory class that creates an object from the dictionary.
-
-    Attributes:
-        instance : Object instance.
-        cls : Object class.
-        sig_attrs : Signature attributes.
-    """
-    sig_attrs = {'__annotations__', '__doc__', '__module__',
-                 '__name__', '__qualname__'}
-
-    def __init__(self, func: Callable[..., Dict], instance: T, cls: Type[T]) -> None:
-        """
-        Args:
-            func : Wrapped method that returns a dictionary.
-            instance : Object instance.
-            cls : Object class.
-        """
-        self.instance, self.cls = instance, cls
-        self.__wrapped__ = func
-        for attr in self.sig_attrs:
-            self.__dict__[attr] = getattr(func, attr)
+        return dict_to_object(self.finstance.__get__(instance, cls))
 
     def __call__(self, *args: Any, **kwargs: Any) -> T:
         """Return an object from the dictionary yielded by
@@ -59,11 +44,11 @@ class return_obj_method:
             A new object instance.
         """
         dct = {}
-        dct.update(self.__wrapped__(*args, **kwargs))
-        for key, val in self.instance.items():
+        dct.update(self.finstance(*args, **kwargs))
+        for key, val in self.finstance.__self__.items():
             if key not in dct:
                 dct[key] = val
-        return self.cls(**dct)
+        return type(self.finstance.__self__)(**dct)
 
     def inplace_update(self, *args: Any, **kwargs: Any) -> None:
         """Modify the object by the dictionary yielded from
@@ -73,9 +58,9 @@ class return_obj_method:
             args : Positional arguments.
             kwargs : Keyword arguments.
         """
-        dct = self.__wrapped__(*args, **kwargs)
+        dct = self.finstance(*args, **kwargs)
         for key, val in dct.items():
-            self.instance.__setattr__(key, val)
+            self.finstance.__self__.__setattr__(key, val)
 
 class DataContainer:
     """Abstract data container class.
@@ -127,10 +112,12 @@ class DataContainer:
         return attr in self.attr_set | self.init_set
 
     def __repr__(self) -> str:
-        return {attr: self.__dict__[attr] for attr in self}.__repr__()
+        return {attr: self.__dict__[attr] for attr in self
+                if self.__dict__.get(attr) is not None}.__repr__()
 
     def __str__(self) -> str:
-        return {attr: self.__dict__[attr] for attr in self}.__str__()
+        return {attr: self.__dict__[attr] for attr in self
+                if self.__dict__.get(attr) is not None}.__str__()
 
     def get(self, attr: str, value: Optional[Any]=None) -> Any:
         """Retrieve a dataset, return `value` if the attribute is not found.
@@ -144,6 +131,9 @@ class DataContainer:
             is not found.
         """
         return self.__dict__.get(attr, value)
+
+    def contents(self) -> List[str]:
+        return [attr for attr in self if self.get(attr) is not None]
 
     def keys(self) -> KeysView:
         """Return the list of attributes stored in the container.

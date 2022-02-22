@@ -98,14 +98,14 @@ cdef void KR_frame_2d(float_t[:, ::1] I0, float_t[:, ::1] w0, uint_t[:, ::1] I_n
                     w0[jj, kk] += W[j, k] * W[j, k] * r
 
 def KR_reference(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None, float_t[:, :, ::1] u not None,
-                 float_t[::1] di not None, float_t[::1] dj not None, double ds_y, double ds_x, double h,
+                 float_t[::1] di not None, float_t[::1] dj not None, double ds_y, double ds_x, double hval,
                  bint return_nm0=True, unsigned num_threads=1):
     r"""Generate an unabberated reference image of the sample based on the pixel
     mapping `u` and the measured data `I_n` using the Kernel regression.
 
     Args:
         I_n (numpy.ndarray) : Measured intensity frames.
-        W (numpy.ndarray) : Measured frames' whitefield.
+        W (numpy.ndarray) : Measured frames' white-field.
         u (numpy.ndarray) : The discrete geometrical mapping of the detector
             plane to the reference image.
         di (numpy.ndarray) : Initial sample's translations along the vertical
@@ -116,7 +116,7 @@ def KR_reference(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None, flo
             vertical axis.
         ds_x (float) : Sampling interval of reference image in pixels along the
             horizontal axis.
-        h (float) : Gaussian kernel bandwidth in pixels.
+        hval (float) : Gaussian kernel bandwidth in pixels.
         return_nm0 (bool) : If True, also returns the lower bounds (`n0`, `m0`)
             of the reference image in pixels.
         num_threads (int) : Number of threads.
@@ -174,11 +174,11 @@ def KR_reference(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None, flo
     if Y0 > 1:
         for i in prange(N, schedule='guided', num_threads=num_threads, nogil=True):
             t = openmp.omp_get_thread_num()
-            KR_frame_2d(I0_buf[t], W0_buf[t], I_n[i], W, u, di[i] - n0, dj[i] - m0, ds_y, ds_x, h)
+            KR_frame_2d(I0_buf[t], W0_buf[t], I_n[i], W, u, di[i] - n0, dj[i] - m0, ds_y, ds_x, hval)
     else:
         for i in prange(N, schedule='guided', num_threads=num_threads, nogil=True):
             t = openmp.omp_get_thread_num()
-            KR_frame_1d(I0_buf[t], W0_buf[t], I_n[i], W, u, dj[i] - m0, ds_x, h)
+            KR_frame_1d(I0_buf[t], W0_buf[t], I_n[i], W, u, dj[i] - m0, ds_x, hval)
 
     cdef float_t[:, ::1] _I0 = I0
     cdef float_t I0_sum, W0_sum
@@ -265,7 +265,7 @@ cdef void LOWESS_frame_2d(float_t[:, ::1] W_sum, float_t[:, :, ::1] M_mat, float
                     W0_mat[jj, kk, 2] += w * (W[j, k] * W[j, k] * x - W0_mat[jj, kk, 2])
 
 def LOWESS_reference(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None, float_t[:, :, ::1] u not None,
-                     float_t[::1] di not None, float_t[::1] dj not None, double ds_y, double ds_x, double h,
+                     float_t[::1] di not None, float_t[::1] dj not None, double ds_y, double ds_x, double hval,
                      bint return_nm0=True, unsigned num_threads=1):
     r"""Generate an unabberated reference image of the sample based on the
     pixel mapping `u` and the measured data `I_n` using the Local Weighted
@@ -273,7 +273,7 @@ def LOWESS_reference(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None,
 
     Args:
         I_n (numpy.ndarray) : Measured intensity frames.
-        W (numpy.ndarray) : Measured frames' whitefield.
+        W (numpy.ndarray) : Measured frames' white-field.
         u (numpy.ndarray) : The discrete geometrical mapping of the detector
             plane to the reference image.
         di (numpy.ndarray) : Initial sample's translations along the vertical
@@ -284,7 +284,7 @@ def LOWESS_reference(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None,
             vertical axis.
         ds_x (float) : Sampling interval of reference image in pixels along the
             horizontal axis.
-        h (float) : Gaussian kernel bandwidth in pixels.
+        hval (float) : Gaussian kernel bandwidth in pixels.
         return_nm0 (bool) : If True, also returns the lower bounds (`n0`, `m0`)
             of the reference image in pixels.
         num_threads (int) : Number of threads.
@@ -363,12 +363,12 @@ def LOWESS_reference(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None,
         for i in prange(N, schedule='guided', num_threads=num_threads, nogil=True):
             t = openmp.omp_get_thread_num()
             LOWESS_frame_2d(W_buf[t], M_buf[t], I0_buf[t], W0_buf[t], I_n[i], W, u,
-                            di[i] - n0, dj[i] - m0, ds_y, ds_x, h)
+                            di[i] - n0, dj[i] - m0, ds_y, ds_x, hval)
     else:
         for i in prange(N, schedule='guided', num_threads=num_threads, nogil=True):
             t = openmp.omp_get_thread_num()
             LOWESS_frame_1d(W_buf[t], M_buf[t], I0_buf[t], W0_buf[t], I_n[i], W, u,
-                            dj[i] - m0, ds_x, h)
+                            dj[i] - m0, ds_x, hval)
 
     cdef float_t[:, ::1] _I0 = I0
     cdef float_t W_sum, w, betta_y, betta_x, var_y, var_x, I0_pred, W0_pred
@@ -567,7 +567,7 @@ def pm_gsearch(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None, float
 
     Args:
         I_n (numpy.ndarray) : Measured intensity frames.
-        W (numpy.ndarray) : Measured frames' whitefield.
+        W (numpy.ndarray) : Measured frames' white-field.
         I0 (numpy.ndarray) : Reference image of the sample.
         sigma (numpy.ndarray) : The standard deviation of `I_n`.
         u (numpy.ndarray) : The discrete geometrical mapping of the detector
@@ -670,7 +670,7 @@ def pm_rsearch(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None,
 
     Args:
         I_n (numpy.ndarray) : Measured intensity frames.
-        W (numpy.ndarray) : Measured frames' whitefield.
+        W (numpy.ndarray) : Measured frames' white-field.
         sigma (numpy.ndarray) : The standard deviation of `I_n`.
         I0 (numpy.ndarray) : Reference image of the sample.
         u (numpy.ndarray) : The discrete geometrical mapping of the detector
@@ -847,7 +847,7 @@ def pm_devolution(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None,
 
     Args:
         I_n (numpy.ndarray) : Measured intensity frames.
-        W (numpy.ndarray) : Measured frames' whitefield.
+        W (numpy.ndarray) : Measured frames' white-field.
         sigma (numpy.ndarray) : The standard deviation of `I_n`.
         I0 (numpy.ndarray) : Reference image of the sample.
         u (numpy.ndarray) : The discrete geometrical mapping of the detector
@@ -973,7 +973,7 @@ def tr_gsearch(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None,
 
     Args:
         I_n (numpy.ndarray) : Measured intensity frames.
-        W (numpy.ndarray) : Measured frames' whitefield.
+        W (numpy.ndarray) : Measured frames' white-field.
         sigma (numpy.ndarray) : The standard deviation of `I_n`.
         I0 (numpy.ndarray) : Reference image of the sample.
         u (numpy.ndarray) : The discrete geometrical mapping of the detector
@@ -1048,7 +1048,7 @@ def pm_errors(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None,
 
     Args:
         I_n (numpy.ndarray) : Measured intensity frames.
-        W (numpy.ndarray) : Measured frames' whitefield.
+        W (numpy.ndarray) : Measured frames' white-field.
         sigma (numpy.ndarray) : The standard deviation of `I_n`.
         I0 (numpy.ndarray) : Reference image of the sample.
         u (numpy.ndarray) : The discrete geometrical mapping of the detector
@@ -1108,7 +1108,7 @@ def pm_total_error(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None, f
 
     Args:
         I_n (numpy.ndarray) : Measured intensity frames.
-        W (numpy.ndarray) : Measured frames' whitefield.
+        W (numpy.ndarray) : Measured frames' white-field.
         sigma (numpy.ndarray) : The standard deviation of `I_n`.
         I0 (numpy.ndarray) : Reference image of the sample.
         u (numpy.ndarray) : The discrete geometrical mapping of the detector
@@ -1158,9 +1158,8 @@ def pm_total_error(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None, f
     return err / (X * Y)
 
 cdef void ref_loss(float_t[:, ::1] errors, float_t[:, ::1] R, float_t[:, ::1] I0,
-                   uint_t[:, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] sigma,
-                   float_t[:, :, ::1] u, float_t di, float_t dj, double ds_y,
-                   double ds_x, double h) nogil:
+                   uint_t[:, ::1] I_n, float_t[:, ::1] W,  float_t[:, :, ::1] u,
+                   float_t di, float_t dj, double ds_y, double ds_x, double h) nogil:
     cdef int Y = I_n.shape[0], X = I_n.shape[1]
     cdef int j, k, jj, kk, j0, k0, jj0, jj1, kk0, kk1
     cdef int Y0 = I0.shape[0], X0 = I0.shape[1]
@@ -1183,20 +1182,18 @@ cdef void ref_loss(float_t[:, ::1] errors, float_t[:, ::1] R, float_t[:, ::1] I0
             for jj in range(jj0, jj1):
                 for kk in range(kk0, kk1):
                     r = rbf((ds_y * jj - y) * (ds_y * jj - y) + (ds_x * kk - x) * (ds_x * kk - x), h)
-                    errors[jj, kk] += r * Huber_loss((<double>I_n[j, k] - W[j, k] * I0[jj, kk]) / sigma[j, k])
+                    errors[jj, kk] += r * (<double>I_n[j, k] - W[j, k] * I0[jj, kk]) * (<double>I_n[j, k] - W[j, k] * I0[jj, kk])
                     R[jj, kk] += r
 
 def ref_errors(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None,
-               float_t[:, ::1] sigma not None, float_t[:, ::1] I0 not None,
-               float_t[:, :, ::1] u not None, float_t[::1] di not None,
-               float_t[::1] dj not None, double ds_y, double ds_x, double h,
-               unsigned num_threads=1) -> np.ndarray:
+               float_t[:, ::1] I0 not None, float_t[:, :, ::1] u not None,
+               float_t[::1] di not None, float_t[::1] dj not None, double ds_y,
+               double ds_x, double hval, unsigned num_threads=1) -> np.ndarray:
     r"""Return the residuals for the reference image regression.
 
     Args:
         I_n (numpy.ndarray) :  Measured intensity frames.
-        W (numpy.ndarray) : Measured frames' whitefield.
-        sigma (numpy.ndarrray) : The standard deviation of `I_n`.
+        W (numpy.ndarray) : Measured frames' white-field.
         I0 (numpy.ndarray) : Reference image of the sample.
         u (numpy.ndarray) : The discrete geometrical mapping of the detector
             plane to the reference image.
@@ -1208,7 +1205,7 @@ def ref_errors(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None,
             the vertical axis.
         ds_x (float) : Sampling interval of reference image in pixels along
             the horizontal axis.
-        h (float) : Kernel bandwidth in pixels.
+        hval (float) : Kernel bandwidth in pixels.
         num_threads (int) : Number of threads.
 
     Returns:
@@ -1253,8 +1250,8 @@ def ref_errors(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None,
 
     for i in prange(N, schedule='guided', num_threads=num_threads, nogil=True):
         t = openmp.omp_get_thread_num()
-        ref_loss(err_buf[t], R_buf[t], I0, I_n[i], W, sigma, u, di[i], dj[i],
-                 ds_y, ds_x, h)
+        ref_loss(err_buf[t], R_buf[t], I0, I_n[i], W, u, di[i], dj[i],
+                 ds_y, ds_x, hval)
 
     cdef float_t[:, ::1] _err = err
     cdef float_t err_sum, R_sum
@@ -1270,15 +1267,14 @@ def ref_errors(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None,
     return err
 
 def ref_total_error(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None,
-                    float_t[:, ::1] sigma not None, float_t[:, ::1] I0 not None,
-                    float_t[:, :, ::1] u not None, float_t[::1] di not None,
-                    float_t[::1] dj not None, double ds_y, double ds_x, double h,
-                    unsigned num_threads=1):
+                    float_t[:, ::1] I0 not None, float_t[:, :, ::1] u not None,
+                    float_t[::1] di not None, float_t[::1] dj not None, double ds_y,
+                    double ds_x, double hval, unsigned num_threads=1):
     r"""Return the mean residual for the reference image regression.
 
     Args:
         I_n (numpy.ndarray) :  Measured intensity frames.
-        W (numpy.ndarray) : Measured frames' whitefield.
+        W (numpy.ndarray) : Measured frames' white-field.
         sigma (numpy.ndarray) : The standard deviation of `I_n`.
         I0 (numpy.ndarray) : Reference image of the sample.
         u (numpy.ndarray) : The discrete geometrical mapping of the detector
@@ -1291,7 +1287,7 @@ def ref_total_error(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None,
             the vertical axis.
         ds_x (float) : Sampling interval of reference image in pixels along
             the horizontal axis.
-        h (float) : Kernel bandwidth in pixels.
+        hval (float) : Kernel bandwidth in pixels.
         num_threads (int) : Number of threads.
 
     Returns:
@@ -1335,8 +1331,8 @@ def ref_total_error(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None,
 
     for i in prange(N, schedule='guided', num_threads=num_threads, nogil=True):
         t = openmp.omp_get_thread_num()
-        ref_loss(err_buf[t], R_buf[t], I0, I_n[i], W, sigma, u, di[i], dj[i],
-                  ds_y, ds_x, h)
+        ref_loss(err_buf[t], R_buf[t], I0, I_n[i], W, u, di[i], dj[i],
+                  ds_y, ds_x, hval)
 
     cdef double err = 0.0
     cdef double err_sum, R_sum

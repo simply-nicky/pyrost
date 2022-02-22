@@ -85,14 +85,14 @@ Let's update the data container with the defocus distance we got.
 Speckle tracking update
 -----------------------
 Now we’re ready to generate a :class:`pyrost.SpeckleTracking` object, which is able to
-perform the speckle tracking reconstruction with :func:`pyrost.SpeckleTracking.iter_update_gd`
+perform the speckle tracking reconstruction with :func:`pyrost.SpeckleTracking.train_adapt`
 method. For more information about the parameters see the section :ref:`diatom-st-update` in the
 2d dataset tutorial.
 
 .. code-block:: python
 
     >>> st_obj = data.get_st()
-    >>> st_res = st_obj.iter_update_gd(h0=15., blur=12., sw_x=5)
+    >>> st_res = st_obj.train_adapt(h0=15., blur=12., sw_x=5)
     >>> data.update_phase(st_res)
 
     >>> fig, axes = plt.subplots(1, 2, figsize=(12, 4))
@@ -137,12 +137,12 @@ and to the phase profile with :func:`pyrost.AberrationsFit.fit_phase`:
     >>> fig, axes = plt.subplots(1, 2, figsize=(12, 4))
     >>> axes[0].plot(fit_obj.thetas, fit_obj.theta_ab * 1e9, 'b')
     >>> axes[0].plot(fit_obj.thetas, fit_obj.model(fit['fit']) * fit_obj.ref_ap * 1e9,
-    >>>              'b--', label=fr"RST $c_4$ = {fit['c_4']:.4f} rad/mrad^4")
+    >>>              'b--', label=fr"R-PXST $c_4$ = {fit['c_4']:.4f} rad/mrad^4")
     >>> axes[0].set_title('Angular displacements, nrad', fontsize=20)
     >>> 
     >>> axes[1].plot(fit_obj.thetas, fit_obj.phase, 'b')
     >>> axes[1].plot(fit_obj.thetas, fit_obj.model(fit['ph_fit']), 'b--',
-    >>>              label=fr"RST $c_4$ ={fit['c_4']:.4f} rad/mrad^4")
+    >>>              label=fr"R-PXST $c_4$ ={fit['c_4']:.4f} rad/mrad^4")
     >>> axes[1].set_title('Phase, rad', fontsize=20)
     >>> for ax in axes:
     >>>     ax.legend(fontsize=15)

@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 from configparser import ConfigParser
 import re
-from typing import Any, Dict, TypeVar, Type
+from typing import Any, Dict, List, TypeVar, Type, Union
 import numpy as np
 
 T = TypeVar('T')            # Object type
@@ -111,6 +111,23 @@ class INIParser:
 
         return fmt(kwargs[section][option])
 
+    @staticmethod
+    def str_to_list(strings: Union[str, List[str]]) -> List[str]:
+        """Convert `strings` to a list of strings.
+
+        Args:
+            strings : String or a list of strings
+
+        Returns:
+            List of strings.
+        """
+        if isinstance(strings, (str, list)):
+            if isinstance(strings, str):
+                return [strings,]
+            return strings
+
+        raise ValueError('strings must be a string or a list of strings')
+
     @classmethod
     def _lookup_dict(cls) -> Dict:
         """Look-up table between the sections and the parameters.
@@ -175,11 +192,11 @@ class INIParser:
         if is_list:
             return [fmt(part.strip('\'\"'))
                     for part in re.split(cls.LIST_SPLITTER, is_list.group(1))]
-        else:
-            return fmt(string.strip())
+
+        return fmt(string.strip())
 
     @classmethod
-    def _import_ini(cls, protocol_file: str) -> Dict[str, Dict[str, Any]]:
+    def _import_ini(cls, protocol_file: str) -> Dict[str, Dict]:
         ini_parser = cls.read_ini(protocol_file)
         kwargs = {}
         for section in cls.attr_dict:
@@ -196,7 +213,7 @@ class INIParser:
         return kwargs
 
     @classmethod
-    def _format(cls, obj: INIParser) -> Dict:
+    def _format(cls, obj: Dict) -> Dict:
         crop_obj = {}
         for key, val in list(obj.items())[:cls.FMT_LEN]:
             if isinstance(val, dict):

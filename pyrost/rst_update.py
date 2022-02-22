@@ -1,7 +1,7 @@
 """:class:`pyrost.SpeckleTracking` provides an interface to perform the reference
 image and lens wavefront reconstruction and offers two methods
-(:func:`pyrost.SpeckleTracking.iter_update`, :func:`pyrost.SpeckleTracking.iter_update_gd`)
-to perform the iterative RST update until the error metric converges to a minimum.
+(:func:`pyrost.SpeckleTracking.train`, :func:`pyrost.SpeckleTracking.train_adapt`)
+to perform the iterative R-PXST update until the error metric converges to a minimum.
 """
 from __future__ import annotations
 from typing import Dict, List, Optional, Tuple, Union
@@ -41,13 +41,12 @@ class SpeckleTracking(DataContainer):
         * parent : The parent :class:`STData` container.
         * pixel_map : The pixel mapping between the data at the detector's
           plane and the reference image at the reference plane.
-        * sigma : Standard deviation of measured frames.
-        * whitefield : Measured frames' whitefield.
+        * scale_map : Huber scaling map.
+        * whitefield : Measured frames' white-field.
 
         **Optional attributes**:
 
-        * error : Average MSE (mean-squared-error) of the reference image
-          and pixel mapping fit.
+        * error : Average error of the reference image and pixel mapping fit.
         * hval : Smoothing kernel bandwidth used in `reference_image`
           regression. The value is given in pixels.
         * m0 : The lower bounds of the horizontal detector axis of
@@ -66,10 +65,35 @@ class SpeckleTracking(DataContainer):
           update.
 
     """
-    attr_set = {'data', 'dj_pix', 'di_pix', 'ds_y', 'ds_x', 'num_threads',
-                'parent', 'pixel_map', 'whitefield'}
-    init_set = {'error', 'hval', 'n0', 'm0', 'reference_image', 'sigma', 'test_mask',
-                'train_mask'}
+    attr_set = {'data', 'dj_pix', 'di_pix', 'ds_y', 'ds_x', 'num_threads', 'parent',
+                'whitefield'}
+    init_set = {'error', 'hval', 'initial', 'ref_orig', 'pixel_map', 'reference_image',
+                'scale_map', 'test_mask', 'train_mask'}
+
+    dtypes_32 = {'data': np.uint32, 'dij_pix': np.float32, 'pixel_map': np.float32,
+                 'scale_map': np.float32, 'whitefield': np.float32}
+    dtypes_64 = {'data': np.uint64, 'dij_pix': np.float64, 'pixel_map': np.float64,
+                 'scale_map': np.float64, 'whitefield': np.float64}
+
+    data : np.ndarray
+    dj_pix : np.ndarray
+    di_pix : np.ndarray
+    ds_x : float
+    ds_y : float
+    num_threads : int
+    parent : ReferenceType
+    whitefield : np.ndarray
+
+    ref_orig : np.ndarray
+    pixel_map : np.ndarray
+    reference_image : np.ndarray
+    scale_map : np.ndarray
+    test_mask : np.ndarray
+    train_mask : np.ndarray
+
+    hval : Optional[float]
+    error : Optional[float]
+    initial : Optional[SpeckleTracking]
 
     def __init__(self, parent: ReferenceType, **kwargs: Union[int, float, np.ndarray]) -> None:
         """
@@ -84,12 +108,24 @@ class SpeckleTracking(DataContainer):
                 provided.
         """
         super(SpeckleTracking, self).__init__(parent=parent, **kwargs)
-        self._init_functions(sigma=lambda: np.sqrt(self.whitefield),
-                             test_mask=self._test_mask,
-                             train_mask=lambda: ~self.test_mask)
+        self._init_functions(pixel_map=lambda: np.indices(self.data.shape[1:],
+                                                          dtype=self.whitefield.dtype),
+                             test_mask=self._test_mask, train_mask=lambda: ~self.test_mask,
+                             ref_orig=self._ref_orig, reference_image=self._reference_image, 
+                             scale_map=lambda: np.sqrt(self.whitefield))
         self._init_attributes()
 
-    def _test_mask(self, test_ratio=0.2):
+    def _ref_orig(self) -> np.ndarray:
+        y_orig = self.di_pix.max() - self.pixel_map[0].min()
+        x_orig = self.dj_pix.max() - self.pixel_map[1].min()
+        return np.array([y_orig, x_orig]).astype(int)
+
+    def _reference_image(self) -> np.ndarray:
+        shape = self.pixel_map.max(axis=(1, 2)) - np.array([self.di_pix.min(), self.dj_pix.min()])
+        shape = ((shape + self.ref_orig) / np.array([self.ds_y, self.ds_x]))
+        return np.ones(shape.astype(int) + 1, dtype=self.whitefield.dtype)
+
+    def _test_mask(self, test_ratio: float=0.2) -> np.ndarray:
         idxs = np.random.choice(self.whitefield.size, size=int(self.whitefield.size * test_ratio),
                                 replace=False)
         idxs = np.unravel_index(idxs, self.whitefield.shape)
@@ -108,14 +144,43 @@ class SpeckleTracking(DataContainer):
                     for key, val in self.items()}.__str__()
 
     @dict_to_object
-    def test_train_split(self, test_ratio=0.1):
+    def create_initial(self) -> SpeckleTracking:
+        """Create a :class:`SpeckleTracking` object with preliminary approximation of
+        the pixel mapping and reference profile. The object is saved into `initial`
+        attribute. Necessary to calculate normalized error metrics.
+
+        Returns:
+            A new :class:`SpeckleTracking` object with the preliminary
+            :class:`SpeckleTracking` object saved in the `initial` attribute.
+        """
+        initial = SpeckleTracking(**{attr: self.get(attr) for attr in self.attr_set})
+        initial = initial.update_errors()
+        return {'initial': initial}
+
+    @dict_to_object
+    def test_train_split(self, test_ratio: float=0.1) -> SpeckleTracking:
+        """Update test / train subsets split. Required to calculate the Cross-validation
+        error metric.
+
+        Args:
+            test_ratio : 
+
+        Returns:
+            A new :class:`SpeckleTracking` object with a new test / train subsets split.
+
+        See Also:
+            :func:`SpeckleTracking.CV` : Full details on the Cross-validation error
+            metric.
+        """
         test_mask = self._test_mask(test_ratio)
         return {'test_mask': test_mask, 'train_mask': ~test_mask}
 
     @dict_to_object
     def update_reference(self, hval: float, method: str='KerReg') -> SpeckleTracking:
-        """Return a new :class:`SpeckleTracking` object
-        with the updated `reference_image`.
+        r"""Return a new :class:`SpeckleTracking` object with the updated
+        `reference_image`. The reference profile is estimated either by
+        Kernel regression ('KerReg') [KerReg]_ or Local weighted linear\
+        egressin ('LOWESS') [LOWESS]_.
 
         Args:
             hval : Smoothing kernel bandwidth used in `reference_image`
@@ -130,41 +195,88 @@ class SpeckleTracking(DataContainer):
             A new :class:`SpeckleTracking` object with the updated
             `reference_image`.
 
+        Notes:
+            The reference profile estimator is given by:
+
+            .. math::
+                I_\text{ref}(f_x i, f_y j) = \frac{\sum_n \sum_{i^{\prime}}
+                \sum_{j^{\prime}} K(f_x i - u^x_{i^{\prime}j^{\prime}} + \Delta i_n,
+                f_y j - u^y_{i^{\prime}j^{\prime}} + \Delta j_n, h) \;
+                W_{i^{\prime}j^{\prime}} I_{n i^{\prime} j^{\prime}}}
+                {\sum_n \sum_{i^{\prime}} \sum_{j^{\prime}}
+                K(f_x i - u^x_{i^{\prime}j^{\prime}} + \Delta i_n,
+                f_y j - u^y_{i^{\prime}j^{\prime}} + \Delta j_n, h) \;
+                W^2_{i^{\prime} j^{\prime}}},
+
+            where :math:`K(i, j, h) = \exp(\frac{i\:\delta u + j\:\delta v}{h})
+            / \sqrt{2 \pi}` is the Gaussian kernel, :math:`u^x_{ij}, u^y_{ij}`
+            are the horizontal and vertical components of the pixel mapping,
+            :math:`\Delta i_n, \Delta j_n` are the sample translation along the
+            horizontal and vertical axes in pixels, :math:`I_{nij}` are the measured
+            stack of frames, and `W_{ij}` is the white-field.
+
         Raises:
             ValueError : If `method` keyword value is not valid.
 
         See Also:
             :func:`pyrost.bin.make_reference` : Full details of the `reference_image`
                 update algorithm.
+
+        References:
+            .. [KerReg] E. A. Nadaraya, “On estimating regression,” Theory Probab. & Its
+                       Appl. 9, 141-142 (1964).
+
+            .. [LOWESS] H.-G. Müller, “Weighted local regression and kernel methods for
+                       nonparametric curve fitting,” J. Am. Stat. Assoc. 82, 231-238
+                       (1987).
         """
         if method == 'KerReg':
             I0, n0, m0 = KR_reference(I_n=self.data, W=self.whitefield, u=self.pixel_map,
                                       di=self.di_pix, dj=self.dj_pix, ds_y=self.ds_y,
-                                      ds_x=self.ds_x, h=hval, num_threads=self.num_threads)
+                                      ds_x=self.ds_x, hval=hval, num_threads=self.num_threads)
         elif method == 'LOWESS':
             I0, n0, m0 = LOWESS_reference(I_n=self.data, W=self.whitefield, u=self.pixel_map,
                                           di=self.di_pix, dj=self.dj_pix, ds_y=self.ds_y,
-                                          ds_x=self.ds_x, h=hval, num_threads=self.num_threads)
+                                          ds_x=self.ds_x, hval=hval, num_threads=self.num_threads)
         else:
             raise ValueError('Method keyword is invalid')
-        return {'hval': hval, 'n0': n0, 'm0': m0, 'reference_image': I0}
+        return {'hval': hval, 'ref_orig': np.array([n0, m0]), 'reference_image': I0}
+
+    def ref_indices(self) -> np.ndarray:
+        """Return an array of reference profile pixel indices.
+
+        Returns:
+            An array of reference profile pixel indices.
+        """
+        idxs = np.indices(self.reference_image.shape) 
+        idxs[0] = idxs[0] * self.ds_y - self.ref_orig[0]
+        idxs[1] = idxs[1] * self.ds_x - self.ref_orig[1]
+        return idxs
 
     @dict_to_object
     def update_pixel_map(self, search_window: Tuple[float, float, float], blur: float=0.0,
                          integrate: bool=False, method: str='gsearch',
                          extra_args: Dict[str, Union[int, float]]={}) -> SpeckleTracking:
-        """Return a new :class:`SpeckleTracking` object with
-        the updated `pixel_map`.
+        r"""Return a new :class:`SpeckleTracking` object with the updated pixel mapping
+        (`pixel_map`) and Huber scale mapping (`scale_map`). The update is performed
+        with the adaptive Huber regression [HUBER]_. The Huber loss function is minimized
+        by the non-gradient methods enlisted in the `method` argument.
 
         Args:
-            sw_x : Search window size in pixels along the horizontal detector
-                axis.
-            sw_y : Search window size in pixels along the vertical detector
-                axis.
-            blur : Smoothing kernel bandwidth used in `pixel_map`
-                regularisation. The value is given in pixels.
-            integrate : Ensure that the updated pixel map is irrotational by integrating
-                and taking the derivative.
+            search_window : A tuple of three elements ('sw_y', 'sw_x', 'sw_s'). The elements
+                are the following:
+
+                * 'sw_y' : Search window size in pixels along the horizontal detector
+                  axis.
+                * 'sw_x' : Search window size in pixels along the vertical detector
+                  axis.
+                * 'sw_s' : Search window size of the Huber scaling map. Given as a ratio
+                  (0.0 - 1.0) relative to the scaling map value before the update.
+
+            blur : Smoothing kernel bandwidth used in `pixel_map` regularisation.
+                The value is given in pixels.
+            integrate : Ensure that the updated pixel map is irrotational by
+                integrating and taking the derivative.
             method : `pixel_map` update algorithm. The following keyword
                 values are allowed:
 
@@ -194,10 +306,27 @@ class SpeckleTracking(DataContainer):
                 * 'seed' : Specify seed for the random number generation.
                   Generated automatically if not provided.
 
+        Notes:
+            The pixel mapping update is carried out separately at each pixel
+            :math:`{i, j}` in the detector grid by minimizing the Huber error metric
+            given by:
+
+            .. math::
+
+                \varepsilon_{ij}(\delta i, \delta j, s) = \frac{1}{N} \\ \times
+                \sum_{n = 1}^N \left[ s + \mathcal{H}_{1.35} \left( \frac{I_{nij} -
+                W_{ij} I_\text{ref}(f_x i - u^x_{ij} - \delta i + \Delta i_n,
+                f_y i - u^y_{ij} - \delta j + \Delta j_n)}{s} \right) s \right],
+
+            where :math:`I_\text{ref}` is the reference profile, :math:`u^x_{ij},
+            u^y_{ij}` are the horizontal and vertical components of the pixel mapping,
+            :math:`\Delta i_n, \Delta j_n` are the sample translation along the
+            horizontal and vertical axes in pixels, :math:`I_{nij}` are the measured
+            stack of frames, and `W_{ij}` is the white-field.
 
         Returns:
-            A new :class:`SpeckleTracking` object with the updated
-            `pixel_map`.
+            A new :class:`SpeckleTracking` object with the updated `pixel_map` and
+            `scale_map`.
 
         Raises:
             AttributeError : If `reference_image` was not generated beforehand.
@@ -212,10 +341,10 @@ class SpeckleTracking(DataContainer):
             * :func:`pyrost.bin.pm_devolution` : Full details of the differential
               evolution update method.
 
+        References:
+            .. [HUBER] A. B. Owen, “A robust hybrid of lasso and ridge regression,”
+                      (2006).
         """
-        if self.reference_image is None:
-            raise AttributeError('The reference image has not been generated')
-
         n_iter = extra_args.get('n_iter', 5)
         mutation = extra_args.get('mutation', 0.75)
         recombination = extra_args.get('recombination', 0.7)
@@ -228,23 +357,23 @@ class SpeckleTracking(DataContainer):
         pop_size = extra_args.get('pop_size', max(n_trials / n_iter, 4))
 
         if method == 'gsearch':
-            pm, sigma, derr = pm_gsearch(I_n=self.data, W=self.whitefield, I0=self.reference_image,
-                                         u0=self.pixel_map, di=self.di_pix - self.n0,
-                                         dj=self.dj_pix - self.m0, search_window=search_window,
+            pm, scale, derr = pm_gsearch(I_n=self.data, W=self.whitefield, I0=self.reference_image,
+                                         u0=self.pixel_map, di=self.di_pix - self.ref_orig[0],
+                                         dj=self.dj_pix - self.ref_orig[1], search_window=search_window,
                                          grid_size=grid_size, ds_y=self.ds_y, ds_x=self.ds_x,
-                                         sigma=self.sigma, num_threads=self.num_threads)
+                                         sigma=self.scale_map, num_threads=self.num_threads)
         elif method == 'rsearch':
-            pm, sigma, derr = pm_rsearch(I_n=self.data, W=self.whitefield, I0=self.reference_image,
-                                         u0=self.pixel_map, di=self.di_pix - self.n0,
-                                         dj=self.dj_pix - self.m0, search_window=search_window,
+            pm, scale, derr = pm_rsearch(I_n=self.data, W=self.whitefield, I0=self.reference_image,
+                                         u0=self.pixel_map, di=self.di_pix - self.ref_orig[0],
+                                         dj=self.dj_pix - self.ref_orig[1], search_window=search_window,
                                          n_trials=n_trials, seed=seed, ds_y=self.ds_y, ds_x=self.ds_x,
-                                         sigma=self.sigma, num_threads=self.num_threads)
+                                         sigma=self.scale_map, num_threads=self.num_threads)
         elif method == 'de':
-            pm, sigma, derr = pm_devolution(I_n=self.data, W=self.whitefield, I0=self.reference_image,
-                                            u0=self.pixel_map, di=self.di_pix - self.n0,
-                                            dj=self.dj_pix - self.m0, search_window=search_window,
+            pm, scale, derr = pm_devolution(I_n=self.data, W=self.whitefield, I0=self.reference_image,
+                                            u0=self.pixel_map, di=self.di_pix - self.ref_orig[0],
+                                            dj=self.dj_pix - self.ref_orig[1], search_window=search_window,
                                             pop_size=pop_size, n_iter=n_iter, seed=seed,
-                                            ds_y=self.ds_y, ds_x=self.ds_x, sigma=self.sigma,
+                                            ds_y=self.ds_y, ds_x=self.ds_x, sigma=self.scale_map,
                                             F=mutation, CR=recombination, num_threads=self.num_threads)
         else:
             raise ValueError('Method keyword is invalid')
@@ -254,8 +383,6 @@ class SpeckleTracking(DataContainer):
             norm = gaussian_filter(derr, (blur, blur))
             dpm = gaussian_filter(dpm * derr, (0, blur, blur),
                                   num_threads=self.num_threads) / norm
-            sigma = gaussian_filter(sigma * derr, (blur, blur),
-                                    num_threads=self.num_threads) / norm
 
         uy_avg, ux_avg = dpm.mean(axis=(1, 2))
         pm[0] = (dpm[0] - uy_avg) + self.pixel_map[0]
@@ -266,12 +393,12 @@ class SpeckleTracking(DataContainer):
             pm[0] = np.gradient(phi, axis=0)
             pm[1] = np.gradient(phi, axis=1)
 
-        return {'pixel_map': pm, 'sigma': sigma}
+        return {'pixel_map': pm, 'scale_map': scale}
 
     @dict_to_object
     def update_errors(self) -> SpeckleTracking:
         """Return a new :class:`SpeckleTracking` object with
-        the updated mean residual `error`.
+        the updated mean Huber error metric `error`. 
 
         Returns:
             A new :class:`SpeckleTracking` object with the updated
@@ -287,19 +414,21 @@ class SpeckleTracking(DataContainer):
             * :func:`pyrost.bin.pm_errors` : Full details of the pixel
               mapping update error metric.
         """
-        if self.reference_image is None:
-            raise AttributeError('The reference image has not been generated')
         error = pm_total_error(I_n=self.data, W=self.whitefield,
                                I0=self.reference_image, u=self.pixel_map,
-                               di=self.di_pix - self.n0, dj=self.dj_pix - self.m0,
-                               ds_y=self.ds_y, ds_x=self.ds_x, sigma=self.sigma,
-                               num_threads=self.num_threads)
-        return {'error': error}
+                               di=self.di_pix - self.ref_orig[0], ds_y=self.ds_y,
+                               dj=self.dj_pix - self.ref_orig[1], ds_x=self.ds_x,
+                               sigma=self.scale_map, num_threads=self.num_threads)
+        if self.initial is None:
+            return {'error': error}
+        return {'error': error / self.initial.error}
 
     @dict_to_object
     def update_translations(self, sw_x: float, sw_y: float=0.0, blur=0.0) -> SpeckleTracking:
-        """Return a new :class:`SpeckleTracking` object with
-        the updated sample pixel translations (`di_pix`, `dj_pix`).
+        """Return a new :class:`SpeckleTracking` object with the updated sample
+        pixel translations (`di_pix`, `dj_pix`). The update is performed with the
+        adaptive Huber regression [HUBER]_. The Huber loss function is minimized
+        by the grid search algorithm.
 
         Args:
             sw_x : Search window size in pixels along the horizontal detector
@@ -320,15 +449,15 @@ class SpeckleTracking(DataContainer):
             :func:`pyrost.bin.tr_gsearch` : Full details of the sample translations
                 update algorithm.
         """
-        if self.reference_image is None:
-            raise AttributeError('The reference image has not been generated')
         dij = tr_gsearch(I_n=self.data, W=self.whitefield, I0=self.reference_image,
-                         u=self.pixel_map, di=self.di_pix - self.n0, dj=self.dj_pix - self.m0,
-                         sw_y=sw_y, sw_x=sw_x, ds_y=self.ds_y, ds_x=self.ds_x,
-                         sigma=self.sigma, num_threads=self.num_threads)
+                         u=self.pixel_map, di=self.di_pix - self.ref_orig[0],
+                         dj=self.dj_pix - self.ref_orig[1], sw_y=sw_y, sw_x=sw_x,
+                         ds_y=self.ds_y, ds_x=self.ds_x, sigma=self.scale_map,
+                         num_threads=self.num_threads)
+        dij += self.ref_orig
 
-        di_pix = np.ascontiguousarray(dij[:, 0]) + self.n0
-        dj_pix = np.ascontiguousarray(dij[:, 1]) + self.m0
+        di_pix = np.ascontiguousarray(dij[:, 0]) 
+        dj_pix = np.ascontiguousarray(dij[:, 1])
         if blur > 0.0:
             di_pix = gaussian_filter(di_pix - self.di_pix, blur, mode='nearest',
                                       num_threads=self.num_threads) + self.di_pix
@@ -338,58 +467,97 @@ class SpeckleTracking(DataContainer):
         return {'di_pix': di_pix, 'dj_pix': dj_pix}
 
     def error_profile(self, kind: str='pixel_map') -> np.ndarray:
-        """Return a residual profile.
+        """Return a error metrics for the reference profile and pixel mapping
+        updates. The error metrics may be normalized by the error of the initial
+        estimations of the reference profile and pixel mapping function. The
+        normalization is performed if :func:`create_initial` was invoked before.
 
         Args:
             kind : Choose between generating the error metric of the pixel mapping
-                ('pixel_map') or reference image ('reference_image')update.
+                ('pixel_map') or reference image ('reference')update.
 
         Raises:
-            AttributeError : If `reference_image` was not generated beforehand.
             ValueError : If `kind` keyword value is not valid.
 
         Returns:
             Residual profile.
+
+        See Also:
+            :func:`SpeckleTracking.update_reference` : More details on the reference
+            profile update procedure.
+            :func:`SpeckleTracking.update_pixel_map` : More details on the pixel
+            mapping update procedure.
         """
-        if self.reference_image is None:
-            raise AttributeError('The reference image has not been generated')
+
         if kind == 'pixel_map':
-            return pm_errors(I_n=self.data, W=self.whitefield,
-                             I0=self.reference_image, u=self.pixel_map,
-                             di=self.di_pix - self.n0, dj=self.dj_pix - self.m0,
-                             ds_y=self.ds_y, ds_x=self.ds_x, sigma=self.sigma,
-                             num_threads=self.num_threads)
-        elif kind == 'reference':
-            return ref_errors(I_n=self.data, W=self.whitefield, h=self.hval,
-                              I0=self.reference_image, u=self.pixel_map,
-                              di=self.di_pix - self.n0, dj=self.dj_pix - self.m0,
-                              ds_y=self.ds_y, ds_x=self.ds_x, sigma=self.sigma,
-                              num_threads=self.num_threads)
-        else:
-            raise ValueError('kind keyword is invalid')
+            pm_err = pm_errors(I_n=self.data, W=self.whitefield, u=self.pixel_map,
+                               I0=self.reference_image, sigma=self.scale_map,
+                               di=self.di_pix - self.ref_orig[0], ds_y=self.ds_y,
+                               dj=self.dj_pix - self.ref_orig[1], ds_x=self.ds_x,
+                               num_threads=self.num_threads)
+            if self.initial is None:
+                return pm_err
+            pm_tot = self.initial.error_profile(kind=kind)
+            return np.where(pm_tot, pm_err / pm_tot, 0.0)
+
+        if kind == 'reference':
+            ref_err = ref_errors(I_n=self.data, W=self.whitefield, u=self.pixel_map,
+                                 I0=self.reference_image, hval=self.hval,
+                                 di=self.di_pix - self.ref_orig[0], ds_y=self.ds_y,
+                                 dj=self.dj_pix - self.ref_orig[1], ds_x=self.ds_x,
+                                 num_threads=self.num_threads)
+            if self.initial is None:
+                return ref_err
+            self.initial.hval = self.hval
+            ref_tot = self.initial.error_profile(kind=kind)
+
+            idxs0 = np.moveaxis(self.initial.ref_indices(), 0, -1)
+            idxs1 = np.moveaxis(self.ref_indices(), 0, -1)
+
+            start = np.max((idxs0[0, 0], idxs1[0, 0]), axis=0)
+            end = np.min((idxs0[-1, -1], idxs1[-1, -1]), axis=0)
+            ps = 0.5 * np.array([self.ds_y, self.ds_x])
+
+            roi0 = np.concatenate([np.argwhere(np.all(np.abs(idxs0 - start) < ps, axis=-1)),
+                                   np.argwhere(np.all(np.abs(idxs0 - end) < ps, axis=-1)) + 1])
+            roi1 = np.concatenate([np.argwhere(np.all(np.abs(idxs1 - start) < ps, axis=-1)),
+                                   np.argwhere(np.all(np.abs(idxs1 - end) < ps, axis=-1)) + 1])
+
+            ref_tot = ref_tot[roi0[0, 0]:roi0[1, 0], roi0[0, 1]:roi0[1, 1]]
+            ref_err = ref_err[roi1[0, 0]:roi1[1, 0], roi1[0, 1]:roi1[1, 1]]
+            return np.where(ref_tot, ref_err / ref_tot, 0.0)
+
+        raise ValueError('kind keyword is invalid')
 
     def find_hopt(self, h0: float=1.0, method: str='KerReg',
                   epsilon: float=1e-4, maxiter: int=50, gtol: float=1e-5,
                   verbose: bool=False) -> float:
-        """Find the optimal kernel bandwidth using the BFGS algorithm.
+        """Find the optimal kernel bandwidth by finding the bandwidth, that minimized
+        the Cross-validation error metric. The minimization process is performed with
+        the quasi-Newton method of Broyden, Fletcher, Goldfarb, and Shanno [BFGS]_.
 
         Args:
             h0 : Initial guess of kernel bandwidth in pixels.
-            alpha : Weight of the variance term in the error metric.
-            method : `reference_image` update algorithm. The following
-                keyword values are allowed:
+            method : `reference_image` update algorithm. The following keyword values
+                are allowed:
 
                 * 'KerReg' : Kernel regression algorithm.
                 * 'LOWESS' : Local weighted linear regression.
 
-            epsilon : The step size used in the estimation of the fitness
-                gradient.
+            epsilon : The step size used in the estimation of the fitness gradient.
+            maxiter : Maximum number of iterations in the minimization loop.
+            gtol : Gradient norm must be less than `gtol` before successful
+                termination.
             verbose : Print convergence message if True.
 
         Returns:
             Optimal kernel bandwidth in pixels.
+
+        References:
+            .. [BFGS] S. Wright, J. Nocedal et al., “Numerical optimization,” Springer
+                     Sci. 35, 7 (1999).
         """
-        optimizer = BFGS(lambda hval: self.CV(hval, method), h0,
+        optimizer = BFGS(lambda hval: self.CV(hval, method), np.atleast_1d(h0),
                          epsilon=epsilon)
         itor = tqdm(range(maxiter), disable=not verbose,
                     bar_format='{desc} {percentage:3.0f}% {bar} Iteration {n_fmt}'\
@@ -403,28 +571,41 @@ class SpeckleTracking(DataContainer):
                 break
         return optimizer.state_dict()['xk'].item()
 
-    def iter_update_gd(self, search_window: Tuple[float, float, float], blur: float=0.0,
-                       h0: Optional[float]=None, n_iter: int=30, f_tol: float=1e-8,
-                       ref_method: str='KerReg', pm_method: str='gsearch',
-                       pm_args: Dict[str, Union[bool, int, float, str]]={},
-                       options: Dict[str, Union[bool, float, str]]={},
-                       verbose: bool=True) -> Tuple[SpeckleTracking, Dict[str, List[float]]]:
-        """Perform iterative Robust Speckle Tracking update. `h0` and `blur` define
-        high frequency cut-off to supress the noise. `h0` is iteratively updated by
-        dint of Gradient Descent. Iterative update terminates when the change of the
-        total mean-squared-error (MSE) becomes too small (see `f_tol` for more info).
+    def train_adapt(self, search_window: Tuple[float, float, float], blur: float=0.0,
+                    h0: Optional[float]=None, n_iter: int=30, f_tol: float=1e-8,
+                    ref_method: str='KerReg', pm_method: str='gsearch',
+                    pm_args: Dict[str, Union[bool, int, float, str]]={},
+                    options: Dict[str, Union[bool, float, str]]={},
+                    verbose: bool=True) -> Tuple[SpeckleTracking, Dict[str, List[float]]]:
+        """Perform adaptive iterative Robust Speckle Tracking update. The reconstruction
+        cycle consists of: (i) estimating an optimal kernel bandwidth for the reference
+        image estimate (see :func:`SpeckleTracking.find_hopt`); (ii) generating the
+        reference image (see :func:`SpeckleTracking.update_reference`); (iii) updating
+        the pixel mapping between a stack of frames and the generated reference image
+        (see :func:`SpeckleTracking.update_pixel_map`); (iv) updating the sample
+        translation vectors (if needed, see :func:`SpeckleTracking.update_translations`);
+        and (v) calculating the mean Huber error (see :func:`SpeckleTracking.update_error`).
 
         Args:
-            sw_x : Search window size in pixels along the horizontal detector axis.
-            sw_y : Search window size in pixels along the vertical detector axis.
+            search_window : A tuple of three elements ('sw_y', 'sw_x', 'sw_s'). The elements
+                are the following:
+
+                * 'sw_y' : Search window size in pixels along the horizontal detector
+                  axis.
+                * 'sw_x' : Search window size in pixels along the vertical detector
+                  axis.
+                * 'sw_s' : Search window size of the Huber scaling map. Given as a ratio
+                  (0.0 - 1.0) relative to the scaling map value before the update.
+
             blur : Smoothing kernel bandwidth used in `pixel_map` regularisation.
                 The value is given in pixels.
             h0 : Smoothing kernel bandwidth used in `reference_image` estimation.
                 The value is given in pixels. The value is estimated with
                 :func:`SpeckleTracking.find_hopt` by default.
             n_iter : Maximum number of iterations.
-            f_tol : Tolerance for termination by the change of the total MSE. The
-                iteration stops when ``(f^k - f^{k+1})/max{|f^k|,|f^{k+1}|,1} <= ftol``.
+            f_tol : Tolerance for termination by the change of the average error. The
+                iteration stops when ``(error^k - error^{k+1})/max{|error^k|, |error^{k+1}|, 
+                1} <= f_tol``.
             ref_method : `reference_image` update algorithm. The following
                 keyword values are allowed:
 
@@ -487,14 +668,18 @@ class SpeckleTracking(DataContainer):
 
             * 'extra': A dictionary with the given parameters:
 
-              * 'errors' : List of total MSE values for each iteration.
+              * 'errors' : List of average error values for each iteration.
               * 'hvals' : List of kernel bandwidths for each iteration.
 
               Only if `return_extra` is True.
         """
         integrate = pm_args.get('integrate', False)
+
         epsilon = options.get('epsilon', 1e-4)
         update_translations = options.get('update_translations', False)
+        momentum = options.get('momentum', 0.0)
+        amax = options.get('amax', 1e3)
+        maxiter = options.get('maxiter', 5)
         return_extra = options.get('return_extra', False)
 
         if h0 is None:
@@ -505,11 +690,12 @@ class SpeckleTracking(DataContainer):
             if verbose:
                 print(f"New hopt = {h0:.3f}")
 
-        optimizer = BFGS(lambda hval: self.CV(hval, ref_method),
-                         h0, epsilon=epsilon)
 
         obj = self.update_reference(hval=h0, method=ref_method)
         obj.update_errors.inplace_update()
+
+        optimizer = BFGS(lambda hval: obj.CV(hval, ref_method),
+                         np.atleast_1d(h0), epsilon=epsilon)
 
         errors = [obj.error,]
         hvals = [h0,]
@@ -518,30 +704,33 @@ class SpeckleTracking(DataContainer):
                     bar_format='{desc} {percentage:3.0f}% {bar} ' \
                     'Iteration {n_fmt} / {total_fmt} [{elapsed}<{remaining}, {rate_fmt}{postfix}]')
         if verbose:
-            print(f"Initial MSE = {errors[-1]:.6f}, Initial h0 = {hvals[-1]:.2f}")
+            print(f"Initial error = {errors[-1]:.6f}, Initial h0 = {hvals[-1]:.2f}")
 
         for _ in itor:
             # Update pixel_map
-            new_obj = obj.update_pixel_map(search_window=search_window, blur=blur, integrate=integrate,
-                                           method=pm_method, extra_args=pm_args)
+            new_obj = obj.update_pixel_map(search_window=search_window, blur=blur,
+                                           integrate=integrate, method=pm_method,
+                                           extra_args=pm_args)
 
             # Update di_pix, dj_pix
             if update_translations:
-                new_obj.update_translations.inplace_update(sw_y=search_window[0], sw_x=search_window[1],
+                new_obj.update_translations.inplace_update(sw_y=search_window[0],
+                                                           sw_x=search_window[1],
                                                            blur=blur)
 
             # Update hval and step
-            optimizer.step()
-            h0 = optimizer.state_dict()['xk'].item()
+            optimizer.update_loss(lambda hval: new_obj.CV(hval, ref_method))
+            optimizer.step(maxiter=maxiter, amax=amax)
+            h0 = (1.0 - momentum) * optimizer.state_dict()['xk'].item() + momentum * hvals[-1]
             hvals.append(h0)
 
             # Update reference_image
             new_obj.update_reference.inplace_update(hval=h0, method=ref_method)
 
             new_obj.update_errors.inplace_update()
-            errors.append(new_obj.error)
+            errors.append((1.0 - momentum) * new_obj.error + momentum * errors[-1])
             if verbose:
-                itor.set_description(f"Total MSE = {errors[-1]:.6f}, hval = {hvals[-1]:.2f}")
+                itor.set_description(f"Error = {errors[-1]:.6f}, hval = {hvals[-1]:.2f}")
 
             # Break if function tolerance is satisfied
             if (errors[-2] - errors[-1]) / max(errors[-2], errors[-1]) > f_tol:
@@ -554,26 +743,39 @@ class SpeckleTracking(DataContainer):
             return obj, {'errors': errors, 'hvals': hvals}
         return obj
 
-    def iter_update(self, search_window: Tuple[float, float, float], blur: float=0.0,
-                    h0: Optional[float]=None, n_iter: int=30, f_tol: float=1e-8,
-                    ref_method: str='KerReg', pm_method: str='gsearch',
-                    pm_args: Dict[str, Union[bool, int, float, str]]={},
-                    options: Dict[str, Union[bool, float, str]]={},
-                    verbose: bool=True) -> Tuple[SpeckleTracking, List[float]]:
-        """Perform iterative Robust Speckle Tracking update. `h0` and `blur` define
-        high frequency cut-off to supress the noise and stay constant during the
-        update. Iterative update terminates when the change of the total
-        mean-squared-error (MSE) becomes too small (see `f_tol` for more info).
+    def train(self, search_window: Tuple[float, float, float], blur: float=0.0,
+              h0: Optional[float]=None, n_iter: int=30, f_tol: float=1e-8,
+              ref_method: str='KerReg', pm_method: str='gsearch',
+              pm_args: Dict[str, Union[bool, int, float, str]]={},
+              options: Dict[str, Union[bool, float, str]]={},
+              verbose: bool=True) -> Tuple[SpeckleTracking, List[float]]:
+        """Perform iterative Robust Speckle Tracking update. The reconstruction cycle
+        consists of: (i) generating the reference image (see
+        :func:`SpeckleTracking.update_reference`); (ii) updating the pixel mapping between
+        a stack of frames and the generated reference image (see
+        :func:`SpeckleTracking.update_pixel_map`); (iii) updating the sample translation
+        vectors (if needed, see :func:`SpeckleTracking.update_translations`); and (iv)
+        calculating the mean Huber error (see :func:`SpeckleTracking.update_error`). The
+        kernel bandwidth in the reference update is kept fixed during the iterative update
+        procedure.
 
         Args:
-            sw_x : Search window size in pixels along the horizontal detector axis.
-            sw_y : Search window size in pixels along the vertical detector axis.
+            search_window : A tuple of three elements ('sw_y', 'sw_x', 'sw_s'). The elements
+                are the following:
+
+                * 'sw_y' : Search window size in pixels along the horizontal detector
+                  axis.
+                * 'sw_x' : Search window size in pixels along the vertical detector
+                  axis.
+                * 'sw_s' : Search window size of the Huber scaling map. Given as a ratio
+                  (0.0 - 1.0) relative to the scaling map value before the update.
+
             blur : Smoothing kernel bandwidth used in `pixel_map` regularisation.
                 The value is given in pixels.
             h0 : Smoothing kernel bandwidth used in `reference_image` regression.
                 The value is given in pixels.
             n_iter : Maximum number of iterations.
-            f_tol : Tolerance for termination by the change of the total MSE. The
+            f_tol : Tolerance for termination by the change of the average error. The
                 iteration stops when ``(f^k - f^{k+1})/max{|f^k|,|f^{k+1}|,1} <= ftol``.
             ref_method : `reference_image` update algorithm. The following keyword
                 values are allowed:
@@ -634,12 +836,14 @@ class SpeckleTracking(DataContainer):
               are also updated if 'update_translations' in `options`
               is True.
 
-            * 'errors' : List of total MSE values for each iteration. Only if
+            * 'errors' : List of average error values for each iteration. Only if
               'return_extra' in `options` is True.
         """
         integrate = pm_args.get('integrate', False)
+
         epsilon = options.get('epsilon', 1e-4)
         update_translations = options.get('update_translations', False)
+        momentum = options.get('momentum', 0.0)
         return_extra = options.get('return_extra', False)
 
         if h0 is None:
@@ -658,17 +862,19 @@ class SpeckleTracking(DataContainer):
                     'Iteration {n_fmt} / {total_fmt} [{elapsed}<{remaining}, {rate_fmt}{postfix}]')
 
         if verbose:
-            print(f"Initial MSE = {errors[0]:.6f}, "\
+            print(f"Initial error = {errors[0]:.6f}, "\
                   f"Initial h0 = {h0:.2f}")
 
         for _ in itor:
             # Update pixel_map
-            new_obj = obj.update_pixel_map(search_window=search_window, blur=blur, integrate=integrate,
-                                           method=pm_method, extra_args=pm_args)
+            new_obj = obj.update_pixel_map(search_window=search_window, blur=blur,
+                                           integrate=integrate, method=pm_method,
+                                           extra_args=pm_args)
 
             # Update di_pix, dj_pix
             if update_translations:
-                new_obj.update_translations.inplace_update(sw_y=search_window[0], sw_x=search_window[1],
+                new_obj.update_translations.inplace_update(sw_y=search_window[0],
+                                                           sw_x=search_window[1],
                                                            blur=blur)
 
             # Update reference_image
@@ -676,9 +882,9 @@ class SpeckleTracking(DataContainer):
             new_obj.update_errors.inplace_update()
 
             # Calculate errors
-            errors.append(new_obj.error)
+            errors.append((1.0 - momentum) * new_obj.error + momentum * errors[-1])
             if verbose:
-                itor.set_description(f"Total MSE = {errors[-1]:.6f}")
+                itor.set_description(f"Error = {errors[-1]:.6f}")
 
             # Break if function tolerance is satisfied
             if (errors[-2] - errors[-1]) / max(errors[-2], errors[-1]) > f_tol:
@@ -693,8 +899,9 @@ class SpeckleTracking(DataContainer):
 
     def CV(self, hval: float, method: str='KerReg') -> float:
         """Return cross-validation error for the given kernel bandwidth `hval`.
-        Generate a reference error based on the training subset and find the
-        error for the test error.
+        The cross-validation error metric is calculated as follows: (i) generate
+        a reference profile based on the training subset and (ii) find the
+        mean-squared-error (MSE) for the test subset.
 
         Args:
             hval : `reference_image` kernel bandwidths in pixels.
@@ -716,23 +923,23 @@ class SpeckleTracking(DataContainer):
         if method == 'KerReg':
             I0, n0, m0 = KR_reference(I_n=self.data, W=self.whitefield * self.train_mask,
                                       u=self.pixel_map, di=self.di_pix, dj=self.dj_pix,
-                                      ds_y=self.ds_y, ds_x=self.ds_x, h=hval,
+                                      ds_y=self.ds_y, ds_x=self.ds_x, hval=hval,
                                       num_threads=self.num_threads)
         elif method == 'LOWESS':
             I0, n0, m0 = LOWESS_reference(I_n=self.data, W=self.whitefield * self.train_mask,
                                           u=self.pixel_map, di=self.di_pix, dj=self.dj_pix,
-                                          ds_y=self.ds_y, ds_x=self.ds_x, h=hval,
+                                          ds_y=self.ds_y, ds_x=self.ds_x, hval=hval,
                                           num_threads=self.num_threads)
         else:
             raise ValueError('Method keyword is invalid')
         error = pm_total_error(I_n=self.data, W=self.whitefield * self.test_mask, I0=I0,
                                u=self.pixel_map, di=self.di_pix - n0, dj=self.dj_pix - m0,
-                               ds_y=self.ds_y, ds_x=self.ds_x, sigma=self.sigma,
+                               ds_y=self.ds_y, ds_x=self.ds_x, sigma=self.scale_map,
                                num_threads=self.num_threads)
         return error
 
     def CV_curve(self, harr: np.ndarray, method: str='KerReg') -> np.ndarray:
-        """Return a set cross-validation errors for a set of kernel
+        """Return a set of cross-validation errors for a set of kernel
         bandwidths.
 
         Args:

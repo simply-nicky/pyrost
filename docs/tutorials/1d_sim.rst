@@ -54,7 +54,7 @@ import the protocol file, which is located in the same folder with `data.cxi`.
 Speckle tracking update
 -----------------------
 You can perform the speckle tracking update procedure with :class:`pyrost.SpeckleTracking`. This class
-contains a :func:`pyrost.SpeckleTracking.iter_update` method, that performs the iterative sample
+contains a :func:`pyrost.SpeckleTracking.train` method, that performs the iterative sample
 profile (`reference_image`) and lens aberrations (`pixel_map`) reconstruction.
 
 .. note:: You should pay outmost attention to choosing the right kernel bandwidth of the
@@ -67,16 +67,16 @@ profile (`reference_image`) and lens aberrations (`pixel_map`) reconstruction.
 .. code-block:: python
 
     >>> st_obj = data.get_st()
-    >>> st_res, errors = st_obj.iter_update(sw_x=10, h0=50., blur=8., verbose=True, n_iter=10)
+    >>> st_res, errors = st_obj.train(sw_x=10, h0=50., blur=8., verbose=True, n_iter=10)
 
-**OR** you can perform an iterative update with :func:`pyrost.SpeckleTracking.iter_update_gd`, where
+**OR** you can perform an iterative update with :func:`pyrost.SpeckleTracking.train_adapt`, where
 the kernel bandwidth of the reference image estimator is updated based on the gradient descent. This
 algorithm attains lower final error in general.
 
 .. code-block:: python
 
     >>> st_obj = data.get_st()
-    >>> st_res = st_obj.iter_update_gd(sw_x=10, h0=50., blur=8., verbose=True, n_iter=20)
+    >>> st_res = st_obj.train_adapt(sw_x=10, h0=50., blur=8., verbose=True, n_iter=20)
 
     >>> fig, axes = plt.subplots(1, 2, figsize=(16, 6))
     >>> axes[0].plot(np.arange(st_res.reference_image.shape[1]) - st_res.m0,

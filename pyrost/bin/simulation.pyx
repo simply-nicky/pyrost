@@ -409,6 +409,7 @@ def gaussian_filter(np.ndarray inp not None, object sigma not None, object order
     cdef void *_out = np.PyArray_DATA(out)
 
     cdef void *_inp
+    cdef int inp_tn = np.PyArray_TYPE(inp)
     if np.PyArray_ISCOMPLEX(inp):
         inp = check_array(inp, np.NPY_COMPLEX128)
         _inp = <double *>np.PyArray_DATA(inp)
@@ -441,7 +442,7 @@ def gaussian_filter(np.ndarray inp not None, object sigma not None, object order
 
     if fail:
         raise RuntimeError('C backend exited with error.')
-    return out
+    return check_array(out, inp_tn)
 
 def gaussian_gradient_magnitude(np.ndarray inp not None, object sigma not None, str mode='reflect',
                                 double cval=0.0, double truncate=4.0, str backend='numpy',
@@ -499,6 +500,7 @@ def gaussian_gradient_magnitude(np.ndarray inp not None, object sigma not None, 
     cdef double *_out = <double *>np.PyArray_DATA(out)
 
     cdef void *_inp
+    cdef int inp_tn = np.PyArray_TYPE(inp)
     if np.PyArray_ISCOMPLEX(inp):
         inp = check_array(inp, np.NPY_COMPLEX128)
         _inp = <double *>np.PyArray_DATA(inp)
@@ -531,7 +533,7 @@ def gaussian_gradient_magnitude(np.ndarray inp not None, object sigma not None, 
     
     if fail:
         raise RuntimeError('C backend exited with error.')
-    return out
+    return check_array(out, inp_tn)
 
 def bar_positions(double x0, double x1, double b_dx, double rd, long seed):
     """Generate a coordinate array of randomized barcode's bar positions.
@@ -659,7 +661,7 @@ def mll_profile(np.ndarray x_arr not None, np.ndarray layers not None, complex m
 def make_frames(np.ndarray pfx not None, np.ndarray pfy not None, double dx, double dy,
                 tuple shape, long seed, unsigned num_threads=1):
     """Generate intensity frames from one-dimensional intensity profiles (`pfx`,
-    `pfy`) and whitefield profiles (`wfx`, `wfy`). Intensity profiles resized into
+    `pfy`) and white-field profiles (`wfx`, `wfy`). Intensity profiles resized into
     the shape of a frame. Poisson noise is applied if `seed` is non-negative.
 
     Args:
