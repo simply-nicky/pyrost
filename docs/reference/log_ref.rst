@@ -13,10 +13,10 @@ The protocol consists of the log keys of the attributes that are
 requisite to extract from the header part of a log file and their
 corresponding data types:
 
-* `datatypes` : Data type of the attributes (`float`, `int`, `str`,
+* **datatypes** : Data type of the attributes (`float`, `int`, `str`,
   or `bool`).
-* `log_keys` : Log key to find the attribute in the log file.
-* `part_keys` : The name of the part where the attribute is stored in the log
+* **log_keys** : Log key to find the attribute in the log file.
+* **part_keys** : The name of the part where the attribute is stored in the log
   log file.
 
 .. note::

@@ -283,9 +283,9 @@ def cxi_converter_sigray(out_path: str, scan_num: int, dir_path: str='/gpfs/cfel
         target : Sigray X-ray source target used. The following values are
             accepted:
 
-            * 'Mo' : Mollibdenum.
-            * 'Cu' : Cuprum.
-            * 'Rh' : Rhodium.
+            * `Mo` : Mollibdenum.
+            * `Cu` : Cuprum.
+            * `Rh` : Rhodium.
 
         distance : Detector distance in meters.
         lens : Specify if the lens mounted in the upper holder ('up') or in

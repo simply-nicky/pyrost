@@ -79,26 +79,26 @@ class LeastSquares:
             loss : Determines the loss function. The following keyword values are
                 allowed:
 
-                * 'linear : ``rho(z) = z``. Gives a standard
+                * `linear`: ``rho(z) = z``. Gives a standard
                   least-squares problem.
-                * 'soft_l1' : ``rho(z) = 2 * ((1 + z)**0.5 - 1)``. The smooth
+                * `soft_l1` : ``rho(z) = 2 * ((1 + z)**0.5 - 1)``. The smooth
                   approximation of l1 (absolute value) loss. Usually a good
                   choice for robust least squares.
-                * 'huber' : ``rho(z) = z if z <= 1 else 2*z**0.5 - 1``. Works
+                * `huber` : ``rho(z) = z if z <= 1 else 2*z**0.5 - 1``. Works
                   similarly to 'soft_l1'.
-                * 'cauchy'' (default) : ``rho(z) = ln(1 + z)``. Severely weakens
+                * `cauchy` (default) : ``rho(z) = ln(1 + z)``. Severely weakens
                   outliers influence, but may cause difficulties in optimization
                   process.
-                * 'arctan' : ``rho(z) = arctan(z)``. Limits a maximum loss on
+                * `arctan` : ``rho(z) = arctan(z)``. Limits a maximum loss on
                   a single residual, has properties similar to 'cauchy'.
 
         Returns:
             A tuple of three elements ('fit', 'err', 'r_sq'). The elements are the
             following:
 
-            * 'fit' : Array of fit coefficients.
-            * 'err' : Vector of errors of the `fit` fit coefficients.
-            * 'r_sq' : ``R**2`` goodness of fit.
+            * `fit` : Array of fit coefficients.
+            * `err` : Vector of errors of the `fit` fit coefficients.
+            * `r_sq` : ``R**2`` goodness of fit.
         """
         if roi is None:
             roi = (0, x.size)
@@ -223,17 +223,17 @@ class AberrationsFit(DataContainer):
             loss : Determines the loss function. The following keyword values
                 are allowed:
 
-                * 'linear' : ``rho(z) = z``. Gives a standard
+                * `linear` : ``rho(z) = z``. Gives a standard
                   least-squares problem.
-                * 'soft_l1' : ``rho(z) = 2 * ((1 + z)**0.5 - 1)``. The smooth
+                * `soft_l1` : ``rho(z) = 2 * ((1 + z)**0.5 - 1)``. The smooth
                   approximation of l1 (absolute value) loss. Usually a good
                   choice for robust least squares.
-                * 'huber' : ``rho(z) = z if z <= 1 else 2*z**0.5 - 1``. Works
+                * `huber` : ``rho(z) = z if z <= 1 else 2*z**0.5 - 1``. Works
                   similarly to 'soft_l1'.
-                * 'cauchy' (default) : ``rho(z) = ln(1 + z)``. Severely weakens
+                * `cauchy` (default) : ``rho(z) = ln(1 + z)``. Severely weakens
                   outliers influence, but may cause difficulties in optimization
                   process.
-                * 'arctan' : ``rho(z) = arctan(z)``. Limits a maximum loss on
+                * `arctan` : ``rho(z) = arctan(z)``. Limits a maximum loss on
                   a single residual, has properties similar to 'cauchy'.
 
         Returns:
@@ -355,31 +355,31 @@ class AberrationsFit(DataContainer):
             loss : Determines the loss function. The following keyword values
                 are allowed:
 
-                * 'linear' : ``rho(z) = z``. Gives a standard
+                * `linear` : ``rho(z) = z``. Gives a standard
                   least-squares problem.
-                * 'soft_l1' : ``rho(z) = 2 * ((1 + z)**0.5 - 1)``. The smooth
+                * `soft_l1` : ``rho(z) = 2 * ((1 + z)**0.5 - 1)``. The smooth
                   approximation of l1 (absolute value) loss. Usually a good
                   choice for robust least squares.
-                * 'huber' : ``rho(z) = z if z <= 1 else 2*z**0.5 - 1``. Works
+                * `huber` : ``rho(z) = z if z <= 1 else 2*z**0.5 - 1``. Works
                   similarly to 'soft_l1'.
-                * 'cauchy' (default) : ``rho(z) = ln(1 + z)``. Severely weakens
+                * `cauchy` (default) : ``rho(z) = ln(1 + z)``. Severely weakens
                   outliers influence, but may cause difficulties in optimization
                   process.
-                * 'arctan' : ``rho(z) = arctan(z)``. Limits a maximum loss on
+                * `arctan` : ``rho(z) = arctan(z)``. Limits a maximum loss on
                   a single residual, has properties similar to 'cauchy'.
 
         Returns:
             A dictionary with the fitting information. The following elements are
             defined inside:
 
-            * 'c_3' : Third order aberrations coefficient [rad / mrad^3].
-            * 'c_4' : Fourth order aberrations coefficient [rad / mrad^4].
-            * 'fit' : Array of the polynomial function coefficients of the
+            * `c_3` : Third order aberrations coefficient [rad / mrad^3].
+            * `c_4` : Fourth order aberrations coefficient [rad / mrad^4].
+            * `fit` : Array of the polynomial function coefficients of the
               pixel aberrations fit.
-            * 'ph_fit' : Array of the polynomial function coefficients of
+            * `ph_fit` : Array of the polynomial function coefficients of
               the phase aberrations fit.
-            * 'rel_err' : Vector of relative errors of the fit coefficients.
-            * 'r_sq' : ``R**2`` goodness of fit.
+            * `rel_err` : Vector of relative errors of the fit coefficients.
+            * `r_sq` : ``R**2`` goodness of fit.
 
         See Also:
             :func:`scipy.optimize.least_squares` : Full nonlinear least-squares
@@ -413,31 +413,31 @@ class AberrationsFit(DataContainer):
             loss : Determines the loss function. The following keyword values
                 are allowed:
 
-                * 'linear' : ``rho(z) = z``. Gives a standard
+                * `linear` : ``rho(z) = z``. Gives a standard
                   least-squares problem.
-                * 'soft_l1' : ``rho(z) = 2 * ((1 + z)**0.5 - 1)``. The smooth
+                * `soft_l1` : ``rho(z) = 2 * ((1 + z)**0.5 - 1)``. The smooth
                   approximation of l1 (absolute value) loss. Usually a good
                   choice for robust least squares.
-                * 'huber' : ``rho(z) = z if z <= 1 else 2*z**0.5 - 1``. Works
+                * `huber` : ``rho(z) = z if z <= 1 else 2*z**0.5 - 1``. Works
                   similarly to 'soft_l1'.
-                * 'cauchy' (default) : ``rho(z) = ln(1 + z)``. Severely weakens
+                * `cauchy` (default) : ``rho(z) = ln(1 + z)``. Severely weakens
                   outliers influence, but may cause difficulties in optimization
                   process.
-                * 'arctan' : ``rho(z) = arctan(z)``. Limits a maximum loss on
+                * `arctan` : ``rho(z) = arctan(z)``. Limits a maximum loss on
                   a single residual, has properties similar to 'cauchy'.
 
         Returns:
             A dictionary with the fitting information. The following elements are
             defined inside:
 
-            * 'c_3' : Third order aberrations coefficient [rad / mrad^3].
-            * 'c_4' : Fourth order aberrations coefficient [rad / mrad^4].
-            * 'fit' : Array of the polynomial function coefficients of the
+            * `c_3` : Third order aberrations coefficient [rad / mrad^3].
+            * `c_4` : Fourth order aberrations coefficient [rad / mrad^4].
+            * `fit` : Array of the polynomial function coefficients of the
               pixel aberrations fit.
-            * 'ph_fit' : Array of the polynomial function coefficients of
+            * `ph_fit` : Array of the polynomial function coefficients of
               the phase aberrations fit.
-            * 'rel_err' : Vector of relative errors of the fit coefficients.
-            * 'r_sq' : ``R**2`` goodness of fit.
+            * `rel_err` : Vector of relative errors of the fit coefficients.
+            * `r_sq` : ``R**2`` goodness of fit.
 
         See Also:
             :func:`scipy.optimize.least_squares` : Full nonlinear least-squares

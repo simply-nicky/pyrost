@@ -11,26 +11,47 @@ class BoundMethod:
     __self__: T
 
 class dict_to_object:
-    """Dictionary to a new object dictionary. Creates a new object with
-    the attrbiutes modified from the dictionary returned by the method.
+    """Creates a new bound method. Wraps a function implementation of a
+    class bound method to return an instance of an object instead of a
+    dictionary.
 
     Attributes:
         finstance : Class bound method.
     """
-    sig_attrs = {'__annotations__', '__doc__', '__module__', '__name__',
-                 '__qualname__'}
-
-    def __init__(self, finstance: BoundMethod) -> None:
+    def __init__(self, finstance: Callable[..., Dict]) -> None:
         """
         Args:
-            finstance : Class bound method
+            finstance : Function object containing implementation of the
+                class bound method.
         """
         self.finstance = finstance
-        for attr in self.sig_attrs:
-            self.__dict__[attr] = getattr(finstance, attr)
 
     def __get__(self, instance: T, cls: Type[T]):
-        return dict_to_object(self.finstance.__get__(instance, cls))
+        return return_obj_method(self.finstance.__get__(instance, cls), instance, cls)
+
+class return_obj_method:
+    """Factory class that uses a bound method to return an instance of an
+    object instead of a dictionary.
+
+    Attributes:
+        instance : Object instance.
+        cls : Object class.
+        sig_attrs : Signature attributes.
+    """
+    sig_attrs = {'__annotations__', '__doc__', '__module__',
+                 '__name__', '__qualname__'}
+
+    def __init__(self, method: BoundMethod, instance: T, cls: Type[T]) -> None:
+        """
+        Args:
+            method : Wrapped method that returns a dictionary.
+            instance : Object instance.
+            cls : Object class.
+        """
+        self.instance, self.cls = instance, cls
+        self.__wrapped__ = method
+        for attr in self.sig_attrs:
+            self.__dict__[attr] = getattr(method, attr)
 
     def __call__(self, *args: Any, **kwargs: Any) -> T:
         """Return an object from the dictionary yielded by
@@ -44,11 +65,11 @@ class dict_to_object:
             A new object instance.
         """
         dct = {}
-        dct.update(self.finstance(*args, **kwargs))
-        for key, val in self.finstance.__self__.items():
+        dct.update(self.__wrapped__(*args, **kwargs))
+        for key, val in self.instance.items():
             if key not in dct:
                 dct[key] = val
-        return type(self.finstance.__self__)(**dct)
+        return self.cls(**dct)
 
     def inplace_update(self, *args: Any, **kwargs: Any) -> None:
         """Modify the object by the dictionary yielded from
@@ -58,9 +79,9 @@ class dict_to_object:
             args : Positional arguments.
             kwargs : Keyword arguments.
         """
-        dct = self.finstance(*args, **kwargs)
+        dct = self.__wrapped__(*args, **kwargs)
         for key, val in dct.items():
-            self.finstance.__self__.__setattr__(key, val)
+            self.instance.__setattr__(key, val)
 
 class DataContainer:
     """Abstract data container class.
@@ -111,6 +132,9 @@ class DataContainer:
     def __contains__(self, attr: str) -> bool:
         return attr in self.attr_set | self.init_set
 
+    def __getitem__(self, attr: str) -> Any:
+        return self.__dict__.__getitem__(attr)
+
     def __repr__(self) -> str:
         return {attr: self.__dict__[attr] for attr in self
                 if self.__dict__.get(attr) is not None}.__repr__()
@@ -135,13 +159,13 @@ class DataContainer:
     def contents(self) -> List[str]:
         return [attr for attr in self if self.get(attr) is not None]
 
-    def keys(self) -> KeysView:
+    def keys(self) -> Iterable[str]:
         """Return the list of attributes stored in the container.
 
         Returns:
             List of attributes stored in the container.
         """
-        return {attr: self.__dict__[attr] for attr in self}.keys()
+        return list(self)
 
     def items(self) -> ItemsView:
         """Return (key, value) pairs of the datasets stored in the container.
@@ -149,7 +173,7 @@ class DataContainer:
         Returns:
             (key, value) pairs of the datasets stored in the container.
         """
-        return {attr: self.__dict__[attr] for attr in self}.items()
+        return dict(self).items()
 
     def values(self) -> ValuesView:
         """Return the attributes' data stored in the container.
@@ -157,4 +181,4 @@ class DataContainer:
         Returns:
             List of data stored in the container.
         """
-        return {attr: self.__dict__[attr] for attr in self}.values()
+        return dict(self).values()

@@ -147,7 +147,7 @@ class Crop(Transform):
         """Apply the transform to a set of points.
 
         Args:
-            inp : Input array of points.
+            pts : Input array of points.
 
         Returns:
             Output array of points.
@@ -177,7 +177,7 @@ class Crop(Transform):
         """Tranform back an array of points.
 
         Args:
-            inp : Input tranformed array of points.
+            pts : Input tranformed array of points.
 
         Returns:
             Output array of points.
@@ -249,7 +249,7 @@ class Downscale(Transform):
         """Apply the transform to a set of points.
 
         Args:
-            inp : Input array of points.
+            pts : Input array of points.
 
         Returns:
             Output array of points.
@@ -280,7 +280,7 @@ class Downscale(Transform):
         """Tranform back an array of points.
 
         Args:
-            inp : Input tranformed array of points.
+            pts : Input tranformed array of points.
 
         Returns:
             Output array of points.
@@ -332,7 +332,7 @@ class Mirror(Transform):
         """Apply the transform to a set of points.
 
         Args:
-            inp : Input array of points.
+            pts : Input array of points.
 
         Returns:
             Output array of points.
@@ -363,7 +363,7 @@ class Mirror(Transform):
         """Tranform back an array of points.
 
         Args:
-            inp : Input tranformed array of points.
+            pts : Input tranformed array of points.
 
         Returns:
             Output array of points.
@@ -427,7 +427,7 @@ class ComposeTransforms(Transform):
         """Apply the transform to a set of points.
 
         Args:
-            inp : Input array of points.
+            pts : Input array of points.
 
         Returns:
             Output array of points.
@@ -441,6 +441,7 @@ class ComposeTransforms(Transform):
 
         Args:
             inp : Input tranformed data array.
+            out : Output data array. A new one created if not prodived.
 
         Returns:
             Output data array.
@@ -453,7 +454,7 @@ class ComposeTransforms(Transform):
         """Tranform back an array of points.
 
         Args:
-            inp : Input tranformed array of points.
+            pts : Input tranformed array of points.
 
         Returns:
             Output array of points.
@@ -722,9 +723,9 @@ class STData(DataContainer):
             apply_transform : Apply `transform` to the data arrays if True.
             mode : Writing mode:
 
-                * 'append' : Append the data array to already existing dataset.
-                * 'insert' : Insert the data under the given indices `idxs`.
-                * 'overwrite' : Overwrite the existing dataset.
+                * `append` : Append the data array to already existing dataset.
+                * `insert` : Insert the data under the given indices `idxs`.
+                * `overwrite` : Overwrite the existing dataset.
 
             verbose : Set the verbosity of the loading process.
 
@@ -827,24 +828,24 @@ class STData(DataContainer):
     @dict_to_object
     def update_mask(self, method: str='perc-bad', pmin: float=0., pmax: float=99.99,
                     vmin: int=0, vmax: int=65535, update: str='reset') -> STData:
-        """Return a new :class:`STData` object with the updated
-        bad pixels mask.
+        """Return a new :class:`STData` object with the updated bad pixels
+        mask.
 
         Args:
             method : Bad pixels masking methods:
 
-                * 'no-bad' (default) : No bad pixels.
-                * 'range-bad' : Mask the pixels which values lie outside
+                * `no-bad` (default) : No bad pixels.
+                * `range-bad` : Mask the pixels which values lie outside
                   of (`vmin`, `vmax`) range.
-                * 'perc-bad' : Mask the pixels which values lie outside
+                * `perc-bad` : Mask the pixels which values lie outside
                   of the (`pmin`, `pmax`) percentiles.
 
             vmin : Lower intensity bound of 'range-bad' masking method.
             vmax : Upper intensity bound of 'range-bad' masking method.
             pmin : Lower percentage bound of 'perc-bad' masking method.
             pmax : Upper percentage bound of 'perc-bad' masking method.
-            update : Multiply the new mask and the old one if 'multiply',
-                use the new one if 'reset'.
+            update : Multiply the new mask and the old one if `multiply`,
+                use the new one if `reset`.
 
         Returns:
             New :class:`STData` object with the updated `mask`.
@@ -977,31 +978,31 @@ class STData(DataContainer):
             loss : Determines the loss function. The following keyword values are
                 allowed:
 
-                * 'linear' : ``rho(z) = z``. Gives a standard
+                * `linear` : ``rho(z) = z``. Gives a standard
                   least-squares problem.
-                * 'soft_l1' : ``rho(z) = 2 * ((1 + z)**0.5 - 1)``. The smooth
+                * `soft_l1` : ``rho(z) = 2 * ((1 + z)**0.5 - 1)``. The smooth
                   approximation of l1 (absolute value) loss. Usually a good
                   choice for robust least squares.
-                * 'huber' : ``rho(z) = z if z <= 1 else 2*z**0.5 - 1``. Works
+                * `huber` : ``rho(z) = z if z <= 1 else 2*z**0.5 - 1``. Works
                   similarly to 'soft_l1'.
-                * 'cauchy' (default) : ``rho(z) = ln(1 + z)``. Severely weakens
+                * `cauchy` (default) : ``rho(z) = ln(1 + z)``. Severely weakens
                   outliers influence, but may cause difficulties in optimization
                   process.
-                * 'arctan' : ``rho(z) = arctan(z)``. Limits a maximum loss on
+                * `arctan` : ``rho(z) = arctan(z)``. Limits a maximum loss on
                   a single residual, has properties similar to 'cauchy'.
 
         Returns:
             A dictionary with the model fit information. The following fields
             are contained:
 
-            * 'c_3' : Third order aberrations coefficient [rad / mrad^3].
-            * 'c_4' : Fourth order aberrations coefficient [rad / mrad^4].
-            * 'fit' : Array of the polynomial function coefficients of the
+            * `c_3` : Third order aberrations coefficient [rad / mrad^3].
+            * `c_4` : Fourth order aberrations coefficient [rad / mrad^4].
+            * `fit` : Array of the polynomial function coefficients of the
               pixel aberrations fit.
-            * 'ph_fit' : Array of the polynomial function coefficients of
+            * `ph_fit` : Array of the polynomial function coefficients of
               the phase aberrations fit.
-            * 'rel_err' : Vector of relative errors of the fit coefficients.
-            * 'r_sq' : ``R**2`` goodness of fit.
+            * `rel_err` : Vector of relative errors of the fit coefficients.
+            * `r_sq` : ``R**2`` goodness of fit.
 
         See Also:
             :func:`pyrost.AberrationsFit.fit` : Full details of the aberrations
@@ -1029,22 +1030,22 @@ class STData(DataContainer):
                 :func:`SpeckleTracking.update_reference` methods. The following
                 keyword values are allowed:
 
-                * 'ds_y' : Reference image sampling interval in pixels along the
+                * `ds_y` : Reference image sampling interval in pixels along the
                   horizontal axis. The default value is 1.0.
-                * 'ds_x' : Reference image sampling interval in pixels along the
+                * `ds_x` : Reference image sampling interval in pixels along the
                   vertical axis. The default value is 1.0.
-                * 'aberrations' : Add `pixel_aberrations` to `pixel_map` of
+                * `aberrations` : Add `pixel_aberrations` to `pixel_map` of
                   :class:`SpeckleTracking` object if it's True. The default value
                   is False.
-                * 'ff_correction' : Apply dynamic flatfield correction if it's True.
+                * `ff_correction` : Apply dynamic flatfield correction if it's True.
                   The default value is False.
-                * 'hval' : Kernel bandwidth in pixels for the reference image update.
+                * `hval` : Kernel bandwidth in pixels for the reference image update.
                   The default value is 1.0.
-                * 'ref_method' : Choose the reference image update algorithm. The
+                * `ref_method` : Choose the reference image update algorithm. The
                   following keyword values are allowed:
 
-                  * 'KerReg' : Kernel regression algorithm.
-                  * 'LOWESS' : Local weighted linear regression.
+                  * `KerReg` : Kernel regression algorithm.
+                  * `LOWESS` : Local weighted linear regression.
 
                   The default value is 'KerReg'.
 
@@ -1054,9 +1055,9 @@ class STData(DataContainer):
             A tuple of two items ('r_vals', 'extra'). The elements are as
             follows:
 
-            * 'r_vals' : Array of the average values of `reference_image` gradients
+            * `r_vals` : Array of the average values of `reference_image` gradients
               squared.
-            * 'extra' : Dictionary with the intermediate results. Only if `return_extra`
+            * `extra` : Dictionary with the intermediate results. Only if `return_extra`
               is True. Contains the following data:
 
               * reference_image : The generated set of reference profiles.
@@ -1152,10 +1153,11 @@ class STData(DataContainer):
         else:
             dtypes = SpeckleTracking.dtypes_64
 
-        data = np.asarray(self.mask * self.data, order='C', dtype=dtypes['data'])
+        data = np.asarray((self.mask * self.data)[self.good_frames],
+                          order='C', dtype=dtypes['data'])
         whitefield = np.asarray(self.whitefield, order='C', dtype=dtypes['whitefield'])
-        dij_pix = np.asarray(np.swapaxes(self.pixel_translations, 0, 1), order='C',
-                             dtype=dtypes['dij_pix'])
+        dij_pix = np.asarray(np.swapaxes(self.pixel_translations[self.good_frames], 0, 1),
+                             order='C', dtype=dtypes['dij_pix'])
 
         if ff_correction and self.whitefields is not None:
             np.rint(data * np.where(self.whitefields > 0, whitefield / self.whitefields, 1.),
@@ -1228,9 +1230,9 @@ class STData(DataContainer):
             A tuple of ('cor_data', 'effs', 'eig_vals'). The elements are
             as follows:
 
-            * 'cor_data' : Background corrected stack of measured frames.
-            * 'effs' : Set of eigen flat-fields.
-            * 'eig_vals' : Corresponding eigen values for each of the eigen
+            * `cor_data` : Background corrected stack of measured frames.
+            * `effs` : Set of eigen flat-fields.
+            * `eig_vals` : Corresponding eigen values for each of the eigen
               flat-fields.
 
         References:
@@ -1239,8 +1241,10 @@ class STData(DataContainer):
                     normalization using eigen flat fields in X-ray imaging," Opt.
                     Express 23, 27975-27989 (2015).
         """
-        cor_data = np.zeros(self.data.shape, dtype=self.whitefield.dtype)
-        np.subtract(self.data, self.whitefield, where=self.mask, out=cor_data)
+        dtype = np.promote_types(self.whitefield.dtype, int)
+        cor_data = np.zeros(self.data.shape, dtype=dtype)
+        np.subtract(self.data, self.whitefield, dtype=dtype,
+                    where=self.mask, out=cor_data)
         mat_svd = np.tensordot(cor_data, cor_data, axes=((1, 2), (1, 2)))
         eig_vals, eig_vecs = np.linalg.eig(mat_svd)
         effs = np.tensordot(eig_vecs, cor_data, axes=((0,), (0,)))
@@ -1258,8 +1262,8 @@ class STData(DataContainer):
             method : Method to generate a set of dynamic white-fields. The following
                 keyword values are allowed:
 
-                * 'median' : Median `data` along the first axis.
-                * 'pca' : Generate a set of dynamic white-fields based on eigen flatfields
+                * `median` : Median `data` along the first axis.
+                * `pca` : Generate a set of dynamic white-fields based on eigen flatfields
                   `effs` from the PCA. `effs` can be obtained with :func:`STData.get_pca`
                   method.
 
@@ -1278,12 +1282,6 @@ class STData(DataContainer):
         Returns:
             New :class:`STData` object with the updated `whitefields`.
 
-        References:
-            .. [PCA] Vincent Van Nieuwenhove, Jan De Beenhouwer, Francesco De Carlo,
-                     Lucia Mancini, Federica Marone, and Jan Sijbers, "Dynamic
-                     intensity normalization using eigen flat fields in X-ray
-                     imaging," Opt. Express 23, 27975-27989 (2015).
-
         See Also:
             :func:`pyrost.STData.get_pca` : Method to generate eigen flatfields.
         """
@@ -1293,8 +1291,10 @@ class STData(DataContainer):
                                         num_threads=self.num_threads)
         elif method == 'pca':
             if cor_data is None:
-                cor_data = np.zeros(self.data.shape, dtype=self.whitefield.dtype)
-                np.subtract(self.data, self.whitefield, where=self.mask, out=cor_data)
+                dtype = np.promote_types(self.whitefield.dtype, int)
+                cor_data = np.zeros(self.data.shape, dtype=dtype)
+                np.subtract(self.data, self.whitefield, dtype=dtype,
+                            where=self.mask, out=cor_data)
             if effs is None:
                 raise ValueError('No eigen flat fields were provided')
 

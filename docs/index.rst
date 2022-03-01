@@ -3,17 +3,18 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
+******
 pyrost
-======
+******
 
 .. image:: figures/ST_flowchart_article.png
     :width: 100 %
 
 |
 
-Python Robust Speckle Tracking (**pyrost**) is a library for wavefront
-metrology and sample imaging based on ptychographic speckle tracking
-algorithm. This project takes over Andrew Morgan's
+Python Robust Speckle Tracking (`pyrost in GitHub <https://github.com/simply-nicky/pyrost>`_)
+is a library for wavefront metrology and sample imaging based on ptychographic speckle
+tracking algorithm. This project takes over Andrew Morgan's
 `speckle_tracking <https://github.com/andyofmelbourne/speckle-tracking>`_
 project as an improved version aiming to add robustness to the optimisation
 algorithm in the case of the high noise present in the measured data.
@@ -30,14 +31,14 @@ pyrost includes a framework to work with CXI files, see :doc:`reference/cxi_ref`
 more information.
 
 pyrost.simulation
-=================
+*****************
 
 **pyrost.simulation** is capable to simulate one-dimensional speckle tracking scans.
 It employs Rayleigh-Sommerfeld convolution and Fraunhofer diffraction to propagate
 the wavefronts. The back-end is written in C to yield the best performance.
 
 pyrost.multislice
-=================
+*****************
 
 The multislice simulation package (**pyrost.multislice**) is capable to propagate the wavefront
 through a bulky sample by the dint of multislice beam propagation algorithm.

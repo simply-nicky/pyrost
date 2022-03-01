@@ -340,9 +340,9 @@ class MSPropagator(DataContainer):
             A tuple of two elements ('wavefronts', 'x_arr'). The elements
             are the following:
 
-            * 'wavefronts' : Set of wavefronts calculated at the distance
+            * `wavefronts` : Set of wavefronts calculated at the distance
               `z_arr` downstream from the exit surface.
-            * 'x_arr' : Array of coordinates at the plane downstream [um].
+            * `x_arr` : Array of coordinates at the plane downstream [um].
               Only if `return_coords` is True.
         """
         if self.beam_profile is None:

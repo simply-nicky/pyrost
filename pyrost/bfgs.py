@@ -167,19 +167,19 @@ class BFGS():
         Returns:
             A dictionary with all the parameters of the optimizer:
 
-            * 'fcount' : Number of functions evaluations made.
-            * 'gcount' : Number of gradient evaluations made.
-            * 'c1' : Parameter for Armijo condition rule.
-            * 'c2' : Parameter for curvature condition rule.
-            * 'xk' : The current point.
-            * 'fval' : Objective value of the current point.
-            * 'old_fval' : Objective value of the point prior to 'xk'.
-            * 'gfk' : Gradient value of the current point.
-            * 'gnorm' : Gradient norm value of the current point.
-            * 'Hk' : The current guess of the Hessian matrix.
-            * 'epsilon' : If `grad` is approximated, use this value for the
+            * `fcount` : Number of functions evaluations made.
+            * `gcount` : Number of gradient evaluations made.
+            * `c1` : Parameter for Armijo condition rule.
+            * `c2` : Parameter for curvature condition rule.
+            * `xk` : The current point.
+            * `fval` : Objective value of the current point.
+            * `old_fval` : Objective value of the point prior to 'xk'.
+            * `gfk` : Gradient value of the current point.
+            * `gnorm` : Gradient norm value of the current point.
+            * `Hk` : The current guess of the Hessian matrix.
+            * `epsilon` : If `grad` is approximated, use this value for the
                 step size.
-            * 'xtol' :  Relative tolerance for an acceptable step in the line
+            * `xtol` :  Relative tolerance for an acceptable step in the line
                 search algorithm.
         """
         return deepcopy(self._p)

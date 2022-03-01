@@ -123,9 +123,6 @@ class BasicElement:
             where :math:`\rho` is physical density, :math:`N_a` is Avogadro constant, :math:`m_a` is
             atomic molar mass, :math:`r_e` is radius of electron, :math:`\lambda` is wavelength,
             :math:`f_1` and :math:`f_2` are real and imaginary components of scattering factor.
-
-        Reference:
-            .. [GISAXS] http://gisaxs.com/index.php/Absorption_length
         """
         wavelength = self.en_to_wl / energy
         return 4 * np.pi * self.get_ref_index(energy).imag / wavelength
@@ -157,9 +154,9 @@ class Element(BasicElement):
             dbase : Database of the tabulated scattering factors of each element. The
                 following keywords are allowed:
 
-                * 'Henke' : (10 eV < E < 30 keV) [Henke]_.
-                * 'Chantler' : (11 eV < E < 405 keV) [Chantler]_.
-                * 'BrCo' : (30 eV < E < 509 keV) [BrCo]_.
+                * `Henke` : (10 eV < E < 30 keV) [Henke]_.
+                * `Chantler` : (11 eV < E < 405 keV) [Chantler]_.
+                * `BrCo` : (30 eV < E < 509 keV) [BrCo]_.
 
         References:
             .. [Henke] http://henke.lbl.gov/optical_constants/asf.html
@@ -265,9 +262,9 @@ class Material(BasicElement):
             dbase : Database of the tabulated scattering factors of each element. The
                 following keywords are allowed:
 
-                * 'Henke' : (10 eV < E < 30 keV) [Henke]_.
-                * 'Chantler' : (11 eV < E < 405 keV) [Chantler]_.
-                * 'BrCo' : (30 eV < E < 509 keV) [BrCo]_.
+                * `Henke` : (10 eV < E < 30 keV) [Henke]_.
+                * `Chantler` : (11 eV < E < 405 keV) [Chantler]_.
+                * `BrCo` : (30 eV < E < 509 keV) [BrCo]_.
 
         References:
             .. [Henke] http://henke.lbl.gov/optical_constants/asf.html

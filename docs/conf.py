@@ -73,9 +73,22 @@ html_theme = 'furo'
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
-# html_static_path = ['_static']
-html_logo = "pyrost_logo.png"
+html_static_path = ['_static']
+html_css_files = [
+    "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/fontawesome.min.css",
+    "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/solid.min.css",
+    "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/brands.min.css",
+]
 html_theme_options = {
-    'logo_only': True,
-    'display_version': False,
+    "light_logo": "pyrost_logo.png",
+    "dark_logo": "pyrost_logo_dark.png",
+    "sidebar_hide_name": True,
+    "footer_icons": [
+        {
+            "name": "GitHub",
+            "url": "https://github.com/simply-nicky/pyrost",
+            "html": "",
+            "class": "fa-brands fa-github fa-2x",
+        },
+    ]
 }

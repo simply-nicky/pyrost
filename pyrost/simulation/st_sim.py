@@ -1,10 +1,8 @@
-"""One-dimensional speckle tracking scan simulation. Generate intensity frames
-based on Fresnel diffraction theory. :class:`pyrost.simulation.STSim` does the
-heavy lifting of calculating the wavefront propagation to the detector plane.
-:class:`pyrost.simulation.STConverter` exports simulated data to a
-`CXI <https://www.cxidb.org/cxi.html>`_ format file accordingly to the provided
-:class:`pyrost.CXIProtocol` object and saves the protocol and experimental parameters
-to the same folder.
+""":class:`pyrost.simulation.STSim` does the heavy lifting of calculating the wavefront
+propagation to the detector plane. :class:`pyrost.simulation.STConverter` exports
+simulated data to a `CXI <https://www.cxidb.org/cxi.html>`_ format file accordingly to
+the provided :class:`pyrost.CXIProtocol` object and saves the protocol and experimental
+parameters to the same folder.
 
 Examples:
 
@@ -23,7 +21,7 @@ Examples:
 from __future__ import annotations
 import os
 import argparse
-from typing import Optional, Union
+from typing import Iterable, Optional, Union
 import numpy as np
 from ..cxi_protocol import CXIProtocol, CXIStore
 from ..data_container import DataContainer, dict_to_object
@@ -289,25 +287,27 @@ class STSim(DataContainer):
 class STConverter(DataContainer):
     """
     Converter class to export simulated data from :class:`STSim` to a CXI
-    file. :class:`STConverter` also exports experimental parameters and the
-    used protocol to INI files.
+    file. Takes an instance of :class:`STSim` and a generated stack of frames
+    and automatically generates all the attributes necessary for the robust
+    speckle tracking reconstruction (see :class:`pyrost.STData`).
 
     Attributes:
-        templates_dir : Path to ini templates (for exporting `protocol` and :class:`STParams`).
-        write_attrs : Dictionary with all the attributes which are saved in CXI file.
-        protocol : CXI protocol, which contains all the attribute's paths and data types.
-        coord_ratio : Coordinates ratio between the simulated and saved data.
+        sim_obj : a :class:`STSim` instance.
 
     Notes:
-        List of the attributes saved in CXI file:
+        **Necessary attributes**:
+
+        * data : Simulated intensity frames.
+
+        **Automatically generated attributes**:
 
         * basis_vectors : Detector basis vectors.
-        * data : Measured intensity frames.
         * defocus_x : Defocus distance along the horizontal detector axis.
         * defocus_y : Defocus distance along the vertical detector axis.
         * distance : Sample-to-detector distance.
-        * roi : Region of interest in the detector plane.
         * translations : Sample's translations.
+        * transform : a :class:`pyrost.Crop` transform, that crops the frames
+          according to automatically generated region of interest.
         * wavelength : Incoming beam's wavelength.
         * x_pixel_size : Pixel's size along the horizontal detector axis.
         * y_pixel_size : Pixel's size along the vertical detector axis.
@@ -337,7 +337,10 @@ class STConverter(DataContainer):
     def __init__(self, sim_obj: STSim, data: np.ndarray, crd_rat: float=1e-6) -> None:
         """
         Args:
-            protocol : CXI protocol, which contains all the attribute's paths and data types.
+            sim_obj : a :class:`STSim` instance.
+            data : Simulated stack of frames from `sim_obj`. The data may be
+                generated either by :func:`STSim.frames` or :func:`STSim.ptychograph`
+                method.
             crd_rat : Coordinates ratio between the simulated and saved data.
         """
         super(STConverter, self).__init__(sim_obj=sim_obj, data=data, crd_rat=crd_rat)
@@ -381,8 +384,8 @@ class STConverter(DataContainer):
             protocol : CXI file protocol.
 
         Returns:
-            Data container :class:`pyrost.STData` with all the data from `data`
-            and `sim_obj`.
+            Data container :class:`pyrost.STData` with all the necessary
+            attributes generated.
         """
         files = CXIStore(out_path, out_path, protocol=protocol)
         data = self.data
@@ -392,7 +395,8 @@ class STConverter(DataContainer):
         return STData(files=files, data=data, **data_dict)
 
     def save(self, out_path: str, apply_transform: bool=True,
-             protocol: CXIProtocol=CXIProtocol.import_default()) -> None:
+             protocol: CXIProtocol=CXIProtocol.import_default(),
+             mode: str='append', idxs: Optional[Iterable[int]]=None) -> None:
         """Export simulated data `data` (fetched from :func:`STSim.frames`
         or :func:`STSim.ptychograph`), `smp_pos`, and `st_params` to `dir_path`
         folder.
@@ -400,13 +404,15 @@ class STConverter(DataContainer):
         Args:
             out_path : Path to the folder, where all the files are saved.
             protocol : CXI file protocol.
+            apply_transform : Apply :class:`pyrost.Transform` object to the
+                generated `data` if True.
 
         Returns:
             None
         """
         data = self.export_data(out_path=out_path, protocol=protocol,
                                 apply_transform=apply_transform)
-        data.save()
+        data.save(mode=mode, idxs=idxs)
 
 def main():
     """Main fuction to run Speckle Tracking simulation and save the results to a CXI file.
@@ -442,18 +448,21 @@ def main():
     parser.add_argument('--offset', type=float,
                         help="Sample's offset at the beginning and the end of the scan [um]")
     parser.add_argument('-p', '--ptych', action='store_true', help="Generate ptychograph data")
-    parser.set_defaults(**STParams.import_default().export_dict())
+    parser.set_defaults(**STParams.import_default())
 
     args = vars(parser.parse_args())
-    if args['ini_file']:
-        st_params = STParams.import_ini(args['ini_file'])
+    out_path = args.pop('out_path')
+    ini_file = args.pop('ini_file')
+    is_ptych = args.pop('ptych')
+    if ini_file:
+        st_params = STParams.import_ini(ini_file)
     else:
-        st_params = STParams(**args)
+        st_params = STParams.import_default(**args)
 
     sim_obj = STSim(st_params)
-    if args['ptych']:
+    if is_ptych:
         data = sim_obj.ptychograph()
     else:
         data = sim_obj.frames()
-    STConverter(sim_obj, data).save(args['out_path'])
-    print(f"The simulation results have been saved to {os.path.abspath(args['out_path']):s}")
+    STConverter(sim_obj, data).save(out_path, mode='overwrite')
+    print(f"The simulation results have been saved to {os.path.abspath(out_path)}")

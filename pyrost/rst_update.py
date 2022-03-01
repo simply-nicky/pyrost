@@ -163,7 +163,7 @@ class SpeckleTracking(DataContainer):
         error metric.
 
         Args:
-            test_ratio : 
+            test_ratio : Ratio between the size of the test subset and the whole dataset.
 
         Returns:
             A new :class:`SpeckleTracking` object with a new test / train subsets split.
@@ -188,8 +188,11 @@ class SpeckleTracking(DataContainer):
             method : `reference_image` update algorithm. The following keyword
                 values are allowed:
 
-                * 'KerReg' : Kernel regression algorithm.
-                * 'LOWESS' : Local weighted linear regression.
+                * `KerReg` : Kernel regression algorithm.
+                * `LOWESS` : Local weighted linear regression.
+
+        Raises:
+            ValueError : If `method` keyword value is not valid.
 
         Returns:
             A new :class:`SpeckleTracking` object with the updated
@@ -214,9 +217,6 @@ class SpeckleTracking(DataContainer):
             :math:`\Delta i_n, \Delta j_n` are the sample translation along the
             horizontal and vertical axes in pixels, :math:`I_{nij}` are the measured
             stack of frames, and `W_{ij}` is the white-field.
-
-        Raises:
-            ValueError : If `method` keyword value is not valid.
 
         See Also:
             :func:`pyrost.bin.make_reference` : Full details of the `reference_image`
@@ -266,11 +266,11 @@ class SpeckleTracking(DataContainer):
             search_window : A tuple of three elements ('sw_y', 'sw_x', 'sw_s'). The elements
                 are the following:
 
-                * 'sw_y' : Search window size in pixels along the horizontal detector
+                * `sw_y` : Search window size in pixels along the horizontal detector
                   axis.
-                * 'sw_x' : Search window size in pixels along the vertical detector
+                * `sw_x` : Search window size in pixels along the vertical detector
                   axis.
-                * 'sw_s' : Search window size of the Huber scaling map. Given as a ratio
+                * `sw_s` : Search window size of the Huber scaling map. Given as a ratio
                   (0.0 - 1.0) relative to the scaling map value before the update.
 
             blur : Smoothing kernel bandwidth used in `pixel_map` regularisation.
@@ -280,31 +280,39 @@ class SpeckleTracking(DataContainer):
             method : `pixel_map` update algorithm. The following keyword
                 values are allowed:
 
-                * 'gsearch' : Grid search algorithm.
-                * 'rsearch' : Random search algorithm.
-                * 'de'      : Differential evolution algorithm.
+                * `gsearch` : Grid search algorithm.
+                * `rsearch` : Random search algorithm.
+                * `de`      : Differential evolution algorithm.
 
             extra_args : Extra arguments for pixel map update methods. Accepts the
                 following keyword arguments:
 
-                * 'grid_size' : Grid size along one of the detector axes for
+                * `grid_size` : Grid size along one of the detector axes for
                   the 'gsearch' method. The grid shape is then (grid_size,
                   grid_size). The default value is :code:`int(0.5 * (sw_x + sw_y))`.
-                * 'n_trials' : Number of points generated at each  pixel in
+                * `n_trials` : Number of points generated at each  pixel in
                   the detector grid for the 'rsearch' method. The default value
                   is :code:`int(0.25 * (sw_x + sw_y)**2)`.
-                * 'n_iter' : The maximum number of generations over which the
+                * `n_iter` : The maximum number of generations over which the
                   entire population is evolved in the 'de' method. The default
                   value is 5.
-                * 'pop_size' : The total population size in the 'de' method.
+                * `pop_size` : The total population size in the 'de' method.
                   Must be greater or equal to 4. The default value is
                   :code:`max(int(0.25 * (sw_x + sw_y)**2) / n_iter, 4)`.
-                * 'mutation' : The mutation constant in the 'de' method. It should
+                * `mutation` : The mutation constant in the 'de' method. It should
                   be in the range [0, 2]. The default value is 0.75.
-                * 'recombination' : The recombination constant  in the 'de' method,
+                * `recombination` : The recombination constant  in the 'de' method,
                   should be in the range [0, 1]. The default value is 0.7.
-                * 'seed' : Specify seed for the random number generation.
+                * `seed` : Specify seed for the random number generation.
                   Generated automatically if not provided.
+
+        Raises:
+            AttributeError : If `reference_image` was not generated beforehand.
+            ValueError : If `method` keyword value is not valid.
+
+        Returns:
+            A new :class:`SpeckleTracking` object with the updated `pixel_map` and
+            `scale_map`.
 
         Notes:
             The pixel mapping update is carried out separately at each pixel
@@ -313,7 +321,7 @@ class SpeckleTracking(DataContainer):
 
             .. math::
 
-                \varepsilon_{ij}(\delta i, \delta j, s) = \frac{1}{N} \\ \times
+                \varepsilon_{ij}(\delta i, \delta j, s) = \frac{1}{N}
                 \sum_{n = 1}^N \left[ s + \mathcal{H}_{1.35} \left( \frac{I_{nij} -
                 W_{ij} I_\text{ref}(f_x i - u^x_{ij} - \delta i + \Delta i_n,
                 f_y i - u^y_{ij} - \delta j + \Delta j_n)}{s} \right) s \right],
@@ -323,14 +331,6 @@ class SpeckleTracking(DataContainer):
             :math:`\Delta i_n, \Delta j_n` are the sample translation along the
             horizontal and vertical axes in pixels, :math:`I_{nij}` are the measured
             stack of frames, and `W_{ij}` is the white-field.
-
-        Returns:
-            A new :class:`SpeckleTracking` object with the updated `pixel_map` and
-            `scale_map`.
-
-        Raises:
-            AttributeError : If `reference_image` was not generated beforehand.
-            ValueError : If `method` keyword value is not valid.
 
         See Also:
 
@@ -379,6 +379,7 @@ class SpeckleTracking(DataContainer):
             raise ValueError('Method keyword is invalid')
 
         dpm = pm - self.pixel_map
+        derr = (derr - derr.min() + 1.0) / derr.std()
         if blur > 0.0:
             norm = gaussian_filter(derr, (blur, blur))
             dpm = gaussian_filter(dpm * derr, (0, blur, blur),
@@ -398,7 +399,7 @@ class SpeckleTracking(DataContainer):
     @dict_to_object
     def update_errors(self) -> SpeckleTracking:
         """Return a new :class:`SpeckleTracking` object with
-        the updated mean Huber error metric `error`. 
+        the updated mean Huber error metric `error`.
 
         Returns:
             A new :class:`SpeckleTracking` object with the updated
@@ -470,7 +471,8 @@ class SpeckleTracking(DataContainer):
         """Return a error metrics for the reference profile and pixel mapping
         updates. The error metrics may be normalized by the error of the initial
         estimations of the reference profile and pixel mapping function. The
-        normalization is performed if :func:`create_initial` was invoked before.
+        normalization is performed if :func:`SpeckleTracking.create_initial` was
+        invoked before.
 
         Args:
             kind : Choose between generating the error metric of the pixel mapping
@@ -541,8 +543,8 @@ class SpeckleTracking(DataContainer):
             method : `reference_image` update algorithm. The following keyword values
                 are allowed:
 
-                * 'KerReg' : Kernel regression algorithm.
-                * 'LOWESS' : Local weighted linear regression.
+                * `KerReg` : Kernel regression algorithm.
+                * `LOWESS` : Local weighted linear regression.
 
             epsilon : The step size used in the estimation of the fitness gradient.
             maxiter : Maximum number of iterations in the minimization loop.
@@ -590,11 +592,11 @@ class SpeckleTracking(DataContainer):
             search_window : A tuple of three elements ('sw_y', 'sw_x', 'sw_s'). The elements
                 are the following:
 
-                * 'sw_y' : Search window size in pixels along the horizontal detector
+                * `sw_y` : Search window size in pixels along the horizontal detector
                   axis.
-                * 'sw_x' : Search window size in pixels along the vertical detector
+                * `sw_x` : Search window size in pixels along the vertical detector
                   axis.
-                * 'sw_s' : Search window size of the Huber scaling map. Given as a ratio
+                * `sw_s` : Search window size of the Huber scaling map. Given as a ratio
                   (0.0 - 1.0) relative to the scaling map value before the update.
 
             blur : Smoothing kernel bandwidth used in `pixel_map` regularisation.
@@ -609,51 +611,53 @@ class SpeckleTracking(DataContainer):
             ref_method : `reference_image` update algorithm. The following
                 keyword values are allowed:
 
-                * 'KerReg' : Kernel regression algorithm.
-                * 'LOWESS' : Local weighted linear regression.
+                * `KerReg` : Kernel regression algorithm.
+                * `LOWESS` : Local weighted linear regression.
 
             pm_method : `pixel_map` update algorithm. The following keyword
                 values are allowed:
 
-                * 'gsearch' : Grid search algorithm.
-                * 'rsearch' : Random search algorithm.
-                * 'de'      : Differential evolution algorithm.
+                * `gsearch` : Grid search algorithm.
+                * `rsearch` : Random search algorithm.
+                * `de`      : Differential evolution algorithm.
 
             pm_args : Pixel map update options. Accepts the following keyword
                 arguments:
 
-                * 'integrate' : Ensure that the updated pixel map is irrotational
+                * `integrate` : Ensure that the updated pixel map is irrotational
                   by integrating and taking the derivative. False by default.
-                * 'grid_size' : Grid size along one of the detector axes for
+                * `grid_size` : Grid size along one of the detector axes for
                   the 'gsearch' method. The grid shape is then (grid_size,
                   grid_size). The default value is :code:`int(0.5 * (sw_x + sw_y))`.
-                * 'n_trials' : Number of points generated at each  pixel in
+                * `n_trials` : Number of points generated at each  pixel in
                   the detector grid for the 'rsearch' method. The default value
                   is :code:`int(0.25 * (sw_x + sw_y)**2)`.
-                * 'n_iter' : The maximum number of generations over which the
+                * `n_iter` : The maximum number of generations over which the
                   entire population is evolved in the 'de' method. The default
                   value is 5.
-                * 'pop_size' : The total population size in the 'de' method.
+                * `pop_size` : The total population size in the 'de' method.
                   Must be greater or equal to 4. The default value is
                   :code:`max(int(0.25 * (sw_x + sw_y)**2) / n_iter, 4)`.
-                * 'mutation' : The mutation constant in the 'de' method. It should
+                * `mutation` : The mutation constant in the 'de' method. It should
                   be in the range [0, 2]. The default value is 0.75.
-                * 'recombination' : The recombination constant  in the 'de' method,
+                * `recombination` : The recombination constant  in the 'de' method,
                   should be in the range [0, 1]. The default value is 0.7.
-                * 'seed' : Specify seed for the random number generation.
+                * `seed` : Specify seed for the random number generation.
                   Generated automatically if not provided.
 
             options : Extra options. Accepts the following keyword arguments:
 
-                * 'h0' : Initial guess of the optimal bandwidth in
+                * `h0` : Initial guess of the optimal bandwidth in
                   :func:`SpeckleTracking.find_hopt`. The value is used
                   if `h0` is None.
-                * 'epsilon' : Increment to `h0` to use for determining the
+                * `epsilon` : Increment to `h0` to use for determining the
                   function gradient for `h0` update algorithm. The default
                   value is 1.4901161193847656e-08.
-                * 'update_translations' : Update sample pixel translations
+                * `maxiter` : Maximum number of iterations in the optimal kernel
+                  bandwidth estimation. Only when `h0` is None.
+                * `update_translations` : Update sample pixel translations
                   if True. The default value is False.
-                * 'return_extra' : Return errors and `h0` array if True.
+                * `return_extra` : Return errors and `h0` array if True.
                   The default value is False.
 
             verbose : Set verbosity of the computation process.
@@ -662,34 +666,32 @@ class SpeckleTracking(DataContainer):
             A tuple of two items ('st_obj', 'extra'). The elements of the tuple
             are as follows:
 
-            * 'st_obj' : A new :class:`SpeckleTracking` object with the
+            * `st_obj` : A new :class:`SpeckleTracking` object with the
               updated `pixel_map` and `reference_image`. `di_pix` and `dj_pix`
               are also updated if `update_translations` is True.
 
-            * 'extra': A dictionary with the given parameters:
+            * `extra`: A dictionary with the given parameters:
 
-              * 'errors' : List of average error values for each iteration.
-              * 'hvals' : List of kernel bandwidths for each iteration.
+              * `errors` : List of average error values for each iteration.
+              * `hvals` : List of kernel bandwidths for each iteration.
 
               Only if `return_extra` is True.
         """
         integrate = pm_args.get('integrate', False)
 
         epsilon = options.get('epsilon', 1e-4)
-        update_translations = options.get('update_translations', False)
+        maxiter = options.get('maxiter', 50)
         momentum = options.get('momentum', 0.0)
-        amax = options.get('amax', 1e3)
-        maxiter = options.get('maxiter', 5)
+        update_translations = options.get('update_translations', False)
         return_extra = options.get('return_extra', False)
 
         if h0 is None:
             if verbose:
                 print("Finding the optimum kernel bandwidth...")
             h0 = self.find_hopt(method=ref_method, epsilon=epsilon,
-                                verbose=verbose)
+                                verbose=verbose, maxiter=maxiter)
             if verbose:
                 print(f"New hopt = {h0:.3f}")
-
 
         obj = self.update_reference(hval=h0, method=ref_method)
         obj.update_errors.inplace_update()
@@ -720,7 +722,7 @@ class SpeckleTracking(DataContainer):
 
             # Update hval and step
             optimizer.update_loss(lambda hval: new_obj.CV(hval, ref_method))
-            optimizer.step(maxiter=maxiter, amax=amax)
+            optimizer.step()
             h0 = (1.0 - momentum) * optimizer.state_dict()['xk'].item() + momentum * hvals[-1]
             hvals.append(h0)
 
@@ -763,11 +765,11 @@ class SpeckleTracking(DataContainer):
             search_window : A tuple of three elements ('sw_y', 'sw_x', 'sw_s'). The elements
                 are the following:
 
-                * 'sw_y' : Search window size in pixels along the horizontal detector
+                * `sw_y` : Search window size in pixels along the horizontal detector
                   axis.
-                * 'sw_x' : Search window size in pixels along the vertical detector
+                * `sw_x` : Search window size in pixels along the vertical detector
                   axis.
-                * 'sw_s' : Search window size of the Huber scaling map. Given as a ratio
+                * `sw_s` : Search window size of the Huber scaling map. Given as a ratio
                   (0.0 - 1.0) relative to the scaling map value before the update.
 
             blur : Smoothing kernel bandwidth used in `pixel_map` regularisation.
@@ -780,48 +782,50 @@ class SpeckleTracking(DataContainer):
             ref_method : `reference_image` update algorithm. The following keyword
                 values are allowed:
 
-                * 'KerReg' : Kernel regression algorithm.
-                * 'LOWESS' : Local weighted linear regression.
+                * `KerReg` : Kernel regression algorithm.
+                * `LOWESS` : Local weighted linear regression.
 
             pm_method : `pixel_map` update algorithm. The following keyword
                 values are allowed:
 
-                * 'gsearch' : Grid search algorithm.
-                * 'rsearch' : Random search algorithm.
-                * 'de'      : Differential evolution algorithm.
+                * `gsearch` : Grid search algorithm.
+                * `rsearch` : Random search algorithm.
+                * `de`      : Differential evolution algorithm.
 
             pm_args : Pixel map update options. Accepts the following keyword
                 arguments:
 
-                * 'integrate' : Ensure that the updated pixel map is irrotational
+                * `integrate` : Ensure that the updated pixel map is irrotational
                   by integrating and taking the derivative. False by default.
-                * 'grid_size' : Grid size along one of the detector axes for
+                * `grid_size` : Grid size along one of the detector axes for
                   the 'gsearch' method. The grid shape is then (grid_size,
                   grid_size). The default value is :code:`int(0.5 * (sw_x + sw_y))`.
-                * 'n_trials' : Number of points generated at each  pixel in
+                * `n_trials` : Number of points generated at each  pixel in
                   the detector grid for the 'rsearch' method. The default value
                   is :code:`int(0.25 * (sw_x + sw_y)**2)`.
-                * 'n_iter' : The maximum number of generations over which the
+                * `n_iter` : The maximum number of generations over which the
                   entire population is evolved in the 'de' method. The default
                   value is 5.
-                * 'pop_size' : The total population size in the 'de' method.
+                * `pop_size` : The total population size in the 'de' method.
                   Must be greater or equal to 4. The default value is
                   :code:`max(int(0.25 * (sw_x + sw_y)**2) / n_iter, 4)`.
-                * 'mutation' : The mutation constant in the 'de' method. It should
+                * `mutation` : The mutation constant in the 'de' method. It should
                   be in the range [0, 2]. The default value is 0.75.
-                * 'recombination' : The recombination constant  in the 'de' method,
+                * `recombination` : The recombination constant  in the 'de' method,
                   should be in the range [0, 1]. The default value is 0.7.
-                * 'seed' : Specify seed for the random number generation.
+                * `seed` : Specify seed for the random number generation.
                   Generated automatically if not provided.
 
             options : Extra options. Accepts the following keyword arguments:
 
-                * 'epsilon' : Increment to `h0` to use for determining the
+                * `epsilon` : Increment to `h0` to use for determining the
                   function gradient for `h0` update algorithm. The default
                   value is 1.4901161193847656e-08.
-                * 'update_translations' : Update sample pixel translations
+                * `maxiter` : Maximum number of iterations in the optimal kernel
+                  bandwidth estimation. Only when `h0` is None.
+                * `update_translations` : Update sample pixel translations
                   if True. The default value is False.
-                * 'return_extra' : Return errors at each iteration if True.
+                * `return_extra` : Return errors at each iteration if True.
                   The default value is False.
 
             verbose : bool, optional
@@ -831,25 +835,27 @@ class SpeckleTracking(DataContainer):
             A tuple of two items ('st_obj', 'errors'). The elements of the tuple
             are as follows:
 
-            * 'st_obj' : A new :class:`SpeckleTracking` object with the updated
+            * `st_obj` : A new :class:`SpeckleTracking` object with the updated
               `pixel_map` and `reference_image`. `di_pix` and `dj_pix`
               are also updated if 'update_translations' in `options`
               is True.
 
-            * 'errors' : List of average error values for each iteration. Only if
+            * `errors` : List of average error values for each iteration. Only if
               'return_extra' in `options` is True.
         """
         integrate = pm_args.get('integrate', False)
 
         epsilon = options.get('epsilon', 1e-4)
-        update_translations = options.get('update_translations', False)
+        maxiter = options.get('maxiter', 50)
         momentum = options.get('momentum', 0.0)
+        update_translations = options.get('update_translations', False)
         return_extra = options.get('return_extra', False)
 
         if h0 is None:
             if verbose:
                 print("Finding the optimum kernel bandwidth...")
-            h0 = self.find_hopt(method=ref_method, epsilon=epsilon, verbose=verbose)
+            h0 = self.find_hopt(method=ref_method, epsilon=epsilon,
+                                maxiter=maxiter, verbose=verbose)
             if verbose:
                 print(f"New hopt = {h0:.3f}")
 
@@ -908,8 +914,8 @@ class SpeckleTracking(DataContainer):
             method : `reference_image` update algorithm. The following keyword
                 values are allowed:
 
-                * 'KerReg' : Kernel regression algorithm.
-                * 'LOWESS' : Local weighted linear regression.
+                * `KerReg` : Kernel regression algorithm.
+                * `LOWESS` : Local weighted linear regression.
 
         Returns:
             Cross-validation error.
@@ -947,8 +953,8 @@ class SpeckleTracking(DataContainer):
             method : `reference_image` update algorithm. The following keyword
                 values are allowed:
 
-                * 'KerReg' : Kernel regression algorithm.
-                * 'LOWESS' : Local weighted linear regression.
+                * `KerReg` : Kernel regression algorithm.
+                * `LOWESS` : Local weighted linear regression.
 
         Returns:
             An array of cross-validation errors.

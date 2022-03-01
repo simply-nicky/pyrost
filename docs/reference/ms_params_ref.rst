@@ -16,10 +16,10 @@ List of simulation parameters:
 
 * **Experimental geometry parameters**:
 
-    * `x_min`, `x_max` : Wavefront span along the x axis [um].
-    * `x_step` : Beam sampling interval along the x axis [um].
-    * `z_step` : Distance between the slices [um].
-    * `wl` : Beam's wavelength [um].
+  * `x_min`, `x_max` : Wavefront span along the x axis [um].
+  * `x_step` : Beam sampling interval along the x axis [um].
+  * `z_step` : Distance between the slices [um].
+  * `wl` : Beam's wavelength [um].
 
 The ms_sim library is able to generate the transmission profile of the 
 Multilayer Laue (MLL) lens. The required parameters to yield a transmission
@@ -27,20 +27,20 @@ profile are as follows:
 
 * **MLL materials**:
 
-    * `material1` : the first material in the MLL's bilayers.
-        * `formula` : Chemical formula of the material.
-        * `density` : Atomic density of the material [g / cm^3].
-    * `material2` : the second material in the MLL's bilayers.
-        * `formula` : Chemical formula of the material.
-        * `density` : Atomic density of the material [g / cm^3].
+  * `material1` : the first material in the MLL's bilayers.
+    * `formula` : Chemical formula of the material.
+    * `density` : Atomic density of the material [g / cm^3].
+  * `material2` : the second material in the MLL's bilayers.
+    * `formula` : Chemical formula of the material.
+    * `density` : Atomic density of the material [g / cm^3].
 
 * **MLL parameters**:
 
-    * `n_min`, `n_max` : zone number of the first and the last layer.
-    * `focus` : MLL's focal distance [um].
-    * `mll_sigma` : Bilayer's interdiffusion length [um].
-    * `mll_depth` : MLL's thickness [um].
-    * `mll_wl` : Wavelength of the MLL [um].
+  * `n_min`, `n_max` : zone number of the first and the last layer.
+  * `focus` : MLL's focal distance [um].
+  * `mll_sigma` : Bilayer's interdiffusion length [um].
+  * `mll_depth` : MLL's thickness [um].
+  * `mll_wl` : Wavelength of the MLL [um].
 
 .. note::
 

@@ -358,12 +358,16 @@ class CXIStore():
         if self:
             for attr in self.protocol:
                 kind = self.protocol.get_kind(attr)
-                if kind in ['stack', 'sequence', 'scalar']:
-                    idxs = self.protocol.read_attribute_indices(attr, self.input_files())
-                if kind == 'frame':
-                    idxs = self.protocol.read_attribute_indices(attr, self.input_files())
-                if idxs.size:
-                    indices[attr] = idxs
+                try:
+                    if kind in ['stack', 'sequence', 'scalar']:
+                        idxs = self.protocol.read_attribute_indices(attr, self.input_files())
+                    if kind == 'frame':
+                        idxs = self.protocol.read_attribute_indices(attr, self.input_files())
+                except ValueError as err:
+                    print(f'{attr:s} is not loaded: {err}')
+                else:
+                    if idxs.size:
+                        indices[attr] = idxs
 
         self._indices = indices
 
@@ -565,9 +569,9 @@ class CXIStore():
             data : Data array.
             mode : Writing mode:
 
-                * 'append' : Append the data array to already existing dataset.
-                * 'insert' : Insert the data under the given indices `idxs`.
-                * 'overwrite' : Overwrite the existing dataset.
+                * `append` : Append the data array to already existing dataset.
+                * `insert` : Insert the data under the given indices `idxs`.
+                * `overwrite` : Overwrite the existing dataset.
 
             idxs : Indices where the data is saved. Used only if `mode` is set to
                 'insert'.

@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 from configparser import ConfigParser
 import re
-from typing import Any, Dict, List, TypeVar, Type, Union
+from typing import Any, Dict, ItemsView, KeysView, List, TypeVar, Type, Union, ValuesView
 import numpy as np
 
 T = TypeVar('T')            # Object type
@@ -153,7 +153,7 @@ class INIParser:
             ValueError : If the file doesn't exist.
         """
         if not os.path.isfile(protocol_file):
-            raise ValueError("File {:s} doesn't exist".format(protocol_file))
+            raise ValueError(f"File {protocol_file} doesn't exist")
         ini_parser = ConfigParser()
         ini_parser.read(protocol_file)
         return ini_parser
@@ -228,10 +228,12 @@ class INIParser:
     def __getattr__(self, attr: str) -> Any:
         if attr in self.__dict__.get('_lookup', {}):
             return self.ini_dict[self.__dict__['_lookup'][attr]][attr]
-        elif attr in self.__dict__.get('ini_dict', {}):
+        if attr in self.__dict__.get('ini_dict', {}):
             return self.__dict__['ini_dict'][attr]
-        else:
-            raise AttributeError(attr + " doesn't exist")
+        raise AttributeError(attr + " doesn't exist")
+
+    def __getitem__(self, attr: str) -> Any:
+        return self.__getattr__(attr)
 
     def __setattr__(self, attr: str, value: Any) -> None:
         if attr in self._lookup:
@@ -249,13 +251,32 @@ class INIParser:
         crop_dict = {key: self._format(val) for key, val in self.export_dict().items()}
         return crop_dict.__str__()
 
+    def keys(self) -> KeysView:
+        return self.attr_dict.keys()
+
+    def items(self) -> ItemsView:
+        """Return (key, value) pairs of the datasets stored in the container.
+
+        Returns:
+            (key, value) pairs of the datasets stored in the container.
+        """
+        return dict(self).items()
+
+    def values(self) -> ValuesView:
+        """Return the attributes' data stored in the container.
+
+        Returns:
+            List of data stored in the container.
+        """
+        return dict(self).values()
+
     def export_dict(self) -> Dict[str, Any]:
         """Return a :class:`dict` object with all the attributes.
 
         Returns:
             Dictionary with all the attributes conntained in the object.
         """
-        return {section: self.__getattr__(section) for section in self.attr_dict}
+        return dict(self)
 
     @hybridmethod
     def export_ini(self, **kwargs: Dict) -> ConfigParser:

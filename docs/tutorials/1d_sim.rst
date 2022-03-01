@@ -11,58 +11,66 @@ the following structure:
 
 .. code-block:: console
 
-    $ h5ls -r data.cxi
+    $ h5ls -r sim.cxi
     /                        Group
-    /entry_1                 Group
-    /entry_1/data_1          Group
-    /entry_1/data_1/data     Dataset {200, 1, 2000}
-    /entry_1/instrument_1    Group
-    /entry_1/instrument_1/detector_1 Group
-    /entry_1/instrument_1/detector_1/basis_vectors Dataset {200, 2, 3}
-    /entry_1/instrument_1/detector_1/distance Dataset {SCALAR}
-    /entry_1/instrument_1/detector_1/x_pixel_size Dataset {SCALAR}
-    /entry_1/instrument_1/detector_1/y_pixel_size Dataset {SCALAR}
-    /entry_1/instrument_1/source_1 Group
-    /entry_1/instrument_1/source_1/energy Dataset {SCALAR}
-    /entry_1/instrument_1/source_1/wavelength Dataset {SCALAR}
-    /entry_1/sample_1        Group
-    /entry_1/sample_1/geometry Group
-    /entry_1/sample_1/geometry/translations Dataset {200, 3}
-    /frame_selector          Group
-    /frame_selector/good_frames Dataset {200}
+    /entry                   Group
+    /entry/data              Group
+    /entry/data/data         Dataset {200/Inf, 1, 985}
+    /entry/instrument        Group
+    /entry/instrument/detector Group
+    /entry/instrument/detector/distance Dataset {SCALAR}
+    /entry/instrument/detector/x_pixel_size Dataset {SCALAR}
+    /entry/instrument/detector/y_pixel_size Dataset {SCALAR}
+    /entry/instrument/source Group
+    /entry/instrument/source/wavelength Dataset {SCALAR}
     /speckle_tracking        Group
-    /speckle_tracking/defocus Dataset {SCALAR}
-    /speckle_tracking/mask   Dataset {1, 2000}
-    /speckle_tracking/roi    Dataset {4}
-    /speckle_tracking/whitefield Dataset {1, 2000}
+    /speckle_tracking/basis_vectors Dataset {200/Inf, 2, 3}
+    /speckle_tracking/defocus_x Dataset {SCALAR}
+    /speckle_tracking/defocus_y Dataset {SCALAR}
+    /speckle_tracking/mask   Dataset {200/Inf, 1, 985}
+    /speckle_tracking/pixel_translations Dataset {200/Inf, 2}
+    /speckle_tracking/translations Dataset {200/Inf, 3}
+    /speckle_tracking/whitefield Dataset {1, 985}
 
 The file contains a ptychograph (set of frames summed over one of detector axes)
 of 200 frames.
 
 Loading the file
 ----------------
-Load the file with :class:`pyrost.CXILoader`. In the case of simulated data you can
-import the protocol file, which is located in the same folder with `data.cxi`.
+The procedure for loading the data from a file is the same as in :doc:`diatom`:
+
+* Create a :class:`pyrost.CXIProtocol` protocol.
+* Open the file with :class:`pyrost.CXIStore` file handler.
+* Create a :class:`pyrost.STData` R-PXST data container.
+* Load all the data from the file with :func:`pyrost.STData.load`.
 
 .. code-block:: python
 
     >>> import pyrost as rst
-    >>> protocol = rst.CXIProtocol.import_ini('protocol.ini')
-    >>> loader = rst.CXILoader(protocol=protocol)
-    >>> data = loader.load('data.cxi')
+    >>> protocol = rst.CXIProtocol.import_default()
+    >>> files = rst.CXIStore(input_files='sim.cxi', output_file='sim.cxi',
+    >>>                      protocol=protocol)
+    >>> data = rst.STData(files=files)
+    >>> data = data.load()
+
+The file already contains all the necessary attributes to perform the speckle tracking
+reconstruction:
+
+.. code-block:: python
+
+    >>> data.contents()
+    ['whitefield', 'x_pixel_size', 'files', 'y_pixel_size', 'data', 'num_threads',
+     'distance', 'defocus_x', 'good_frames', 'defocus_y', 'basis_vectors', 'translations',
+     'mask', 'frames', 'wavelength', 'pixel_translations']
 
 Speckle tracking update
 -----------------------
-You can perform the speckle tracking update procedure with :class:`pyrost.SpeckleTracking`. This class
-contains a :func:`pyrost.SpeckleTracking.train` method, that performs the iterative sample
-profile (`reference_image`) and lens aberrations (`pixel_map`) reconstruction.
+The steps to perform the speckle tracking update are also the same as in :doc:`diatom`:
 
-.. note:: You should pay outmost attention to choosing the right kernel bandwidth of the
-    reference image estimator (`h0` in :func:`pyrost.SpeckleTracking.update_reference`). Essentially it
-    stands for the high frequency cut-off imposed during the reference profile update, so it helps to
-    supress the noise. If the value is too high you'll lose useful information in the reference
-    profile. If the value is too low and the data is noisy, you won't get an acurate reconstruction.
-    An optimal kernel bandwidth can be found with :func:`pyrost.SpeckleTracking.find_hopt` method.
+* Create a :class:`pyrost.SpeckleTracking` object.
+* Find an optimal kernel bandwidth with :func:`pyrost.SpeckleTracking.find_hopt`.
+* Perform the iterative R-PXST update  with :func:`pyrost.SpeckleTracking.train`
+  or :func:`pyrost.SpeckleTracking.train_adapt`.
 
 .. code-block:: python
 

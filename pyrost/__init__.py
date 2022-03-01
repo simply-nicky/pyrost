@@ -13,7 +13,7 @@ from __future__ import absolute_import
 
 from .cxi_protocol import CXIProtocol, CXIStore
 from .log_protocol import LogProtocol, cxi_converter_sigray
-from .data_processing import Crop, Downscale, Mirror, ComposeTransforms, STData
+from .data_processing import Transform, Crop, Downscale, Mirror, ComposeTransforms, STData
 from .rst_update import SpeckleTracking
 from .bfgs import BFGS
 from .aberrations_fit import AberrationsFit
