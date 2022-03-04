@@ -353,6 +353,8 @@ def cxi_converter_sigray(out_path: str, scan_num: int, dir_path: str='/gpfs/cfel
 
     data = STData(files, basis_vectors=basis_vectors, mask=mask, translations=translations,
                   distance=distance, x_pixel_size=x_pixel_size, y_pixel_size=y_pixel_size,
-                  wavelength=wl_dict[target], **attributes).update_transform(transform)
+                  wavelength=wl_dict[target], **attributes)
+    if transform:
+        data = data.update_transform(transform)
     data = data.load('data', indices=indices)
     return data

@@ -750,7 +750,7 @@ def median(np.ndarray data not None, np.ndarray mask=None, int axis=0, unsigned 
         elif type_num == np.NPY_UINT64:
             fail = median_c(_out, _data, _mask, ndim, _dims, 8, axis, compare_ulong, num_threads)
         else:
-            raise TypeError('data argument has incompatible type: {:s}'.format(data.dtype))
+            raise TypeError(f'data argument has incompatible type: {str(data.dtype)}')
     if fail:
         raise RuntimeError('C backend exited with error.')
 
@@ -827,7 +827,7 @@ def median_filter(np.ndarray data not None, object size not None, np.ndarray mas
         elif type_num == np.NPY_UINT64:
             fail = median_filter_c(_out, _data, _mask, ndim, _dims, 8, _fsize, _mode, _cval, compare_ulong, num_threads)
         else:
-            raise TypeError('data argument has incompatible type: {:s}'.format(data.dtype))
+            raise TypeError(f'data argument has incompatible type: {str(data.dtype)}')
     if fail:
         raise RuntimeError('C backend exited with error.')
 

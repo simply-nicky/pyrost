@@ -431,4 +431,4 @@ class STParams(INIParser):
         Returns:
             Source's rocking curve profile.
         """
-        return gaussian_kernel(dist * self.th_s / step)
+        return gaussian_kernel(sigma=dist * self.th_s / step)

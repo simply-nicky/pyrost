@@ -651,7 +651,7 @@ class STData(DataContainer):
                     pixel_map = np.flip(pixel_map, axis=1)
                 if self.defocus_x < 0.0 and pixel_map[1, 0, 0] < pixel_map[1, 0, -1]:
                     pixel_map = np.flip(pixel_map, axis=2)
-            return pixel_map
+            return np.asarray(pixel_map, order='C')
 
         raise AttributeError('Data has not been loaded')
 
@@ -1163,9 +1163,10 @@ class STData(DataContainer):
             np.rint(data * np.where(self.whitefields > 0, whitefield / self.whitefields, 1.),
                     out=data, casting='unsafe')
 
+        pixel_map = self.pixel_map(dtype=dtypes['pixel_map'])
+
         if aberrations:
-            pixel_map = np.asarray(self.pixel_map(dtype=dtypes['pixel_map']) + self.pixel_aberrations,
-                                   order='C', dtype=dtypes['pixel_map'])
+            pixel_map += self.pixel_aberrations
             if self.scale_map is None:
                 scale_map = None
             else:
@@ -1176,7 +1177,7 @@ class STData(DataContainer):
                                    ds_x=ds_x, whitefield=whitefield)
 
         return SpeckleTracking(parent=ref(self), data=data, dj_pix=dij_pix[1], di_pix=dij_pix[0],
-                               num_threads=self.num_threads, ds_y=ds_y, ds_x=ds_x,
+                               num_threads=self.num_threads, pixel_map=pixel_map, ds_y=ds_y, ds_x=ds_x,
                                whitefield=whitefield)
 
     def get_fit(self, center: int=0, axis: int=1) -> AberrationsFit:

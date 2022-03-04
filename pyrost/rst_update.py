@@ -65,9 +65,9 @@ class SpeckleTracking(DataContainer):
           update.
 
     """
-    attr_set = {'data', 'dj_pix', 'di_pix', 'ds_y', 'ds_x', 'num_threads', 'parent',
-                'whitefield'}
-    init_set = {'error', 'hval', 'initial', 'ref_orig', 'pixel_map', 'reference_image',
+    attr_set = {'data', 'dj_pix', 'di_pix', 'ds_y', 'ds_x', 'num_threads', 'pixel_map',
+                'parent', 'whitefield'}
+    init_set = {'error', 'hval', 'initial', 'ref_orig', 'reference_image',
                 'scale_map', 'test_mask', 'train_mask'}
 
     dtypes_32 = {'data': np.uint32, 'dij_pix': np.float32, 'pixel_map': np.float32,
@@ -75,6 +75,7 @@ class SpeckleTracking(DataContainer):
     dtypes_64 = {'data': np.uint64, 'dij_pix': np.float64, 'pixel_map': np.float64,
                  'scale_map': np.float64, 'whitefield': np.float64}
 
+    # Necessary attributes
     data : np.ndarray
     dj_pix : np.ndarray
     di_pix : np.ndarray
@@ -82,15 +83,17 @@ class SpeckleTracking(DataContainer):
     ds_y : float
     num_threads : int
     parent : ReferenceType
+    pixel_map : np.ndarray
     whitefield : np.ndarray
 
-    ref_orig : np.ndarray
-    pixel_map : np.ndarray
+    # Automatically generated attributes
     reference_image : np.ndarray
+    ref_orig : np.ndarray
     scale_map : np.ndarray
     test_mask : np.ndarray
     train_mask : np.ndarray
 
+    # Optional attributes
     hval : Optional[float]
     error : Optional[float]
     initial : Optional[SpeckleTracking]
@@ -108,10 +111,8 @@ class SpeckleTracking(DataContainer):
                 provided.
         """
         super(SpeckleTracking, self).__init__(parent=parent, **kwargs)
-        self._init_functions(pixel_map=lambda: np.indices(self.data.shape[1:],
-                                                          dtype=self.whitefield.dtype),
-                             test_mask=self._test_mask, train_mask=lambda: ~self.test_mask,
-                             ref_orig=self._ref_orig, reference_image=self._reference_image, 
+        self._init_functions(test_mask=self._test_mask, train_mask=lambda: ~self.test_mask,
+                             ref_orig=self._ref_orig, reference_image=self._reference_image,
                              scale_map=lambda: np.sqrt(self.whitefield))
         self._init_attributes()
 
@@ -153,8 +154,7 @@ class SpeckleTracking(DataContainer):
             A new :class:`SpeckleTracking` object with the preliminary
             :class:`SpeckleTracking` object saved in the `initial` attribute.
         """
-        initial = SpeckleTracking(**{attr: self.get(attr) for attr in self.attr_set})
-        initial = initial.update_errors()
+        initial = self.parent().get_st(ds_x=self.ds_x, ds_y=self.ds_y).update_errors()
         return {'initial': initial}
 
     @dict_to_object
@@ -575,7 +575,7 @@ class SpeckleTracking(DataContainer):
 
     def train_adapt(self, search_window: Tuple[float, float, float], blur: float=0.0,
                     h0: Optional[float]=None, n_iter: int=30, f_tol: float=1e-8,
-                    ref_method: str='KerReg', pm_method: str='gsearch',
+                    ref_method: str='KerReg', pm_method: str='rsearch',
                     pm_args: Dict[str, Union[bool, int, float, str]]={},
                     options: Dict[str, Union[bool, float, str]]={},
                     verbose: bool=True) -> Tuple[SpeckleTracking, Dict[str, List[float]]]:
@@ -747,7 +747,7 @@ class SpeckleTracking(DataContainer):
 
     def train(self, search_window: Tuple[float, float, float], blur: float=0.0,
               h0: Optional[float]=None, n_iter: int=30, f_tol: float=1e-8,
-              ref_method: str='KerReg', pm_method: str='gsearch',
+              ref_method: str='KerReg', pm_method: str='rsearch',
               pm_args: Dict[str, Union[bool, int, float, str]]={},
               options: Dict[str, Union[bool, float, str]]={},
               verbose: bool=True) -> Tuple[SpeckleTracking, List[float]]:
