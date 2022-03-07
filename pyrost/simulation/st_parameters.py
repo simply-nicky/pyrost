@@ -412,13 +412,9 @@ class STParams(INIParser):
             :func:`pyrost.bin.barcode_profile` : Full details of barcode's
             transmission profile generation algorithm.
         """
-        b_prof = barcode_profile(x_arr=x_arr, bars=bars, bulk_atn=self.bulk_atn,
-                                 bar_atn=self.bar_atn, bar_sigma=0.0,
-                                 num_threads=self.num_threads)
-        sigmas = [self.bar_sigma / dx if n == b_prof.ndim - 1 else 0.0
-                  for n in range(b_prof.ndim)]
-        return gaussian_filter(b_prof, sigmas, num_threads=self.num_threads,
-                               mode='nearest')
+        return barcode_profile(x_arr=x_arr, bars=bars, bulk_atn=self.bulk_atn,
+                               bar_atn=self.bar_atn, bar_sigma=self.bar_sigma,
+                               num_threads=self.num_threads)
 
     def source_curve(self, dist: float, step: float) -> np.ndarray:
         """Return source's rocking curve profile at `dist` distance from

@@ -17,30 +17,36 @@ void barcode_bars(double *bars, size_t size, double x0, double b_dx, double rd, 
 }
 
 int ml_profile(double complex *out, double *xcrd, size_t isize, double *layers, size_t lsize,
-    double complex mt0, double complex mt1, double complex mt2, double sgm, unsigned threads)
+    double complex t0, double complex t1, double sgm, unsigned threads)
 {
     /* check parameters */
     if (!out || !xcrd || !layers) {ERROR("ml_profile: one of the arguments is NULL."); return -1;}
     if (threads == 0) {ERROR("ml_profile: threads must be positive."); return -1;}
 
     int b = 2 * (lsize / 2);
+    int dj = (int)(4.0 * sgm * b / (layers[b - 1] - layers[0])) + 1;
+
+    double x0, x1;
+    int jj, j0, j1, j;
 
     #pragma omp parallel for num_threads(threads)
     for (int n = 0; n < (int) isize; n++)
     {
-        double complex ref_idx = 0;
-        int j0 = searchsorted(&xcrd[n], layers, lsize, sizeof(double), compare_double);
-        if (j0 > 0 && j0 < b)
+        out[n] = 1.0;
+        jj = searchsorted(&xcrd[n], layers, lsize, sizeof(double), compare_double);
+        j0 = 2 * ((jj - dj) / 2) - 1;
+        j1 = 2 * ((jj + dj) / 2);
+        for (j = j0; j < j1; j += 2)
         {
-            double x0 = (xcrd[n] - layers[j0 - 1]) / sqrt(2) / sgm;
-            double x1 = (xcrd[n] - layers[j0]) / sqrt(2) / sgm;
-            ref_idx += (mt1 - mt2) / 2 * ((double) (j0 % 2) - 0.5) * (erf(x0) - erf(x1));
-            ref_idx -= (mt1 - mt2) / 4 * erf((xcrd[n] - layers[0]) / sqrt(2) / sgm);
-            ref_idx += (mt1 - mt2) / 4 * erf((xcrd[n] - layers[b - 1]) / sqrt(2) / sgm);
+            if (j > 0 && j < b - 1)
+            {
+                x0 = (xcrd[n] - layers[j]) / sgm;
+                x1 = (layers[j + 1] - xcrd[n]) / sgm;
+                out[n] += 0.5 * (t1 - t0) * (tanh(x0) + tanh(x1));
+            }
         }
-        ref_idx += (mt1 + mt0) / 2 * erf((xcrd[n] - layers[0]) / sqrt(2) / sgm);
-        ref_idx -= (mt1 + mt0) / 2 * erf((xcrd[n] - layers[b - 1]) / sqrt(2) / sgm);
-        out[n] = (cos(creal(ref_idx)) + sin(creal(ref_idx)) * I) * exp(-cimag(ref_idx));
+        out[n] += 0.5 * (t0 - 1.0) * tanh((xcrd[n] - layers[0]) / sgm);
+        out[n] += 0.5 * (t0 - 1.0) * tanh((layers[b - 1] - xcrd[n]) / sgm);
     }
 
     return 0;

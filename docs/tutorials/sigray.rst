@@ -6,29 +6,40 @@ Converting raw data at the Sigray lab
 
 **For the experiments at the Sigray lab only**
 
-All we need to convert the raw experimental data are a scan
-number, X-ray target used during the measurements (Molybdenum,
-Cupper or Rhodium), and the distance between a MLL lens and
-the detector in meters. We parse it to
+All we need to convert the raw experimental data are a scan number, X-ray target
+used during the measurements (Molybdenum, Cupper or Rhodium), and the distance
+between a MLL lens and the detector in meters. We parse it to
 :func:`pyrost.cxi_converter_sigray` function as follows:
 
 .. code-block:: python
 
     >>> import pyrost as rst
-    >>> data = rst.cxi_converter_sigray(scan_num=2989, target='Mo', distance=2.)
+    >>> data = rst.cxi_converter_sigray(out_path='sigray.cxi', scan_num=2989, target='Mo')
+
+The function reads the log files and a detector bad pixels mask to initiate `basis_vectors`,
+`distance`, `mask`, `translations`, `x_pixel_size`, `y_pixel_size`, and `wavelength`:
+
+.. code-block:: python
+
+    >>> data.contents()
+    ['good_frames', 'wavelength', 'translations', 'basis_vectors', 'data', 'whitefield', 'mask',
+    'frames', 'x_pixel_size', 'distance', 'y_pixel_size', 'files', 'num_threads']
 
 .. note::
-    We may save the data container to a CXI file at any time with
-    :func:`pyrost.STData.write_cxi` function, see the section
-    :ref:`diatom-saving` in the Diatom dataset tutorial.
+    We may save the data container to a CXI file at any time with :func:`pyrost.STData.save`
+    method, see the section :ref:`diatom-saving` in the Diatom dataset tutorial.
 
 Working with the data
 ---------------------
-The function returns a :class:`pyrost.STData` data container,
-which has a set of utility routines (see :class:`pyrost.STData`). For
-instance, since we work with one dimensional scans, we can mask the bad
-pixels, integrate the measured frames along the vertical axis, mirror
-the data, and crop it using a region of interest as follows:
+The function returns a :class:`pyrost.STData` data container, which has a set of utility routines
+(see :class:`pyrost.STData` for the full list of methods). Usually the pre-processing of a Sigray
+dataset consists of:
+
+* Defining a region of interest (:class:`pyrost.Crop`, :func:`pyrost.STData.update_transform`).
+* Mirroring the data around the vertical detector axis if needed (:class:`pyrost.Mirror`,
+  :func:`pyrost.STData.update_transform`).
+* Masking bad pixels (:func:`pyrost.STData.update_mask`).
+* Integrating the stack of frames along the vertical detector axis (:func:`pyrost.STData.integrate_data`).
 
 .. code-block:: python
 
@@ -84,7 +95,7 @@ Let's update the data container with the defocus distance we got.
 
 Speckle tracking update
 -----------------------
-Now we’re ready to generate a :class:`pyrost.SpeckleTracking` object, which is able to
+Now we're ready to generate a :class:`pyrost.SpeckleTracking` object, which is able to
 perform the speckle tracking reconstruction with :func:`pyrost.SpeckleTracking.train_adapt`
 method. For more information about the parameters see the section :ref:`diatom-st-update` in the
 2d dataset tutorial.

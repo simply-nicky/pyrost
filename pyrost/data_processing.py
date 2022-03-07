@@ -606,28 +606,31 @@ class STData(DataContainer):
         return self.defocus_x is not None
 
     @property
-    def _mirror_axes(self) -> List[int]:
+    def _isphase(self) -> bool:
+        return not self.pixel_aberrations is None and not self.phase is None
+
+    def _basis_vectors(self) -> np.ndarray:
         def get_axis(transform: Transform):
             return transform.state_dict().get('axis', -1)
 
         axes = []
-        if self.transform:
-            if isinstance(self.transform, ComposeTransforms):
-                for transform in self.transform:
-                    axes.append(get_axis(transform))
-            else:
-                axes.append(get_axis(self.transform))
+        if isinstance(self.transform, ComposeTransforms):
+            for t in self.transform:
+                axes.append(get_axis(t))
+        else:
+            axes.append(get_axis(self.transform))
 
-        return axes
-
-    @property
-    def _isphase(self) -> bool:
-        return not self.pixel_aberrations is None and not self.phase is None
+        basis_vectors = self.basis_vectors
+        for axis in axes:
+            if axis > 0:
+                basis_vectors[:, axis] *= -1
+        return basis_vectors
 
     def _pixel_translations(self) -> np.ndarray:
-        pixel_translations = (self.translations[:, None] * self.basis_vectors).sum(axis=-1)
+        basis_vectors = self._basis_vectors()
+        pixel_translations = (self.translations[:, None] * basis_vectors).sum(axis=-1)
         mag = np.abs(self.distance / np.array([self.defocus_y, self.defocus_x]))
-        pixel_translations *= mag / (self.basis_vectors**2).sum(axis=-1)
+        pixel_translations *= mag / (basis_vectors**2).sum(axis=-1)
         pixel_translations -= pixel_translations[0]
         pixel_translations -= pixel_translations.mean(axis=0)
         return pixel_translations
@@ -637,9 +640,27 @@ class STData(DataContainer):
                       mask=self.mask[self.good_frames],
                       num_threads=self.num_threads)
 
+    def _transform_attribute(self, attr: str, data: np.ndarray, transform: Transform,
+                             mode: str='forward') -> np.ndarray:
+        kind = self.files.protocol.get_kind(attr)
+        if kind in ['stack', 'frame']:
+            if mode == 'forward':
+                data = transform.forward(data)
+            elif mode == 'backward':
+                data = transform.backward(data)
+            else:
+                raise ValueError(f'Invalid mode keyword: {mode}')
+        if attr in self.is_points:
+            if data.shape[-1] != 2:
+                raise ValueError(f"'{attr}' has invalid shape: {str(data.shape)}")
+
+            data = self.transform.forward_points(data)
+
+        return data
+
     def pixel_map(self, dtype: np.dtype=np.float64) -> np.ndarray:
         """Return a preliminary pixel mapping.
-        
+
         Returns:
             Pixel mapping array.
         """
@@ -693,22 +714,12 @@ class STData(DataContainer):
                 if attr not in self.init_set:
                     raise ValueError(f"Invalid attribute: '{attr}'")
 
-                kind = self.files.protocol.get_kind(attr)
                 data = self.files.load_attribute(attr, indices, processes, verbose)
 
-                if self.transform:
-                    if kind in ['stack', 'frame']:
-                        data = self.transform.forward(data)
-                    if attr in self.is_points:
-                        if data.shape[-1] != 2:
-                            raise ValueError(f"'{attr}' has invalid shape: {str(data.shape)}")
-                        data = self.transform.forward_points(data)
+                if self.transform and data is not None:
+                    data = self._transform_attribute(attr, data, self.transform)
 
                 data_dict[attr] = data
-
-        for axis in self._mirror_axes:
-            if axis > 0 and 'basis_vectors' in data_dict:
-                data_dict['basis_vectors'][:, axis] *= -1
 
         return data_dict
 
@@ -748,12 +759,8 @@ class STData(DataContainer):
                         data = data[self.good_frames]
 
                     if apply_transform and self.transform:
-                        if kind in ['stack', 'frame']:
-                            data = self.transform.backward(data)
-                        if attr in self.is_points:
-                            if data.shape[-1] != 2:
-                                raise ValueError(f"'{attr}' has invalid shape: {str(data.shape)}")
-                            data = self.transform.backward_points(data)
+                        data = self._transform_attribute(attr, data, self.transform,
+                                                         mode='backward')
 
                     self.files.save_attribute(attr, np.asarray(data), mode=mode, idxs=idxs)
 
@@ -887,13 +894,7 @@ class STData(DataContainer):
         data_dict = {'transform': transform}
         for attr, data in self.items():
             if attr in self.files.protocol and data is not None:
-                kind = self.files.protocol.get_kind(attr)
-                if kind in ['stack', 'frame']:
-                    data_dict[attr] = transform.forward(data)
-                if attr in self.is_points:
-                    if data.shape[-1] != 2:
-                        raise ValueError(f"'{attr}' has invalid shape: {str(data.shape)}")
-                    data_dict[attr] = self.transform.forward_points(data)
+                data_dict[attr] = self._transform_attribute(attr, data, transform)
         return data_dict
 
     @dict_to_object

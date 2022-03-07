@@ -122,14 +122,14 @@ def KR_reference(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None, flo
         num_threads (int) : Number of threads.
 
     Returns:
-        Tuple[numpy.ndarray, int, int] : A tuple of three elements ('I0', 'n0',
-        'm0'). The elements are the following:
+        Tuple[numpy.ndarray, int, int] : A tuple of three elements (`I0`, `n0`,
+        `m0`). The elements are the following:
 
-        * 'I0' : Reference image array.
-        * 'n0' : The lower bounds of the vertical detector axis of the reference
+        * `I0` : Reference image array.
+        * `n0` : The lower bounds of the vertical detector axis of the reference
           image at the reference frame in pixels. Only provided if `return_nm0` is
           True.
-        * 'm0' : The lower bounds of the horizontal detector axis of the reference
+        * `m0` : The lower bounds of the horizontal detector axis of the reference
           image at the reference frame in pixels. Only provided if `return_nm0` is
           True.
 
@@ -290,14 +290,14 @@ def LOWESS_reference(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None,
         num_threads (int) : Number of threads.
 
     Returns:
-        Tuple[numpy.ndarray, int, int] : A tuple of three elements ('I0', 'n0',
-        'm0'). The elements are the following:
+        Tuple[numpy.ndarray, int, int] : A tuple of three elements (`I0`, `n0`,
+        `m0`). The elements are the following:
 
-        * 'I0' : Reference image array.
-        * 'n0' : The lower bounds of the vertical detector axis of the reference
+        * `I0` : Reference image array.
+        * `n0` : The lower bounds of the vertical detector axis of the reference
           image at the reference frame in pixels. Only provided if `return_nm0` is
           True.
-        * 'm0' : The lower bounds of the horizontal detector axis of the reference
+        * `m0` : The lower bounds of the horizontal detector axis of the reference
           image at the reference frame in pixels. Only provided if `return_nm0` is
           True.
 
@@ -587,11 +587,11 @@ def pm_gsearch(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None, float
         num_threads (int) : Number of threads.
 
     Returns:
-        Tuple[numpy.ndarray, numpy.ndarray] : A tuple of two elements ('u', 'derr').
+        Tuple[numpy.ndarray, numpy.ndarray] : A tuple of two elements (`u`, `derr`).
         The elements are the following:
 
-        * 'u' : Updated pixel mapping array.
-        * 'derr' : Error decrease for each pixel in the detector grid.
+        * `u` : Updated pixel mapping array.
+        * `derr` : Error decrease for each pixel in the detector grid.
 
     Notes:
         The error metric as a function of pixel mapping displacements
@@ -690,11 +690,11 @@ def pm_rsearch(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None,
         num_threads (int) : Number of threads.
 
     Returns:
-        Tuple[numpy.ndarray, numpy.ndarray] : A tuple of two elements ('u', 'derr').
+        Tuple[numpy.ndarray, numpy.ndarray] : A tuple of two elements (`u`, `derr`).
         The elements are the following:
 
-        * 'u' : Updated pixel mapping array.
-        * 'derr' : Error decrease for each pixel in the detector grid.
+        * `u` : Updated pixel mapping array.
+        * `derr` : Error decrease for each pixel in the detector grid.
 
     Notes:
         The error metric as a function of pixel mapping displacements
@@ -874,12 +874,12 @@ def pm_devolution(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None,
         num_threads (int) : Number of threads.
 
     Returns:
-        Tuple[numpy.ndarray, numpy.ndarray] : A tuple of two elements ('u', 'derr').
+        Tuple[numpy.ndarray, numpy.ndarray] : A tuple of two elements (`u`, `derr`).
         The elements are the following:
 
-        * 'u' : Updated pixel mapping array.
-        * 'sgm': Updated scaling map.
-        * 'derr' : Error decrease for each pixel in the detector grid.
+        * `u` : Updated pixel mapping array.
+        * `sgm`: Updated scaling map.
+        * `derr` : Error decrease for each pixel in the detector grid.
 
     Notes:
         The error metric as a function of pixel mapping displacements

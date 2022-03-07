@@ -72,15 +72,12 @@ all the necessary data for the `diatom.cxi` file:
 CXI file handler
 ^^^^^^^^^^^^^^^^
 
-:class:`CXIStore` is a file handler object, it accepts a :class:`pyrost.CXIProtocol` protocol and
+:class:`pyrost.CXIStore` is a file handler object, it accepts a :class:`pyrost.CXIProtocol` protocol and
 paths to the input files and an output file. It reads the input files for all the data attributes
 specified in the procotol. The file handler provides two method to load and save the data for the
 specified data attrubute (:func:`pyrost.CXIStore.load_attribute` and :func:`pyrost.CXIStore.save_attribute`).
 
-Load the CXI file into a data container :class:`pyrost.STData` with :class:`pyrost.CXILoader`.
-:func:`pyrost.CXILoader.import_default` returns the default loader with the default CXI protocol
-(:func:`pyrost.CXIProtocol.import_default`).
-
+Read `diatom.cxi` file as follows:
 .. doctest::
 
     >>> files = rst.CXIStore(input_files='diatom.cxi', output_file='diatom_proc.cxi',
@@ -170,9 +167,9 @@ if needed), a :class:`pyrost.SpeckleTracking` object with all data attributes ne
 update can be generated. The key attrivute that it contains are:
 
 * `reference_image` : Unaberrated reference profile of the sample.
-* `pixel_map` : discrete geometrical mapping function from the detector plane to the reference plane.
-* `data` : stack of measured frames
-* `whitefield` : white-field
+* `pixel_map` : Discrete geometrical mapping function from the detector plane to the reference plane.
+* `data` : Stack of measured frames.
+* `whitefield` : White-field of the measured holograms (frames).
 * `di_pix`, `dj_pix` : Vectors of sample translations converted to pixels along the vertical and horizontal
   axes, respectively.
 
@@ -308,7 +305,7 @@ which can be obtained with :func:`pyrost.STData.get_fit` method.
 
 .. code-block:: python
 
-    >>> fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+    >>> fig, axes = plt.subplots(1, 2, figsize=(12, 6))
     >>> axes[0].plot(fit_obj_fs.pixels, fit_obj_fs.phase, label='Reconstructed profile')
     >>> axes[0].plot(fit_obj_fs.pixels, fit_obj_fs.model(fit_fs['ph_fit']),
                      label='Polynomial fit')

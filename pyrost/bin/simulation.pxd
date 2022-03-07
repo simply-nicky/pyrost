@@ -58,7 +58,7 @@ cdef extern from "routines.h":
     void barcode_bars(double *bars, unsigned long size, double x0, double b_dx, double rd, long seed) nogil
 
     int ml_profile(complex *out, double *inp, unsigned long isize, double *layers, unsigned long lsize, 
-                   complex mt0, complex mt1, complex mt2, double sgm, unsigned threads) nogil
+                   complex t0, complex t1, double sgm, unsigned threads) nogil
 
     int frames(double *out, double *pfx, double *pfy, double dx, double dy, unsigned long *ishape,
                unsigned long *oshape, long seed, unsigned threads) nogil
@@ -92,5 +92,5 @@ cdef int extend_mode_to_code(str mode) except -1
 cdef np.ndarray check_array(np.ndarray array, int type_num)
 cdef np.ndarray number_to_array(object num, np.npy_intp rank, int type_num)
 cdef np.ndarray normalize_sequence(object inp, np.npy_intp rank, int type_num)
-cdef np.ndarray ml_profile_wrapper(np.ndarray x_arr, np.ndarray layers, complex mt0,
-                                   complex mt1, complex mt2, double sigma, unsigned num_threads)
+cdef np.ndarray ml_profile_wrapper(np.ndarray x_arr, np.ndarray layers, complex t0,
+                                   complex t1, double sigma, unsigned num_threads)

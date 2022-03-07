@@ -75,19 +75,10 @@ The steps to perform the speckle tracking update are also the same as in :doc:`d
 .. code-block:: python
 
     >>> st_obj = data.get_st()
-    >>> st_res, errors = st_obj.train(sw_x=10, h0=50., blur=8., verbose=True, n_iter=10)
+    >>> st_res = st_obj.train_adapt(search_window=(0.0, 10.0, 0.1), blur=8., verbose=True, n_iter=20)
 
-**OR** you can perform an iterative update with :func:`pyrost.SpeckleTracking.train_adapt`, where
-the kernel bandwidth of the reference image estimator is updated based on the gradient descent. This
-algorithm attains lower final error in general.
-
-.. code-block:: python
-
-    >>> st_obj = data.get_st()
-    >>> st_res = st_obj.train_adapt(sw_x=10, h0=50., blur=8., verbose=True, n_iter=20)
-
-    >>> fig, axes = plt.subplots(1, 2, figsize=(16, 6))
-    >>> axes[0].plot(np.arange(st_res.reference_image.shape[1]) - st_res.m0,
+    >>> fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+    >>> axes[0].plot(np.arange(st_res.reference_image.shape[1]) - st_res.ref_orig[1],
     >>>              st_res.reference_image[0])
     >>> axes[0].set_title('Reference image', fontsize=20)
     >>> axes[1].plot((st_res.pixel_map - st_obj.pixel_map)[1, 0])
@@ -108,13 +99,13 @@ polynomial function.
 
 .. code-block:: python
 
-    >>> data.update_phase(st_res)
+    >>> data.import_st(st_res)
     >>> fit = data.fit_phase(axis=1, max_order=2)
     >>> fit['c_3'] # third order fit coefficient
-    -0.05065824525080925
+    -0.04798021776009187
 
     >>> fit_obj = data.get_fit(axis=1)
-    >>> fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+    >>> fig, axes = plt.subplots(1, 2, figsize=(12, 4))
     >>> axes[0].plot(fit_obj.pixels, fit_obj.pixel_aberrations)
     >>> axes[0].plot(fit_obj.pixels, fit_obj.model(fit['fit']))
     >>> axes[0].set_title('Pixel aberrations', fontsize=20)
@@ -138,38 +129,31 @@ In the end you can save the results to a CXI file.
 
 .. code-block:: python
 
-    >>> with h5py.File('results/sim_results/data_proc.cxi', 'w') as cxi_file:
-    >>>     data.write_cxi(cxi_file)
+    >>> data.save()
 
 .. code-block:: console
 
     $   h5ls -r results/sim_results/data_proc.cxi
     /                        Group
-    /entry_1                 Group
-    /entry_1/data_1          Group
-    /entry_1/data_1/data     Dataset {200, 1, 2000}
-    /entry_1/instrument_1    Group
-    /entry_1/instrument_1/detector_1 Group
-    /entry_1/instrument_1/detector_1/basis_vectors Dataset {200, 2, 3}
-    /entry_1/instrument_1/detector_1/distance Dataset {SCALAR}
-    /entry_1/instrument_1/detector_1/x_pixel_size Dataset {SCALAR}
-    /entry_1/instrument_1/detector_1/y_pixel_size Dataset {SCALAR}
-    /entry_1/instrument_1/source_1 Group
-    /entry_1/instrument_1/source_1/wavelength Dataset {SCALAR}
-    /entry_1/sample_1        Group
-    /entry_1/sample_1/geometry Group
-    /entry_1/sample_1/geometry/translations Dataset {200, 3}
-    /frame_selector          Group
-    /frame_selector/good_frames Dataset {200}
+    /entry                   Group
+    /entry/data              Group
+    /entry/data/data         Dataset {200/Inf, 1, 985}
+    /entry/instrument        Group
+    /entry/instrument/detector Group
+    /entry/instrument/detector/distance Dataset {SCALAR}
+    /entry/instrument/detector/x_pixel_size Dataset {SCALAR}
+    /entry/instrument/detector/y_pixel_size Dataset {SCALAR}
+    /entry/instrument/source Group
+    /entry/instrument/source/wavelength Dataset {SCALAR}
     /speckle_tracking        Group
-    /speckle_tracking/error_frame Dataset {1, 2000}
-    /speckle_tracking/dfs    Dataset {SCALAR}
-    /speckle_tracking/dss    Dataset {SCALAR}
-    /speckle_tracking/mask   Dataset {1, 2000}
-    /speckle_tracking/phase  Dataset {1, 2000}
-    /speckle_tracking/pixel_aberrations Dataset {2, 1, 2000}
-    /speckle_tracking/pixel_map Dataset {2, 1, 2000}
-    /speckle_tracking/pixel_translations Dataset {200, 2}
-    /speckle_tracking/reference_image Dataset {1, 5754}
-    /speckle_tracking/roi    Dataset {4}
-    /speckle_tracking/whitefield Dataset {1, 2000}
+    /speckle_tracking/basis_vectors Dataset {200/Inf, 2, 3}
+    /speckle_tracking/defocus_x Dataset {SCALAR}
+    /speckle_tracking/defocus_y Dataset {SCALAR}
+    /speckle_tracking/mask   Dataset {200/Inf, 1, 985}
+    /speckle_tracking/phase  Dataset {1, 985}
+    /speckle_tracking/pixel_aberrations Dataset {2, 1, 985}
+    /speckle_tracking/pixel_translations Dataset {200/Inf, 2}
+    /speckle_tracking/reference_image Dataset {1, 5924}
+    /speckle_tracking/scale_map Dataset {1, 985}
+    /speckle_tracking/translations Dataset {200/Inf, 3}
+    /speckle_tracking/whitefield Dataset {1, 985}

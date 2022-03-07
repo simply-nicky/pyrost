@@ -62,7 +62,7 @@ cdef extern from "routines.h":
     void barcode_bars(double *bars, unsigned long size, double x0, double b_dx, double rd, long seed) nogil
 
     int ml_profile(complex *out, double *inp, unsigned long isize, double *layers, unsigned long lsize, 
-                   complex mt0, complex mt1, complex mt2, double sgm, unsigned threads) nogil
+                   complex t0, complex t1, double sgm, unsigned threads) nogil
 
     int frames(double *out, double *pfx, double *pfy, double dx, double dy, unsigned long *ishape,
                unsigned long *oshape, long seed, unsigned threads) nogil

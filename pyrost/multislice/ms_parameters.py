@@ -467,7 +467,7 @@ class MSParams(INIParser):
             Fresnel transmission coefficient.
         """
         ref_idx = self.mll_mat1.get_ref_index(energy)
-        return 2 * np.pi / self.wl * self.z_step * ref_idx
+        return np.exp(2.0j * np.pi / self.wl * self.z_step * ref_idx)
 
     def get_mat2_r(self, energy: float) -> complex:
         """Return the Fresnel transmission coefficient of the second
@@ -480,7 +480,7 @@ class MSParams(INIParser):
             Fresnel transmission coefficient.
         """
         ref_idx = self.mll_mat2.get_ref_index(energy)
-        return 2 * np.pi / self.wl * self.z_step * ref_idx
+        return np.exp(2.0j * np.pi / self.wl * self.z_step * ref_idx)
 
     def get_wavefront_size(self) -> int:
         """Return slice array size.
