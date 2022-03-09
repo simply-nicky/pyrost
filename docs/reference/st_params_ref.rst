@@ -3,8 +3,10 @@
 Simulation parameters
 =====================
 
-.. raw:: html
-    :file: ../figures/st_sim_exp_geom.svg
+.. figure:: ../figures/st_sim_exp_geom.svg
+   :width: 100%
+   
+   Experimental geometry of a PXST wavefront metrology dataset generated in **pyrost.simulation**.
 
 |
 
@@ -16,48 +18,48 @@ List of simulation parameters:
 
 * **Experimental geometry parameters**:
 
-    * `defocus` : Lens' defocus distance [um].
-    * `det_dist` : Distance between the barcode and the
-      detector [um].
-    * `step_size` : Scan step size [um].
-    * `n_frames` : Number of frames.
+  * `defocus` : Lens' defocus distance [um].
+  * `det_dist` : Distance between the barcode and the
+    detector [um].
+  * `step_size` : Scan step size [um].
+  * `n_frames` : Number of frames.
 
 * **Detector parameters**:
 
-    * `detx_size` : Detector's size along the horizontal axis in
-      pixels.
-    * `dety_size` : Detector's size along the vertical axis in
-      pixels.
-    * `pix_size` : Detector's pixel size [um].
+  * `detx_size` : Detector's size along the horizontal axis in
+    pixels.
+  * `dety_size` : Detector's size along the vertical axis in
+    pixels.
+  * `pix_size` : Detector's pixel size [um].
 
 * **Source parameters**:
 
-    * `p0` : Source beam flux [cnt / s].
-    * `wl` : Source beam's wavelength [um].
-    * `th_s` : Source rocking curve width [rad].
+  * `p0` : Source beam flux [cnt / s].
+  * `wl` : Source beam's wavelength [um].
+  * `th_s` : Source rocking curve width [rad].
 
 * **Lens parameters**:
 
-    * `ap_x` : Lens' aperture size along the x axis [um].
-    * `ap_y` : Lens' aperture size along the y axis [um].
-    * `focus` : Focal distance [um].
-    * `alpha` : Third order aberrations coefficient [rad / mrad^3].
-    * `ab_cnt` : Lens' aberrations center point [0.0 - 1.0].
+  * `ap_x` : Lens' aperture size along the x axis [um].
+  * `ap_y` : Lens' aperture size along the y axis [um].
+  * `focus` : Focal distance [um].
+  * `alpha` : Third order aberrations coefficient [rad / mrad^3].
+  * `ab_cnt` : Lens' aberrations center point [0.0 - 1.0].
 
 * **Barcode sample parameters**:
 
-    * `bar_size` : Average bar's size [um].
-    * `bar_sigma` : Bar bluriness width [um].
-    * `bar_atn` : Bar's attenuation coefficient [0.0 - 1.0].
-    * `bulk_atn` : Barcode's bulk attenuation coefficient [0.0 - 1.0].
-    * `bar_rnd` : Bar's coordinates random deviation [0.0 - 1.0].
-    * `offset` : Barcode's offset at the beginning and at the end
-      of the scan from the detector's bounds [um].
+  * `bar_size` : Average bar's size [um].
+  * `bar_sigma` : Bar bluriness width [um].
+  * `bar_atn` : Bar's attenuation coefficient [0.0 - 1.0].
+  * `bulk_atn` : Barcode's bulk attenuation coefficient [0.0 - 1.0].
+  * `bar_rnd` : Bar's coordinates random deviation [0.0 - 1.0].
+  * `offset` : Barcode's offset at the beginning and at the end
+    of the scan from the detector's bounds [um].
 
 * **System parameters**:
 
-    * `seed` : Seed used in all the pseudo-random number generations.
-    * `num_threads` : Number of threads used in the calculations.
+  * `seed` : Seed used in all the pseudo-random number generations.
+  * `num_threads` : Number of threads used in the calculations.
 
 .. note::
 

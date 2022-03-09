@@ -1,7 +1,7 @@
 import numpy as np
 import cython
 from libc.string cimport memcmp
-from libc.math cimport log
+from libc.math cimport sqrt
 from libc.stdlib cimport abort, malloc, free
 
 # Numpy must be initialized. When using numpy from C or Cython you must
@@ -115,18 +115,18 @@ def fft_convolve(np.ndarray array not None, np.ndarray kernel not None, int axis
             when the filter overlaps a border. Default value is 'constant'. The
             valid values and their behavior is as follows:
 
-            * 'constant', (k k k k | a b c d | k k k k) : The input is extended by
+            * `constant`, (k k k k | a b c d | k k k k) : The input is extended by
               filling all values beyond the edge with the same constant value, defined
               by the `cval` parameter.
-            * 'nearest', (a a a a | a b c d | d d d d) : The input is extended by
+            * `nearest`, (a a a a | a b c d | d d d d) : The input is extended by
               replicating the last pixel.
-            * 'mirror', (c d c b | a b c d | c b a b) : The input is extended by
+            * `mirror`, (c d c b | a b c d | c b a b) : The input is extended by
               reflecting about the center of the last pixel. This mode is also sometimes
               referred to as whole-sample symmetric.
-            * 'reflect', (d c b a | a b c d | d c b a) : The input is extended by
+            * `reflect`, (d c b a | a b c d | d c b a) : The input is extended by
               reflecting about the edge of the last pixel. This mode is also sometimes
               referred to as half-sample symmetric.
-            * 'wrap', (a b c d | a b c d | a b c d) : The input is extended by wrapping
+            * `wrap`, (a b c d | a b c d | a b c d) : The input is extended by wrapping
               around to the opposite edge.
 
         cval (float) :  Value to fill past edges of input if mode is 'constant'. Default
@@ -359,18 +359,18 @@ def gaussian_filter(np.ndarray inp not None, object sigma not None, object order
             filter overlaps a border. Default value is 'reflect'. The valid values and their
             behavior is as follows:
 
-            * 'constant', (k k k k | a b c d | k k k k) : The input is extended by filling all
+            * `constant`, (k k k k | a b c d | k k k k) : The input is extended by filling all
               values beyond the edge with the same constant value, defined by the `cval`
               parameter.
-            * 'nearest', (a a a a | a b c d | d d d d) : The input is extended by replicating
+            * `nearest`, (a a a a | a b c d | d d d d) : The input is extended by replicating
               the last pixel.
-            * 'mirror', (c d c b | a b c d | c b a b) : The input is extended by reflecting
+            * `mirror`, (c d c b | a b c d | c b a b) : The input is extended by reflecting
               about the center of the last pixel. This mode is also sometimes referred to as
               whole-sample symmetric.
-            * 'reflect', (d c b a | a b c d | d c b a) : The input is extended by reflecting
+            * `reflect`, (d c b a | a b c d | d c b a) : The input is extended by reflecting
               about the edge of the last pixel. This mode is also sometimes referred to as
               half-sample symmetric.
-            * 'wrap', (a b c d | a b c d | a b c d) : The input is extended by wrapping around
+            * `wrap`, (a b c d | a b c d | a b c d) : The input is extended by wrapping around
               to the opposite edge.
 
         cval (float) : Value to fill past edges of input if mode is 'constant'. Default is 0.0.
@@ -409,6 +409,7 @@ def gaussian_filter(np.ndarray inp not None, object sigma not None, object order
     cdef void *_out = np.PyArray_DATA(out)
 
     cdef void *_inp
+    cdef int inp_tn = np.PyArray_TYPE(inp)
     if np.PyArray_ISCOMPLEX(inp):
         inp = check_array(inp, np.NPY_COMPLEX128)
         _inp = <double *>np.PyArray_DATA(inp)
@@ -441,7 +442,7 @@ def gaussian_filter(np.ndarray inp not None, object sigma not None, object order
 
     if fail:
         raise RuntimeError('C backend exited with error.')
-    return out
+    return check_array(out, inp_tn)
 
 def gaussian_gradient_magnitude(np.ndarray inp not None, object sigma not None, str mode='reflect',
                                 double cval=0.0, double truncate=4.0, str backend='numpy',
@@ -458,18 +459,18 @@ def gaussian_gradient_magnitude(np.ndarray inp not None, object sigma not None, 
             filter overlaps a border. Default value is 'reflect'. The valid values and their
             behavior is as follows:
 
-            * 'constant', (k k k k | a b c d | k k k k) : The input is extended by filling all
+            * `constant`, (k k k k | a b c d | k k k k) : The input is extended by filling all
               values beyond the edge with the same constant value, defined by the `cval`
               parameter.
-            * 'nearest', (a a a a | a b c d | d d d d) : The input is extended by replicating
+            * `nearest`, (a a a a | a b c d | d d d d) : The input is extended by replicating
               the last pixel.
-            * 'mirror', (c d c b | a b c d | c b a b) : The input is extended by reflecting
+            * `mirror`, (c d c b | a b c d | c b a b) : The input is extended by reflecting
               about the center of the last pixel. This mode is also sometimes referred to as
               whole-sample symmetric.
-            * 'reflect', (d c b a | a b c d | d c b a) : The input is extended by reflecting
+            * `reflect`, (d c b a | a b c d | d c b a) : The input is extended by reflecting
               about the edge of the last pixel. This mode is also sometimes referred to as
               half-sample symmetric.
-            * 'wrap', (a b c d | a b c d | a b c d) : The input is extended by wrapping around
+            * `wrap`, (a b c d | a b c d | a b c d) : The input is extended by wrapping around
               to the opposite edge.
 
         cval (float) : Value to fill past edges of input if mode is ‘constant’. Default is 0.0.
@@ -499,6 +500,7 @@ def gaussian_gradient_magnitude(np.ndarray inp not None, object sigma not None, 
     cdef double *_out = <double *>np.PyArray_DATA(out)
 
     cdef void *_inp
+    cdef int inp_tn = np.PyArray_TYPE(inp)
     if np.PyArray_ISCOMPLEX(inp):
         inp = check_array(inp, np.NPY_COMPLEX128)
         _inp = <double *>np.PyArray_DATA(inp)
@@ -531,7 +533,7 @@ def gaussian_gradient_magnitude(np.ndarray inp not None, object sigma not None, 
     
     if fail:
         raise RuntimeError('C backend exited with error.')
-    return out
+    return check_array(out, inp_tn)
 
 def bar_positions(double x0, double x1, double b_dx, double rd, long seed):
     """Generate a coordinate array of randomized barcode's bar positions.
@@ -555,8 +557,8 @@ def bar_positions(double x0, double x1, double b_dx, double rd, long seed):
             barcode_bars(_bars, size, x0, b_dx, rd, seed)
     return bars
 
-cdef np.ndarray ml_profile_wrapper(np.ndarray x_arr, np.ndarray layers, complex mt0,
-                                   complex mt1, complex mt2, double sigma, unsigned num_threads):
+cdef np.ndarray ml_profile_wrapper(np.ndarray x_arr, np.ndarray layers, complex t0,
+                                   complex t1, double sigma, unsigned num_threads):
     x_arr = check_array(x_arr, np.NPY_FLOAT64)
     layers = check_array(layers, np.NPY_FLOAT64)
 
@@ -571,7 +573,7 @@ cdef np.ndarray ml_profile_wrapper(np.ndarray x_arr, np.ndarray layers, complex 
     cdef double *_x = <double *>np.PyArray_DATA(x_arr)
     cdef double *_lyrs = <double *>np.PyArray_DATA(layers)
     with nogil:
-        fail = ml_profile(_out, _x, isize, _lyrs, lsize, mt0, mt1, mt2, sigma, num_threads)
+        fail = ml_profile(_out, _x, isize, _lyrs, lsize, t0, t1, sigma, num_threads)
     if fail:
         raise RuntimeError('C backend exited with error.')
     return out
@@ -587,37 +589,34 @@ def barcode_profile(np.ndarray x_arr not None, np.ndarray bars not None, double 
         bars (numpy.ndarray) : Coordinates of barcode's bar positions [um].
         bulk_atn (float) : Barcode's bulk attenuation coefficient (0.0 - 1.0).
         bar_atn (float) : Barcode's bar attenuation coefficient (0.0 - 1.0).
-        bar_sigma (float) : Bar's blurriness width [um].
+        bar_sigma (float) : Inter-diffusion length [um].
         num_threads (int) : Number of threads used in the calculations.
     
     Returns:
         numpy.ndarray : Array of barcode's transmission profiles.
 
     Notes:
-        Barcode's transmission profile is simulated with a set
-        of error functions:
+        Barcode's transmission profile is given by:
         
         .. math::
-            \begin{multline}
-                T_{b}(x) = 1 - \frac{T_{bulk}}{2} \left\{
-                \mathrm{erf}\left[ \frac{x - x_{bar}[0]}{\sqrt{2} \sigma} \right] +
-                \mathrm{erf}\left[ \frac{x_{bar}[n - 1] - x}{\sqrt{2} \sigma} \right]
-                \right\} -\\
-                \frac{T_{bar}}{4} \sum_{i = 1}^{n - 2} \left\{
-                2 \mathrm{erf}\left[ \frac{x - x_{bar}[i]}{\sqrt{2} \sigma} \right] -
-                \mathrm{erf}\left[ \frac{x - x_{bar}[i - 1]}{\sqrt{2} \sigma} \right] -
-                \mathrm{erf}\left[ \frac{x - x_{bar}[i + 1]}{\sqrt{2} \sigma} \right]
-                \right\}
-            \end{multline}
+            t_b(x) = t_{air} + \frac{t_1 - t_{air}}{2}
+            \left( \tanh\left(\frac{x - x^b_1}{\sigma_b} \right) +
+            \tanh\left(\frac{x^b_N - x}{\sigma_b}\right) \right)\\
+            - \frac{t_2 - t_1}{2}\sum_{n = 1}^{(N - 1) / 2} 
+            \left( \tanh\left(\frac{x - x^b_{2 n}}{\sigma_b}\right) + 
+            \tanh\left(\frac{x^b_{2 n + 1} - x}{\sigma_b}\right) \right)
         
-        where :math:`x_{bar}` is an array of bar coordinates.
+        where :math:`t_1 = \sqrt{1 - A_{bulk}}`, :math:`t_2 = \sqrt{1 - A_{bulk} - A_{bar}}`
+        are the transmission coefficients for the bulk and the bars of the sample,
+        :math:`x^b_n` is a set of bars coordinates, and :math:`\sigma_b` is the
+        inter-diffusion length.
     """
-    cdef complex mt0 = -1j * log(1 - bulk_atn)
-    cdef complex mt1 = -1j * log(1 - bar_atn)
-    return ml_profile_wrapper(x_arr, bars, mt0, mt1, 0., bar_sigma, num_threads)
+    cdef complex t0 = sqrt(1.0 - bulk_atn)
+    cdef complex t1 = sqrt(1.0 - bulk_atn - bar_atn)
+    return ml_profile_wrapper(x_arr, bars, t0, t1, bar_sigma, num_threads)
 
-def mll_profile(np.ndarray x_arr not None, np.ndarray layers not None, complex mt0,
-                complex mt1, double sigma, unsigned num_threads=1):
+def mll_profile(np.ndarray x_arr not None, np.ndarray layers not None, complex t0,
+                complex t1, double sigma, unsigned num_threads=1):
     r"""Return an array of MLL's transmission profile calculated
     at `x_arr` coordinates.
 
@@ -625,41 +624,37 @@ def mll_profile(np.ndarray x_arr not None, np.ndarray layers not None, complex m
         x_arr (numpy.ndarray) : Array of the coordinates, where the transmission
             coefficients are calculated [um].    
         layers (numpy.ndarray) : Coordinates of MLL's layers positions [um].
-        mt0 (complex) : Fresnel transmission coefficient for the first material of
+        t0 (complex) : Fresnel transmission coefficient for the first material of
             MLL's bilayer.
-        mt1 (complex) : Fresnel transmission coefficient for the first material of
+        t1 (complex) : Fresnel transmission coefficient for the first material of
             MLL's bilayer.
-        sigma (float) : Interdiffusion length [um].
+        sigma (float) : Inter-diffusion length [um].
         num_threads (int) : Number of threads used in the calculations.
     
     Returns:
         numpy.ndarray : Array of barcode's transmission profiles.
 
     Notes:
-        MLL's transmission profile is simulated with a set
-        of error functions:
+        MLL's transmission profile is given by:
         
         .. math::
-            \begin{multline}
-                T_{b}(x) = 1 - \frac{T_{bulk}}{2} \left\{
-                \mathrm{erf}\left[ \frac{x - x_{lyr}[0]}{\sqrt{2} \sigma} \right] +
-                \mathrm{erf}\left[ \frac{x_{lyr}[n - 1] - x}{\sqrt{2} \sigma} \right]
-                \right\} -\\
-                \frac{T_{bar}}{4} \sum_{i = 1}^{n - 2} \left\{
-                2 \mathrm{erf}\left[ \frac{x - x_{lyr}[i]}{\sqrt{2} \sigma} \right] -
-                \mathrm{erf}\left[ \frac{x - x_{lyr}[i - 1]}{\sqrt{2} \sigma} \right] -
-                \mathrm{erf}\left[ \frac{x - x_{lyr}[i + 1]}{\sqrt{2} \sigma} \right]
-                \right\}
-            \end{multline}
+            t_{MLL}(x) = t_{air} + \frac{t_1 - t_{air}}{2}
+            \left( \tanh\left(\frac{x - x^b_1}{\sigma_b} \right) +
+            \tanh\left(\frac{x^b_N - x}{\sigma_b}\right) \right)\\
+            + \frac{t_2 - t_1}{2}\sum_{n = 1}^{(N - 1) / 2} 
+            \left( \tanh\left(\frac{x - x^b_{2 n}}{\sigma_b}\right) + 
+            \tanh\left(\frac{x^b_{2 n + 1} - x}{\sigma_b}\right) \right)
         
-        where :math:`x_{lyr}` is an array of MLL's layer coordinates.
+        where :math:`t_1`, :math:`t_2` are the transmission coefficients of the
+        MLL's bilayers, :math:`x^b_n` is a set of bilayer coordinates,
+        and :math:`\sigma_b` is the inter-diffusion length.
     """
-    return ml_profile_wrapper(x_arr, layers, 0., mt0, mt1, sigma, num_threads)
+    return ml_profile_wrapper(x_arr, layers, t0, t1, sigma, num_threads)
 
 def make_frames(np.ndarray pfx not None, np.ndarray pfy not None, double dx, double dy,
                 tuple shape, long seed, unsigned num_threads=1):
     """Generate intensity frames from one-dimensional intensity profiles (`pfx`,
-    `pfy`) and whitefield profiles (`wfx`, `wfy`). Intensity profiles resized into
+    `pfy`) and white-field profiles (`wfx`, `wfy`). Intensity profiles resized into
     the shape of a frame. Poisson noise is applied if `seed` is non-negative.
 
     Args:
@@ -748,7 +743,7 @@ def median(np.ndarray data not None, np.ndarray mask=None, int axis=0, unsigned 
         elif type_num == np.NPY_UINT64:
             fail = median_c(_out, _data, _mask, ndim, _dims, 8, axis, compare_ulong, num_threads)
         else:
-            raise TypeError('data argument has incompatible type: {:s}'.format(data.dtype))
+            raise TypeError(f'data argument has incompatible type: {str(data.dtype)}')
     if fail:
         raise RuntimeError('C backend exited with error.')
 
@@ -770,18 +765,18 @@ def median_filter(np.ndarray data not None, object size not None, np.ndarray mas
             filter overlaps a border. Default value is 'reflect'. The valid values and their
             behavior is as follows:
 
-            * 'constant', (k k k k | a b c d | k k k k) : The input is extended by filling all
+            * `constant`, (k k k k | a b c d | k k k k) : The input is extended by filling all
               values beyond the edge with the same constant value, defined by the `cval`
               parameter.
-            * 'nearest', (a a a a | a b c d | d d d d) : The input is extended by replicating
+            * `nearest`, (a a a a | a b c d | d d d d) : The input is extended by replicating
               the last pixel.
-            * 'mirror', (c d c b | a b c d | c b a b) : The input is extended by reflecting
+            * `mirror`, (c d c b | a b c d | c b a b) : The input is extended by reflecting
               about the center of the last pixel. This mode is also sometimes referred to as
               whole-sample symmetric.
-            * 'reflect', (d c b a | a b c d | d c b a) : The input is extended by reflecting
+            * `reflect`, (d c b a | a b c d | d c b a) : The input is extended by reflecting
               about the edge of the last pixel. This mode is also sometimes referred to as
               half-sample symmetric.
-            * 'wrap', (a b c d | a b c d | a b c d) : The input is extended by wrapping around
+            * `wrap`, (a b c d | a b c d | a b c d) : The input is extended by wrapping around
               to the opposite edge.
         cval (float) : Value to fill past edges of input if mode is 'constant'. Default is 0.0.
         num_threads (int) : Number of threads used in the calculations.
@@ -825,7 +820,7 @@ def median_filter(np.ndarray data not None, object size not None, np.ndarray mas
         elif type_num == np.NPY_UINT64:
             fail = median_filter_c(_out, _data, _mask, ndim, _dims, 8, _fsize, _mode, _cval, compare_ulong, num_threads)
         else:
-            raise TypeError('data argument has incompatible type: {:s}'.format(data.dtype))
+            raise TypeError(f'data argument has incompatible type: {str(data.dtype)}')
     if fail:
         raise RuntimeError('C backend exited with error.')
 

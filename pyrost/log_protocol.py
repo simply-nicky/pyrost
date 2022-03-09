@@ -16,12 +16,10 @@ Examples:
 from __future__ import annotations
 import os
 import re
-from typing import Any, Dict, Iterable, List, Optional
-import h5py
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 import numpy as np
 from .ini_parser import ROOT_PATH, INIParser
-from .data_processing import CXILoader, STData
-from .bin import median
+from .data_processing import CXIStore, STData, Transform
 
 LOG_PROTOCOL = os.path.join(ROOT_PATH, 'config/log_protocol.ini')
 
@@ -192,20 +190,21 @@ class LogProtocol(INIParser):
                                 attr_dict[part_name][attr] *= self._get_unit(raw_str)
         return attr_dict
 
-    def load_data(self, path: str, frame_indices: Optional[Iterable[int]]=None) -> Dict[str, np.ndarray]:
+    def load_data(self, path: str, indices: Optional[Iterable[int]]=None,
+                  return_indices=False) -> Tuple[Dict[str, np.ndarray], np.ndarray]:
         """Retrieve the main data array from the log file.
 
         Args:
             path : Path to the log file.
-            frame_indices : Array of data indices to load. Loads info for all
+            indices : Array of data indices to load. Loads info for all
                 the frames by default.
 
         Returns:
             Dictionary with data fields and their names retrieved
             from the log file.
         """
-        if frame_indices is not None:
-            frame_indices.sort()
+        if indices is not None:
+            indices.sort()
 
         row_cnt = 0
         with open(path, 'r') as log_file:
@@ -218,21 +217,21 @@ class LogProtocol(INIParser):
 
                     if row_cnt == 0:
                         first_row = line_idx
-                    if frame_indices is not None and row_cnt == frame_indices[0]:
+                    if indices is not None and row_cnt == indices[0]:
                         skiprows = line_idx - first_row
-                    if frame_indices is not None and row_cnt == frame_indices[-1]:
+                    if indices is not None and row_cnt == indices[-1]:
                         max_rows = line_idx - skiprows
                         break
 
                     row_cnt += 1
             else:
-                if frame_indices is None:
-                    frame_indices = np.arange(row_cnt)
+                if indices is None:
+                    indices = np.arange(row_cnt)
                     skiprows = 0
                     max_rows = line_idx - skiprows
                 else:
-                    frame_indices = frame_indices[:np.searchsorted(frame_indices, row_cnt)]
-                    if not frame_indices.size:
+                    indices = indices[:np.searchsorted(indices, row_cnt)]
+                    if not indices.size:
                         skiprows = line_idx
                     max_rows = line_idx - skiprows
 
@@ -264,44 +263,46 @@ class LogProtocol(INIParser):
         data_tuple = np.loadtxt(path, delimiter=';', converters=converters,
                                 dtype=dtypes, unpack=True, skiprows=skiprows,
                                 max_rows=max_rows + 1)
-        data_dict = {key: data[frame_indices - skiprows] for key, data in zip(keys, data_tuple)}
-        data_dict['indices'] = frame_indices
+        data_dict = {key: data[indices - skiprows] for key, data in zip(keys, data_tuple)}
+
+        if return_indices:
+            return data_dict, indices
         return data_dict
 
-def cxi_converter_sigray(scan_num: int, dir_path: str='/gpfs/cfel/group/cxi/labs/MLL-Sigray',
+def cxi_converter_sigray(out_path: str, scan_num: int, dir_path: str='/gpfs/cfel/group/cxi/labs/MLL-Sigray',
                          target: str='Mo', distance: Optional[float]=None, lens: str='up',
-                         frame_indices: Optional[Iterable[int]]=None, **attributes: Any) -> STData:
-    """Convert measured frames and log files from the
-    Sigray laboratory to a :class:`pyrost.STData` data
-    container.
+                         indices: Optional[Iterable[int]]=None, transform: Optional[Transform]=None,
+                         **attributes: Any) -> STData:
+    """Convert measured frames and log files from the Sigray laboratory to a
+    :class:`pyrost.STData` data container.
 
     Args:
+        out_path : Path to the file, where all the results can be saved.
         scan_num : Scan number.
         dir_path : Path to the root directory, where the data is located.
         target : Sigray X-ray source target used. The following values are
             accepted:
 
-            * 'Mo' : Mollibdenum.
-            * 'Cu' : Cuprum.
-            * 'Rh' : Rhodium.
+            * `Mo` : Mollibdenum.
+            * `Cu` : Cuprum.
+            * `Rh` : Rhodium.
 
         distance : Detector distance in meters.
         lens : Specify if the lens mounted in the upper holder ('up') or in
             the lower holder ('down'). If specified, the lens-to-detector
             distance will be automatically parsed from the log file.
-        frame_indices : Array of data indices to load. Loads info for all the
+        indices : Array of data indices to load. Loads info for all the
             frames by default.
+        transform : Frames transform object.
         attributes : Dictionary of attribute values, that override the loaded
-            values.
+            values in :class:`pyrost.STData`.
 
     Returns:
-        Data container with the extracted data.
+        :class:`pyrost.STData` data container with the extracted data.
     """
     wl_dict = {'Mo': 7.092917530503447e-11, 'Cu': 1.5498024804150033e-10,
                'Rh': 6.137831605603974e-11}
 
-    log_prt = LogProtocol.import_default()
-    cxi_loader = CXILoader.import_default()
 
     ss_vec = np.array([0., -1., 0.])
     fs_vec = np.array([-1., 0., 0.])
@@ -311,116 +312,50 @@ def cxi_converter_sigray(scan_num: int, dir_path: str='/gpfs/cfel/group/cxi/labs
     h5_files = sorted([os.path.join(data_dir, path) for path in os.listdir(data_dir)
                        if path.endswith('Lambda.nxs')])
 
+    files = CXIStore(input_files=h5_files, output_file=out_path)
+
+    log_prt = LogProtocol.import_default()
     log_attrs = log_prt.load_attributes(log_path)
-    log_data = log_prt.load_data(log_path, frame_indices=frame_indices)
+    log_data, indices = log_prt.load_data(log_path, indices=indices,
+                                          return_indices=True)
 
-    data_dict = cxi_loader.load_to_dict(h5_files, frame_indices=log_data['indices'],
-                                        wavelength=wl_dict[target], distance=distance,
-                                        **attributes)
-    data_dict['x_pixel_size'] *= 1e-6
-    data_dict['y_pixel_size'] *= 1e-6
+    x_pixel_size = 55e-6
+    y_pixel_size = 55e-6
 
-    pix_vec = np.tile(np.array([[data_dict['x_pixel_size'], data_dict['y_pixel_size'], 0]]),
-                      (data_dict['data'].shape[0], 1))
-    data_dict['basis_vectors'] = np.stack([pix_vec * ss_vec, pix_vec * fs_vec], axis=1)
+    n_frames = indices.size
+    pix_vec = np.tile(np.array([[x_pixel_size, y_pixel_size, 0]]), (n_frames, 1))
+    basis_vectors = np.stack([pix_vec * ss_vec, pix_vec * fs_vec], axis=1)
 
     with np.load(os.path.join(ROOT_PATH, 'data/sigray_mask.npz')) as mask_file:
-        if mask_file['mask'].shape == data_dict['data'].shape[1:]:
-            data_dict['mask'] = np.tile(mask_file['mask'][None],
-                                        (data_dict['data'].shape[0], 1, 1))
+        mask = np.tile(mask_file['mask'][None], (n_frames, 1, 1))
 
     x_sample = log_attrs['Session logged attributes'].get('x_sample', 0.0)
     y_sample = log_attrs['Session logged attributes'].get('y_sample', 0.0)
     z_sample = log_attrs['Session logged attributes'].get('z_sample', 0.0)
-    data_dict['translations'] = np.tile([[x_sample, y_sample, z_sample]],
-                                        (data_dict['data'].shape[0], 1))
+    translations = np.nan_to_num(np.tile([[x_sample, y_sample, z_sample]], (n_frames, 1)))
     for data_key, log_dset in log_data.items():
         for log_key in log_prt.log_keys['x_sample']:
             if log_key in data_key:
-                data_dict['translations'][:, 0] = log_dset
+                translations[:log_dset.size, 0] = log_dset
         for log_key in log_prt.log_keys['y_sample']:
             if log_key in data_key:
-                data_dict['translations'][:, 1] = log_dset
+                translations[:log_dset.size, 1] = log_dset
         for log_key in log_prt.log_keys['z_sample']:
             if log_key in data_key:
-                data_dict['translations'][:, 2] = log_dset
+                translations[:log_dset.size, 2] = log_dset
 
-    if data_dict.get('distance', None) is None:
+    if distance is None:
         if lens == 'up':
-            data_dict['distance'] = log_attrs['Session logged attributes']['lens_up_dist']
+            distance = log_attrs['Session logged attributes']['lens_up_dist']
         elif lens == 'down':
-            data_dict['distance'] = log_attrs['Session logged attributes']['lens_down_dist']
+            distance = log_attrs['Session logged attributes']['lens_down_dist']
         else:
             raise ValueError(f'lens keyword is invalid: {lens:s}')
 
-    return STData(**data_dict)
-
-def tilt_converter_sigray(scan_num: int, out_path: str,
-                          dir_path: str='/gpfs/cfel/group/cxi/labs/MLL-Sigray',
-                          target: str='Mo', distance: float=2.,
-                          frame_indices: Optional[Iterable[int]]=None) -> None:
-    """Save measured frames and log files from a tilt
-    scan to a h5 file.
-
-    Args:
-        scan_num : Scan number.
-        out_path : Path of the output file
-        dir_path : Path to the root directory, where the data is located.
-        target : Sigray X-ray source target used. The following values are
-            accepted:
-
-            * 'Mo' : Mollibdenum.
-            * 'Cu' : Cuprum.
-            * 'Rh' : Rhodium.
-
-        distance : Detector distance in meters.
-        frame_indices : Array of data indices to load. Loads info for all the
-            frames by default.
-    """
-    energy_dict = {'Mo': 17.48, 'Cu': 8.05, 'Rh': 20.2} # keV
-    flip_dict={'Yaw-LENSE-UP': False, 'Pitch-LENSE-UP': False,
-               'Yaw-LENSE-DOWN': True, 'Pitch-LENSE-DOWN': True}
-    sum_axis = {'Yaw-LENSE-UP': 0, 'Pitch-LENSE-UP': 1,
-                'Yaw-LENSE-DOWN': 0, 'Pitch-LENSE-DOWN': 1}
-
-    log_prt = LogProtocol.import_default()
-    cxi_loader = CXILoader.import_default()
-
-    log_path = os.path.join(dir_path, f'scan-logs/Scan_{scan_num:d}.log')
-    data_dir = os.path.join(dir_path, f'scan-frames/Scan_{scan_num:d}')
-    h5_files = sorted([os.path.join(data_dir, path) for path in os.listdir(data_dir)
-                       if path.endswith('Lambda.nxs')])
-
-    log_data = log_prt.load_data(log_path, frame_indices=frame_indices)
-
-    data_dict = cxi_loader.load_to_dict(h5_files, frame_indices=log_data['indices'])
-    data = data_dict['data']
-    with np.load(os.path.join(ROOT_PATH, 'data/sigray_mask.npz')) as mask_file:
-        mask = np.tile(mask_file['mask'][None, ()], (data.shape[0], 1, 1))
-
-    whitefield = median(data, mask, axis=0)
-    db_coord = np.unravel_index(np.argmax(whitefield), whitefield.shape)
-
-    for flip_key in flip_dict:
-        if any(flip_key in data_type for data_type in log_data):
-            scan_type = [data_type for data_type in log_data if flip_key in data_type][0]
-            translations = log_data[scan_type]
-            if sum_axis[flip_key]:
-                data = np.sum(data[:, :, db_coord[1] - 10:db_coord[1] + 10], axis=2)
-                theta = np.linspace(0, data.shape[1], data.shape[1]) - db_coord[0]
-                theta *= 36e-5 * data_dict['x_pixel_size'] / (2 * np.pi * distance)
-            else:
-                data = np.sum(data[:, db_coord[0] - 10:db_coord[0] + 10], axis=1)
-                theta = np.linspace(data.shape[1], 0, data.shape[1]) - db_coord[1]
-                theta *= 36e-5 * data_dict['y_pixel_size'] / (2 * np.pi * distance)
-            if flip_dict[flip_key]:
-                data = np.flip(data, axis=0)
-            break
-    else:
-        raise ValueError('The scan type is not supported')
-
-    with h5py.File(out_path, 'w') as out_file:
-        out_file.create_dataset("Data", data=data)
-        out_file.create_dataset("Omega", data=translations * 1e9) # must be in ndeg for some reason
-        out_file.create_dataset("2Theta", data=theta)
-        out_file.create_dataset("Energy", data=energy_dict[target])
+    data = STData(files, basis_vectors=basis_vectors, mask=mask, translations=translations,
+                  distance=distance, x_pixel_size=x_pixel_size, y_pixel_size=y_pixel_size,
+                  wavelength=wl_dict[target], **attributes)
+    if transform:
+        data = data.update_transform(transform)
+    data = data.load('data', indices=indices)
+    return data

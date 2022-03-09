@@ -1,14 +1,16 @@
 """
 Examples:
 
-    :func:`pyrost.ms_parameters` generates the multislice experimental
-    parameters, which could be later parsed to
-    :class:`pyrost.simulation.MSPropagator` in order to perform the simulation.
+    :func:`pyrost.multislice.MSParams.import_default` generates the multislice
+    experimental parameters, which could be later parsed to
+    :class:`pyrost.multislice.MSPropagator` in order to perform the simulation.
 
     >>> import pyrost.multislice as ms_sim
     >>> ms_params = ms_sim.MSParams.import_default()
     >>> print(ms_params)
-    {'multislice': {'x_max': 30.0, 'x_min': 0.0, 'x_step': 0.0001, '...': '...'}, 'material1': {'formula': 'W', 'density': 18.0}, 'material2': {'formula': 'SiC', 'density': 2.8}, 'mll': {'focus': 1500.0, 'n_max': 8000, 'n_min': 100, '...': '...'}}
+    {'multislice': {'x_max': 30.0, 'x_min': 0.0, 'x_step': 0.0001, '...': '...'},
+     'material1': {'formula': 'W', 'density': 18.0}, 'material2': {'formula': 'SiC',
+     'density': 2.8}, 'mll': {'focus': 1500.0, 'n_max': 8000, 'n_min': 100, '...': '...'}}
 """
 from __future__ import annotations
 import os
@@ -123,9 +125,6 @@ class BasicElement:
             where :math:`\rho` is physical density, :math:`N_a` is Avogadro constant, :math:`m_a` is
             atomic molar mass, :math:`r_e` is radius of electron, :math:`\lambda` is wavelength,
             :math:`f_1` and :math:`f_2` are real and imaginary components of scattering factor.
-
-        Reference:
-            .. [GISAXS] http://gisaxs.com/index.php/Absorption_length
         """
         wavelength = self.en_to_wl / energy
         return 4 * np.pi * self.get_ref_index(energy).imag / wavelength
@@ -157,9 +156,9 @@ class Element(BasicElement):
             dbase : Database of the tabulated scattering factors of each element. The
                 following keywords are allowed:
 
-                * 'Henke' : (10 eV < E < 30 keV) [Henke]_.
-                * 'Chantler' : (11 eV < E < 405 keV) [Chantler]_.
-                * 'BrCo' : (30 eV < E < 509 keV) [BrCo]_.
+                * `Henke` : (10 eV < E < 30 keV) [Henke]_.
+                * `Chantler` : (11 eV < E < 405 keV) [Chantler]_.
+                * `BrCo` : (30 eV < E < 509 keV) [BrCo]_.
 
         References:
             .. [Henke] http://henke.lbl.gov/optical_constants/asf.html
@@ -265,9 +264,9 @@ class Material(BasicElement):
             dbase : Database of the tabulated scattering factors of each element. The
                 following keywords are allowed:
 
-                * 'Henke' : (10 eV < E < 30 keV) [Henke]_.
-                * 'Chantler' : (11 eV < E < 405 keV) [Chantler]_.
-                * 'BrCo' : (30 eV < E < 509 keV) [BrCo]_.
+                * `Henke` : (10 eV < E < 30 keV) [Henke]_.
+                * `Chantler` : (11 eV < E < 405 keV) [Chantler]_.
+                * `BrCo` : (30 eV < E < 509 keV) [BrCo]_.
 
         References:
             .. [Henke] http://henke.lbl.gov/optical_constants/asf.html
@@ -470,7 +469,7 @@ class MSParams(INIParser):
             Fresnel transmission coefficient.
         """
         ref_idx = self.mll_mat1.get_ref_index(energy)
-        return 2 * np.pi / self.wl * self.z_step * ref_idx
+        return np.exp(2.0j * np.pi / self.wl * self.z_step * ref_idx)
 
     def get_mat2_r(self, energy: float) -> complex:
         """Return the Fresnel transmission coefficient of the second
@@ -483,7 +482,7 @@ class MSParams(INIParser):
             Fresnel transmission coefficient.
         """
         ref_idx = self.mll_mat2.get_ref_index(energy)
-        return 2 * np.pi / self.wl * self.z_step * ref_idx
+        return np.exp(2.0j * np.pi / self.wl * self.z_step * ref_idx)
 
     def get_wavefront_size(self) -> int:
         """Return slice array size.

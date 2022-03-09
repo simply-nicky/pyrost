@@ -22,7 +22,7 @@ copyright = '2020, Nikolay Ivanov'
 author = 'Nikolay Ivanov'
 
 # The full version, including alpha/beta/rc tags
-release = '0.6.2'
+release = '0.7.0'
 
 
 # -- General configuration ---------------------------------------------------
@@ -73,4 +73,22 @@ html_theme = 'furo'
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
-# html_static_path = ['_static']
+html_static_path = ['_static']
+html_css_files = [
+    "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/fontawesome.min.css",
+    "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/solid.min.css",
+    "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/brands.min.css",
+]
+html_theme_options = {
+    "light_logo": "pyrost_logo.png",
+    "dark_logo": "pyrost_logo_dark.png",
+    "sidebar_hide_name": True,
+    "footer_icons": [
+        {
+            "name": "GitHub",
+            "url": "https://github.com/simply-nicky/pyrost",
+            "html": "",
+            "class": "fa-brands fa-github fa-2x",
+        },
+    ]
+}

@@ -1,8 +1,8 @@
 """
 Examples:
 
-    :func:`pyrost.st_parameters` generates the speckle tracking experimental
-    parameters, which could be later parsed to :class:`pyrost.simulation.STSim`
+    :func:`pyrost.simulation.STParams.import_default` generates the speckle tracking
+    experimental parameters, which could be later parsed to :class:`pyrost.simulation.STSim`
     in order to perform the simulation.
 
     >>> import pyrost.simulation as st_sim
@@ -14,7 +14,7 @@ Examples:
 """
 from __future__ import annotations
 import os
-from typing import Dict, Iterator, Tuple, Union, Optional
+from typing import Dict, Iterable, Iterator, Tuple, Union, Optional
 from multiprocessing import cpu_count
 import numpy as np
 from ..ini_parser import INIParser, ROOT_PATH
@@ -89,49 +89,49 @@ class STParams(INIParser):
             barcode : A dictionary of barcode sample parameters. The following elements
                 are accepted:
 
-                * 'bar_size' : Average bar's size [um].
-                * 'bar_sigma' : Bar bluriness width [um].
-                * 'bar_atn' : Bar's attenuation coefficient [0.0 - 1.0].
-                * 'bulk_atn' : Barcode's bulk attenuation coefficient [0.0 - 1.0].
-                * 'bar_rnd' : Bar's coordinates random deviation [0.0 - 1.0].
-                * 'offset' : Barcode's offset at the beginning and at the end
+                * `bar_size` : Average bar's size [um].
+                * `bar_sigma` : Bar bluriness width [um].
+                * `bar_atn` : Bar's attenuation coefficient [0.0 - 1.0].
+                * `bulk_atn` : Barcode's bulk attenuation coefficient [0.0 - 1.0].
+                * `bar_rnd` : Bar's coordinates random deviation [0.0 - 1.0].
+                * `offset` : Barcode's offset at the beginning and at the end
                   of the scan from the detector's bounds [um].
 
             detector : A dictionary of detector parameters. The following elements are 
                 accepted:
 
-                * 'detx_size' : Detector's size along the horizontal axis in pixels.
-                * 'dety_size' : Detector's size along the vertical axis in pixels.
-                * 'pix_size' : Detector's pixel size [um].
+                * `detx_size` : Detector's size along the horizontal axis in pixels.
+                * `dety_size` : Detector's size along the vertical axis in pixels.
+                * `pix_size` : Detector's pixel size [um].
 
             exp_geom : A dictionary of experimental geometry parameters. The following elements
                 are accepted:
 
-                * 'defocus' : Lens' defocus distance [um].
-                * 'det_dist' : Distance between the barcode and the detector [um].
-                * 'step_size' : Scan step size [um].
-                * 'n_frames' : Number of frames.
+                * `defocus` : Lens' defocus distance [um].
+                * `det_dist` : Distance between the barcode and the detector [um].
+                * `step_size` : Scan step size [um].
+                * `n_frames` : Number of frames.
 
             lens : A dictionary of lens parameters. The following elements are accepted:
 
-                * 'ap_x' : Lens' aperture size along the x axis [um].
-                * 'ap_y' : Lens' aperture size along the y axis [um].
-                * 'focus' : Focal distance [um].
-                * 'alpha' : Third order aberrations coefficient [rad / mrad^3].
-                * 'ab_cnt' : Lens' aberrations center point [0.0 - 1.0].
+                * `ap_x` : Lens' aperture size along the x axis [um].
+                * `ap_y` : Lens' aperture size along the y axis [um].
+                * `focus` : Focal distance [um].
+                * `alpha` : Third order aberrations coefficient [rad / mrad^3].
+                * `ab_cnt` : Lens' aberrations center point [0.0 - 1.0].
 
             source : A dictionary of X-ray source parameters. The following elements are
                 accepted:
 
-                * 'p0' : Source beam flux [cnt / s].
-                * 'wl' : Source beam's wavelength [um].
-                * 'th_s' : Source rocking curve width [rad].
+                * `p0` : Source beam flux [cnt / s].
+                * `wl` : Source beam's wavelength [um].
+                * `th_s` : Source rocking curve width [rad].
 
             system : A dictionary of calculation parameters. The following elements are
                 accepted:
 
-                * 'seed' : Seed used in all the pseudo-random number generations.
-                * 'num_threads' : Number of threads used in the calculations.
+                * `seed` : Seed used in all the pseudo-random number generations.
+                * `num_threads` : Number of threads used in the calculations.
         """
         super(STParams, self).__init__(barcode=barcode, detector=detector,
                                        exp_geom=exp_geom, lens=lens, source=source,
@@ -160,6 +160,9 @@ class STParams(INIParser):
 
     def __str__(self) -> str:
         return self._format(self.export_dict()).__str__()
+
+    def keys(self) -> Iterable[str]:
+        return list(self)
 
     @classmethod
     def import_default(cls, **kwargs: Union[int, float]) -> STParams:
@@ -283,8 +286,8 @@ class STParams(INIParser):
             A tuple of two elements ('u0_x', 'dx'). The elements
             are the following:
 
-            * 'u0_x' : Wavefront along the x axis.
-            * 'dx' : Step size along the x axis [um]. Only if `return_step` is True.
+            * `u0_x` : Wavefront along the x axis.
+            * `dx` : Step size along the x axis [um]. Only if `return_step` is True.
 
         Notes:
             The exit-surface at the lens plane:
@@ -321,8 +324,8 @@ class STParams(INIParser):
             A tuple of two elements ('u0_y', 'dy'). The elements
             are the following:
 
-            * 'u0_y' : Wavefront along the y axis.
-            * 'dy' : Step size along the y axis [um]. Only if `return_step` is True.
+            * `u0_y` : Wavefront along the y axis.
+            * `dy` : Step size along the y axis [um]. Only if `return_step` is True.
 
         Notes:
             The exit-surface at the lens plane:
@@ -353,8 +356,8 @@ class STParams(INIParser):
             Tuple of two items ('th_lb', 'th_ub'). The elements are
             the following:
 
-            * 'th_lb' : Beam's lower bound [um].
-            * 'th_ub' : Beam's upper bound [um].
+            * `th_lb` : Beam's lower bound [um].
+            * `th_ub` : Beam's upper bound [um].
         """
         th_lb = -0.5 * self.ap_x / self.focus + self.wl / np.pi * self.alpha * \
                 3.75e8 * (self.ap_x / self.focus)**2 / dist
@@ -409,13 +412,9 @@ class STParams(INIParser):
             :func:`pyrost.bin.barcode_profile` : Full details of barcode's
             transmission profile generation algorithm.
         """
-        b_prof = barcode_profile(x_arr=x_arr, bars=bars, bulk_atn=self.bulk_atn,
-                                 bar_atn=self.bar_atn, bar_sigma=0.0,
-                                 num_threads=self.num_threads)
-        sigmas = [self.bar_sigma / dx if n == b_prof.ndim - 1 else 0.0
-                  for n in range(b_prof.ndim)]
-        return gaussian_filter(b_prof, sigmas, num_threads=self.num_threads,
-                               mode='nearest')
+        return barcode_profile(x_arr=x_arr, bars=bars, bulk_atn=self.bulk_atn,
+                               bar_atn=self.bar_atn, bar_sigma=self.bar_sigma,
+                               num_threads=self.num_threads)
 
     def source_curve(self, dist: float, step: float) -> np.ndarray:
         """Return source's rocking curve profile at `dist` distance from
@@ -428,4 +427,4 @@ class STParams(INIParser):
         Returns:
             Source's rocking curve profile.
         """
-        return gaussian_kernel(dist * self.th_s / step)
+        return gaussian_kernel(sigma=dist * self.th_s / step)

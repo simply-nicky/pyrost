@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 from configparser import ConfigParser
 import re
-from typing import Any, Dict, TypeVar, Type
+from typing import Any, Dict, ItemsView, KeysView, List, TypeVar, Type, Union, ValuesView
 import numpy as np
 
 T = TypeVar('T')            # Object type
@@ -111,6 +111,23 @@ class INIParser:
 
         return fmt(kwargs[section][option])
 
+    @staticmethod
+    def str_to_list(strings: Union[str, List[str]]) -> List[str]:
+        """Convert `strings` to a list of strings.
+
+        Args:
+            strings : String or a list of strings
+
+        Returns:
+            List of strings.
+        """
+        if isinstance(strings, (str, list)):
+            if isinstance(strings, str):
+                return [strings,]
+            return strings
+
+        raise ValueError('strings must be a string or a list of strings')
+
     @classmethod
     def _lookup_dict(cls) -> Dict:
         """Look-up table between the sections and the parameters.
@@ -136,7 +153,7 @@ class INIParser:
             ValueError : If the file doesn't exist.
         """
         if not os.path.isfile(protocol_file):
-            raise ValueError("File {:s} doesn't exist".format(protocol_file))
+            raise ValueError(f"File {protocol_file} doesn't exist")
         ini_parser = ConfigParser()
         ini_parser.read(protocol_file)
         return ini_parser
@@ -175,11 +192,11 @@ class INIParser:
         if is_list:
             return [fmt(part.strip('\'\"'))
                     for part in re.split(cls.LIST_SPLITTER, is_list.group(1))]
-        else:
-            return fmt(string.strip())
+
+        return fmt(string.strip())
 
     @classmethod
-    def _import_ini(cls, protocol_file: str) -> Dict[str, Dict[str, Any]]:
+    def _import_ini(cls, protocol_file: str) -> Dict[str, Dict]:
         ini_parser = cls.read_ini(protocol_file)
         kwargs = {}
         for section in cls.attr_dict:
@@ -196,7 +213,7 @@ class INIParser:
         return kwargs
 
     @classmethod
-    def _format(cls, obj: INIParser) -> Dict:
+    def _format(cls, obj: Dict) -> Dict:
         crop_obj = {}
         for key, val in list(obj.items())[:cls.FMT_LEN]:
             if isinstance(val, dict):
@@ -211,10 +228,12 @@ class INIParser:
     def __getattr__(self, attr: str) -> Any:
         if attr in self.__dict__.get('_lookup', {}):
             return self.ini_dict[self.__dict__['_lookup'][attr]][attr]
-        elif attr in self.__dict__.get('ini_dict', {}):
+        if attr in self.__dict__.get('ini_dict', {}):
             return self.__dict__['ini_dict'][attr]
-        else:
-            raise AttributeError(attr + " doesn't exist")
+        raise AttributeError(attr + " doesn't exist")
+
+    def __getitem__(self, attr: str) -> Any:
+        return self.__getattr__(attr)
 
     def __setattr__(self, attr: str, value: Any) -> None:
         if attr in self._lookup:
@@ -232,13 +251,32 @@ class INIParser:
         crop_dict = {key: self._format(val) for key, val in self.export_dict().items()}
         return crop_dict.__str__()
 
+    def keys(self) -> KeysView:
+        return self.attr_dict.keys()
+
+    def items(self) -> ItemsView:
+        """Return (key, value) pairs of the datasets stored in the container.
+
+        Returns:
+            (key, value) pairs of the datasets stored in the container.
+        """
+        return dict(self).items()
+
+    def values(self) -> ValuesView:
+        """Return the attributes' data stored in the container.
+
+        Returns:
+            List of data stored in the container.
+        """
+        return dict(self).values()
+
     def export_dict(self) -> Dict[str, Any]:
         """Return a :class:`dict` object with all the attributes.
 
         Returns:
             Dictionary with all the attributes conntained in the object.
         """
-        return {section: self.__getattr__(section) for section in self.attr_dict}
+        return dict(self)
 
     @hybridmethod
     def export_ini(self, **kwargs: Dict) -> ConfigParser:

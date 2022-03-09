@@ -8,6 +8,7 @@ Core classes and functions in pyrost module:
 
     log_ref
     cxi_ref
+    transform_ref
     rst_ref
     ab_fit_ref
     rst_c_ref

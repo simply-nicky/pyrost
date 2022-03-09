@@ -11,9 +11,10 @@ algorithm in the case of the high noise present in the measured data.
 """
 from __future__ import absolute_import
 
-from .cxi_protocol import CXIProtocol
-from .log_protocol import LogProtocol, cxi_converter_sigray, tilt_converter_sigray
-from .data_processing import STData, CXILoader
+from .cxi_protocol import CXIProtocol, CXIStore
+from .log_protocol import LogProtocol, cxi_converter_sigray
+from .data_processing import Transform, Crop, Downscale, Mirror, ComposeTransforms, STData
 from .rst_update import SpeckleTracking
+from .bfgs import BFGS
 from .aberrations_fit import AberrationsFit
 from . import bin
