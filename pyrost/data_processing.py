@@ -610,11 +610,12 @@ class STData(DataContainer):
             return transform.state_dict().get('axis', -1)
 
         axes = []
-        if isinstance(self.transform, ComposeTransforms):
-            for t in self.transform:
-                axes.append(get_axis(t))
-        else:
-            axes.append(get_axis(self.transform))
+        if isinstance(self.transform, Transform):
+            if isinstance(self.transform, ComposeTransforms):
+                for t in self.transform:
+                    axes.append(get_axis(t))
+            else:
+                axes.append(get_axis(self.transform))
 
         basis_vectors = np.copy(self.basis_vectors)
         for axis in axes:
