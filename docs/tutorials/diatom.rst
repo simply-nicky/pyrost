@@ -83,6 +83,8 @@ Read `diatom.cxi` file as follows:
     >>> files = rst.CXIStore(input_files='diatom.cxi', output_file='diatom_proc.cxi',
     >>>                      protocol=protocol)
 
+.. _diatom-preprocessing:
+
 Preprocessing of a PXST dataset
 -------------------------------
 
@@ -132,16 +134,17 @@ the sharper is the reference profile).
 .. code-block:: python
 
     >>> defoci = np.linspace(2e-3, 3e-3, 50)
-    >>> sweep_scan = data.defocus_sweep(defoci, size=5, extra_args={'hval': 1.5})
+    >>> sweep_scan = data.defocus_sweep(defoci, size=5, hval=1.5)
     >>> defocus = defoci[np.argmax(sweep_scan)]
     >>> print(defocus)
     0.002204081632653061
 
-    >>> fig, ax = plt.subplots(figsize=(12, 6))
+    >>> fig, ax = plt.subplots(figsize=(8, 4))
     >>> ax.plot(defoci * 1e3, sweep_scan)
     >>> ax.set_xlabel('Defocus distance, [mm]', fontsize=20)
     >>> ax.set_title('Average gradient magnitude squared', fontsize=20)
     >>> ax.tick_params(labelsize=15)
+    >>> ax.grid(True)
     >>> plt.show()
 
 .. image:: ../figures/sweep_scan.png
@@ -231,6 +234,7 @@ and calculates the mean-squared-error for the latter “testing” subset. The C
     >>> ax.set_xlabel('Kernel bandwidth', fontsize=15)
     >>> ax.set_title('Cross-validation', fontsize=20)
     >>> ax.tick_params(labelsize=10)
+    >>> ax.grid(True)
     >>> plt.show()
 
 .. image:: ../figures/cv_curve.png
@@ -260,7 +264,9 @@ Now having an estimate of the optimal kernel bandwidth, we're ready to perform a
 
 The results are saved to a `st_res` container:
 
-    >>> fig, ax = plt.subplots(figsize=(10, 10))
+.. code-block:: python
+
+    >>> fig, ax = plt.subplots(figsize=(8, 6))
     >>> ax.imshow(st_res.reference_image[700:1200, 100:700], vmin=0.7, vmax=1.3,
     >>>           extent=[100, 700, 1200, 700])
     >>> ax.set_title('Reference image', fontsize=20)
@@ -291,11 +297,11 @@ which can be obtained with :func:`pyrost.STData.get_fit` method.
     >>> fit_obj_fs = data.get_fit(axis=1)
     >>> fit_fs = fit_obj_fs.fit(max_order=3)
 
-    >>> fig, ax = plt.subplots(figsize=(10, 10))
+    >>> fig, ax = plt.subplots(figsize=(8, 8))
     >>> ax.imshow(data.get('phase'))
     >>> ax.set_title('Phase', fontsize=20)
-    >>> ax.set_xlabel('horizontal axis', fontsize=15)
-    >>> ax.set_ylabel('vertical axis', fontsize=15)
+    >>> ax.set_xlabel('Horizontal axis', fontsize=15)
+    >>> ax.set_ylabel('Vertical axis', fontsize=15)
     >>> ax.tick_params(labelsize=15)
     >>> plt.show()
 
@@ -305,19 +311,20 @@ which can be obtained with :func:`pyrost.STData.get_fit` method.
 
 .. code-block:: python
 
-    >>> fig, axes = plt.subplots(1, 2, figsize=(12, 6))
+    >>> fig, axes = plt.subplots(1, 2, figsize=(8, 3))
     >>> axes[0].plot(fit_obj_fs.pixels, fit_obj_fs.phase, label='Reconstructed profile')
-    >>> axes[0].plot(fit_obj_fs.pixels, fit_obj_fs.model(fit_fs['ph_fit']),
+    >>> axes[0].plot(fit_obj_fs.pixels, fit_obj_fs.model(fit_fs['ph_fit']), linestyle='dashed',
                      label='Polynomial fit')
-    >>> axes[0].set_xlabel('horizontal axis', fontsize=15)
+    >>> axes[0].set_xlabel('Horizontal axis', fontsize=15)
     >>> axes[1].plot(fit_obj_ss.pixels, fit_obj_ss.phase, label='Reconstructed profile')
-    >>> axes[1].plot(fit_obj_ss.pixels, fit_obj_ss.model(fit_ss['ph_fit']),
+    >>> axes[1].plot(fit_obj_ss.pixels, fit_obj_ss.model(fit_ss['ph_fit']), linestyle='dashed',
     >>>              label='Polynomial fit')
-    >>> axes[1].set_xlabel('vertical axis')
+    >>> axes[1].set_xlabel('Horizontal axis', fontsize=15)
     >>> for ax in axes:
-    >>>     ax.set_title('Phase', fontsize=20)
-    >>>     ax.tick_params(labelsize=15)
-    >>>     ax.legend(fontsize=15)
+    >>>     ax.set_title('Phase', fontsize=15)
+    >>>     ax.tick_params(labelsize=10)
+    >>>     ax.legend(fontsize=10)
+    >>>     ax.grid(True)
     >>> plt.show()
 
 .. image:: ../figures/phase_fit.png

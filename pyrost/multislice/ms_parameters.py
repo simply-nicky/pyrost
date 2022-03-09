@@ -1,14 +1,16 @@
 """
 Examples:
 
-    :func:`pyrost.ms_parameters` generates the multislice experimental
-    parameters, which could be later parsed to
-    :class:`pyrost.simulation.MSPropagator` in order to perform the simulation.
+    :func:`pyrost.multislice.MSParams.import_default` generates the multislice
+    experimental parameters, which could be later parsed to
+    :class:`pyrost.multislice.MSPropagator` in order to perform the simulation.
 
     >>> import pyrost.multislice as ms_sim
     >>> ms_params = ms_sim.MSParams.import_default()
     >>> print(ms_params)
-    {'multislice': {'x_max': 30.0, 'x_min': 0.0, 'x_step': 0.0001, '...': '...'}, 'material1': {'formula': 'W', 'density': 18.0}, 'material2': {'formula': 'SiC', 'density': 2.8}, 'mll': {'focus': 1500.0, 'n_max': 8000, 'n_min': 100, '...': '...'}}
+    {'multislice': {'x_max': 30.0, 'x_min': 0.0, 'x_step': 0.0001, '...': '...'},
+     'material1': {'formula': 'W', 'density': 18.0}, 'material2': {'formula': 'SiC',
+     'density': 2.8}, 'mll': {'focus': 1500.0, 'n_max': 8000, 'n_min': 100, '...': '...'}}
 """
 from __future__ import annotations
 import os

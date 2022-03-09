@@ -273,11 +273,11 @@ def cxi_converter_sigray(out_path: str, scan_num: int, dir_path: str='/gpfs/cfel
                          target: str='Mo', distance: Optional[float]=None, lens: str='up',
                          indices: Optional[Iterable[int]]=None, transform: Optional[Transform]=None,
                          **attributes: Any) -> STData:
-    """Convert measured frames and log files from the
-    Sigray laboratory to a :class:`pyrost.STData` data
-    container.
+    """Convert measured frames and log files from the Sigray laboratory to a
+    :class:`pyrost.STData` data container.
 
     Args:
+        out_path : Path to the file, where all the results can be saved.
         scan_num : Scan number.
         dir_path : Path to the root directory, where the data is located.
         target : Sigray X-ray source target used. The following values are
@@ -291,13 +291,14 @@ def cxi_converter_sigray(out_path: str, scan_num: int, dir_path: str='/gpfs/cfel
         lens : Specify if the lens mounted in the upper holder ('up') or in
             the lower holder ('down'). If specified, the lens-to-detector
             distance will be automatically parsed from the log file.
-        frame_indices : Array of data indices to load. Loads info for all the
+        indices : Array of data indices to load. Loads info for all the
             frames by default.
+        transform : Frames transform object.
         attributes : Dictionary of attribute values, that override the loaded
-            values.
+            values in :class:`pyrost.STData`.
 
     Returns:
-        Data container with the extracted data.
+        :class:`pyrost.STData` data container with the extracted data.
     """
     wl_dict = {'Mo': 7.092917530503447e-11, 'Cu': 1.5498024804150033e-10,
                'Rh': 6.137831605603974e-11}

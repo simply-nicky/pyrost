@@ -457,7 +457,7 @@ class SpeckleTracking(DataContainer):
                          num_threads=self.num_threads)
         dij += self.ref_orig
 
-        di_pix = np.ascontiguousarray(dij[:, 0]) 
+        di_pix = np.ascontiguousarray(dij[:, 0])
         dj_pix = np.ascontiguousarray(dij[:, 1])
         if blur > 0.0:
             di_pix = gaussian_filter(di_pix - self.di_pix, blur, mode='nearest',
@@ -532,7 +532,7 @@ class SpeckleTracking(DataContainer):
         raise ValueError('kind keyword is invalid')
 
     def find_hopt(self, h0: float=1.0, method: str='KerReg',
-                  epsilon: float=1e-4, maxiter: int=50, gtol: float=1e-5,
+                  epsilon: float=1e-4, maxiter: int=10, gtol: float=1e-5,
                   verbose: bool=False) -> float:
         """Find the optimal kernel bandwidth by finding the bandwidth, that minimized
         the Cross-validation error metric. The minimization process is performed with
@@ -573,8 +573,8 @@ class SpeckleTracking(DataContainer):
                 break
         return optimizer.state_dict()['xk'].item()
 
-    def train_adapt(self, search_window: Tuple[float, float, float], blur: float=0.0,
-                    h0: Optional[float]=None, n_iter: int=30, f_tol: float=1e-8,
+    def train_adapt(self, search_window: Tuple[float, float, float], h0: float,
+                    blur: float=0.0, n_iter: int=30, f_tol: float=1e-8,
                     ref_method: str='KerReg', pm_method: str='rsearch',
                     pm_args: Dict[str, Union[bool, int, float, str]]={},
                     options: Dict[str, Union[bool, float, str]]={},
@@ -599,14 +599,13 @@ class SpeckleTracking(DataContainer):
                 * `sw_s` : Search window size of the Huber scaling map. Given as a ratio
                   (0.0 - 1.0) relative to the scaling map value before the update.
 
+            h0 : Smoothing kernel bandwidth used in `reference_image` estimation.
+                The value is given in pixels.
             blur : Smoothing kernel bandwidth used in `pixel_map` regularisation.
                 The value is given in pixels.
-            h0 : Smoothing kernel bandwidth used in `reference_image` estimation.
-                The value is given in pixels. The value is estimated with
-                :func:`SpeckleTracking.find_hopt` by default.
             n_iter : Maximum number of iterations.
             f_tol : Tolerance for termination by the change of the average error. The
-                iteration stops when ``(error^k - error^{k+1})/max{|error^k|, |error^{k+1}|, 
+                iteration stops when ``(error^k - error^{k+1})/max{|error^k|, |error^{k+1}|,
                 1} <= f_tol``.
             ref_method : `reference_image` update algorithm. The following
                 keyword values are allowed:
@@ -653,12 +652,14 @@ class SpeckleTracking(DataContainer):
                 * `epsilon` : Increment to `h0` to use for determining the
                   function gradient for `h0` update algorithm. The default
                   value is 1.4901161193847656e-08.
-                * `maxiter` : Maximum number of iterations in the optimal kernel
-                  bandwidth estimation. Only when `h0` is None.
+                * `maxiter` : Maximum number of iterations in the line search at the
+                  optimal kernel bandwidth update.
+                * `momentum` : Momentum used in the next error calculation. Helps to
+                  smooth out the change of error.
                 * `update_translations` : Update sample pixel translations
                   if True. The default value is False.
-                * `return_extra` : Return errors and `h0` array if True.
-                  The default value is False.
+                * `return_extra` : Return errors and `h0` array if True. The default
+                  value is False.
 
             verbose : Set verbosity of the computation process.
 
@@ -684,14 +685,6 @@ class SpeckleTracking(DataContainer):
         momentum = options.get('momentum', 0.0)
         update_translations = options.get('update_translations', False)
         return_extra = options.get('return_extra', False)
-
-        if h0 is None:
-            if verbose:
-                print("Finding the optimum kernel bandwidth...")
-            h0 = self.find_hopt(method=ref_method, epsilon=epsilon,
-                                verbose=verbose, maxiter=maxiter)
-            if verbose:
-                print(f"New hopt = {h0:.3f}")
 
         obj = self.update_reference(hval=h0, method=ref_method)
         obj.update_errors.inplace_update()
@@ -722,7 +715,7 @@ class SpeckleTracking(DataContainer):
 
             # Update hval and step
             optimizer.update_loss(lambda hval: new_obj.CV(hval, ref_method))
-            optimizer.step()
+            optimizer.step(maxiter=maxiter)
             h0 = (1.0 - momentum) * optimizer.state_dict()['xk'].item() + momentum * hvals[-1]
             hvals.append(h0)
 
@@ -745,8 +738,8 @@ class SpeckleTracking(DataContainer):
             return obj, {'errors': errors, 'hvals': hvals}
         return obj
 
-    def train(self, search_window: Tuple[float, float, float], blur: float=0.0,
-              h0: Optional[float]=None, n_iter: int=30, f_tol: float=1e-8,
+    def train(self, search_window: Tuple[float, float, float], h0: float,
+              blur: float=0.0, n_iter: int=30, f_tol: float=1e-8,
               ref_method: str='KerReg', pm_method: str='rsearch',
               pm_args: Dict[str, Union[bool, int, float, str]]={},
               options: Dict[str, Union[bool, float, str]]={},
@@ -772,9 +765,9 @@ class SpeckleTracking(DataContainer):
                 * `sw_s` : Search window size of the Huber scaling map. Given as a ratio
                   (0.0 - 1.0) relative to the scaling map value before the update.
 
-            blur : Smoothing kernel bandwidth used in `pixel_map` regularisation.
-                The value is given in pixels.
             h0 : Smoothing kernel bandwidth used in `reference_image` regression.
+                The value is given in pixels.
+            blur : Smoothing kernel bandwidth used in `pixel_map` regularisation.
                 The value is given in pixels.
             n_iter : Maximum number of iterations.
             f_tol : Tolerance for termination by the change of the average error. The
@@ -818,11 +811,8 @@ class SpeckleTracking(DataContainer):
 
             options : Extra options. Accepts the following keyword arguments:
 
-                * `epsilon` : Increment to `h0` to use for determining the
-                  function gradient for `h0` update algorithm. The default
-                  value is 1.4901161193847656e-08.
-                * `maxiter` : Maximum number of iterations in the optimal kernel
-                  bandwidth estimation. Only when `h0` is None.
+                * `momentum` : Momentum used in the next error calculation. Helps to
+                  smooth out the change of error.
                 * `update_translations` : Update sample pixel translations
                   if True. The default value is False.
                 * `return_extra` : Return errors at each iteration if True.
@@ -832,7 +822,7 @@ class SpeckleTracking(DataContainer):
                 Set verbosity of the computation process.
 
         Returns:
-            A tuple of two items ('st_obj', 'errors'). The elements of the tuple
+            A tuple of two items (`st_obj`, `errors`). The elements of the tuple
             are as follows:
 
             * `st_obj` : A new :class:`SpeckleTracking` object with the updated
@@ -845,19 +835,9 @@ class SpeckleTracking(DataContainer):
         """
         integrate = pm_args.get('integrate', False)
 
-        epsilon = options.get('epsilon', 1e-4)
-        maxiter = options.get('maxiter', 50)
         momentum = options.get('momentum', 0.0)
         update_translations = options.get('update_translations', False)
         return_extra = options.get('return_extra', False)
-
-        if h0 is None:
-            if verbose:
-                print("Finding the optimum kernel bandwidth...")
-            h0 = self.find_hopt(method=ref_method, epsilon=epsilon,
-                                maxiter=maxiter, verbose=verbose)
-            if verbose:
-                print(f"New hopt = {h0:.3f}")
 
         obj = self.update_reference(hval=h0, method=ref_method)
         obj.update_errors.inplace_update()

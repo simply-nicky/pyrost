@@ -5,12 +5,14 @@ def pytest_addoption(parser):
                      help="Region of interest")
     parser.addoption("--defocus", type=float, default=1.0e-4,
                      help="Defocus distance [m]")
+    parser.addoption("--alpha", type=float, default=0.01,
+                     help="Defocus distance [m]")
 
 def pytest_generate_tests(metafunc):
     # This is called for every test. Only get/set command line arguments
     # if the argument is specified in the list of test "fixturenames".
     option_dict = vars(metafunc.config.option)
-    for attr in ('path', 'roi', 'defocus'):
+    for attr in ('path', 'roi', 'defocus', 'alpha'):
         option_value = option_dict.get(attr)
         if attr in metafunc.fixturenames and option_value is not None:
             metafunc.parametrize(attr, [option_value])

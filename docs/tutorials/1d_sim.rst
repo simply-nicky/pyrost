@@ -65,7 +65,7 @@ reconstruction:
 
 Speckle tracking update
 -----------------------
-The steps to perform the speckle tracking update are also the same as in :doc:`diatom`:
+The steps to perform the speckle tracking update are also the same as in :ref:`diatom-st-update`:
 
 * Create a :class:`pyrost.SpeckleTracking` object.
 * Find an optimal kernel bandwidth with :func:`pyrost.SpeckleTracking.find_hopt`.
@@ -75,9 +75,10 @@ The steps to perform the speckle tracking update are also the same as in :doc:`d
 .. code-block:: python
 
     >>> st_obj = data.get_st()
-    >>> st_res = st_obj.train_adapt(search_window=(0.0, 10.0, 0.1), blur=8., verbose=True, n_iter=20)
+    >>> h0 = st_obj.find_hopt()
+    >>> st_res = st_obj.train_adapt(search_window=(0.0, 10.0, 0.1), h0=h0, blur=8.0)
 
-    >>> fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+    >>> fig, axes = plt.subplots(1, 2, figsize=(8, 3))
     >>> axes[0].plot(np.arange(st_res.reference_image.shape[1]) - st_res.ref_orig[1],
     >>>              st_res.reference_image[0])
     >>> axes[0].set_title('Reference image', fontsize=20)
@@ -85,27 +86,48 @@ The steps to perform the speckle tracking update are also the same as in :doc:`d
     >>> axes[1].set_title('Pixel mapping', fontsize=20)
     >>> for ax in axes:
     >>>     ax.tick_params(labelsize=15)
-    >>>     ax.set_xlabel('Fast axis, pixels', fontsize=20)
+    >>>     ax.set_xlabel('Fast axis, pixels', fontsize=15)
+    >>>     ax.grid(True)
     >>> plt.show()
 
 .. image:: ../figures/1d_sim_res.png
     :width: 100 %
     :alt: Speckle tracking update results.
 
-Phase reconstruction
---------------------
-After we got the pixel map we're able to reconstruct the phase profile and fit it with
-polynomial function.
+After we successfully reconstructed the wavefront with :func:`pyrost.SpeckleTracking.train_adapt`
+we are able to update the :class:`pyrost.STData` container with :func:`pyrost.STData.import_st`
+method.
 
 .. code-block:: python
 
     >>> data.import_st(st_res)
-    >>> fit = data.fit_phase(axis=1, max_order=2)
-    >>> fit['c_3'] # third order fit coefficient
+
+Phase reconstruction
+--------------------
+In the end we want to look at a angular displacement profile of the X-ray beam and
+find the fit to the profile with a polynomial. All of it could be done with 
+:class:`pyrost.AberrationsFit` fitter object, which can be obtained with
+:func:`pyrost.STData.get_fit` method. We may parse the direct beam coordinate
+in pixels to center the scattering angles aroung the direction of the direct beam:
+
+.. code-block:: python
+
+    >>> fit_obj = data.get_fit(axis=1, center=20)
+    
+Moreover we would like to remove the first order polynomial term from the displacement
+profile with the :func:`pyrost.AberrationsFit.remove_linear_term`, since it
+characterizes the beam's defocus and is of no interest to us. After that, you
+can obtain the best fit to the displacement profile with :func:`pyrost.AberrationsFit.fit`
+and to the phase profile with :func:`pyrost.AberrationsFit.fit_phase`:
+
+.. code-block:: python
+
+    >>> fit_obj = fit_obj.remove_linear_term()
+    >>> fit = fit_obj.fit(max_order=2)
+    >>> print(fit['c_3'])
     -0.04798021776009187
 
-    >>> fit_obj = data.get_fit(axis=1)
-    >>> fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+    >>> fig, axes = plt.subplots(1, 2, figsize=(8, 3))
     >>> axes[0].plot(fit_obj.pixels, fit_obj.pixel_aberrations)
     >>> axes[0].plot(fit_obj.pixels, fit_obj.model(fit['fit']))
     >>> axes[0].set_title('Pixel aberrations', fontsize=20)
@@ -113,10 +135,11 @@ polynomial function.
     >>> axes[1].plot(fit_obj.pixels, fit_obj.model(fit['ph_fit']),
     >>>              label=r'$\alpha$ = {:.5f} rad/mrad^3'.format(fit['c_3']))
     >>> axes[1].set_title('Phase', fontsize=20)
-    >>> axes[1].legend(fontsize=15)
+    >>> axes[1].legend(fontsize=10)
     >>> for ax in axes:
     >>>     ax.tick_params(axis='both', which='major', labelsize=15)
     >>>     ax.set_xlabel('horizontal axis', fontsize=15)
+    >>> plt.tight_layout()
     >>> plt.show()
 
 .. image:: ../figures/1d_sim_fits.png

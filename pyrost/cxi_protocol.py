@@ -212,9 +212,28 @@ class CXIProtocol(INIParser):
         return self.kinds.get(attr, value)
 
     def get_ndim(self, attr: str, value: int=0) -> Tuple[int, ...]:
+        """Return the acceptable number of dimenstions that the attribute's data
+        may have.
+
+        Args:
+            attr : The data attribute.
+            value : value which is returned if the `attr` is not found.
+
+        Returns:
+            Number of dimensions acceptable for the attribute.
+        """
         return self.known_ndims.get((self.get_kind(attr)), value)
 
     def cast(self, attr: str, array: np.ndarray) -> np.ndarray:
+        """Cast the attribute's data to the right data type.
+
+        Args:
+            attr : The data attribute.
+            array : The attribute's data.
+
+        Returns:
+            Data array casted to the right data type.
+        """
         return np.asarray(array, dtype=self.get_dtype(attr, array.dtype))
 
     @staticmethod
@@ -274,7 +293,7 @@ class CXIProtocol(INIParser):
         files, cxi_paths, fidxs = [], [], []
         kind = self.get_kind(attr)
 
-        for cxi_file in cxi_files: 
+        for cxi_file in cxi_files:
             shapes = self.read_attribute_shapes(attr, cxi_file)
             for cxi_path, shape in shapes.items():
                 if len(shape) not in self.get_ndim(attr):

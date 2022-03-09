@@ -1,8 +1,8 @@
 """
 Examples:
 
-    :func:`pyrost.st_parameters` generates the speckle tracking experimental
-    parameters, which could be later parsed to :class:`pyrost.simulation.STSim`
+    :func:`pyrost.simulation.STParams.import_default` generates the speckle tracking
+    experimental parameters, which could be later parsed to :class:`pyrost.simulation.STSim`
     in order to perform the simulation.
 
     >>> import pyrost.simulation as st_sim

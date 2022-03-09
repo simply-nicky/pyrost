@@ -2,7 +2,7 @@
 """
 from __future__ import annotations
 from typing import (Any, Callable, Dict, ItemsView, Iterable,
-                    KeysView, List, Optional, ValuesView, TypeVar, Type)
+                    List, Optional, ValuesView, TypeVar, Type)
 
 T = TypeVar('T')
 
@@ -157,13 +157,18 @@ class DataContainer:
         return self.__dict__.get(attr, value)
 
     def contents(self) -> List[str]:
+        """Return a list of the attributes stored in the container.
+
+        Returns:
+            List of the attributes stored in the container.
+        """
         return [attr for attr in self if self.get(attr) is not None]
 
     def keys(self) -> Iterable[str]:
-        """Return the list of attributes stored in the container.
+        """Return a list of the attributes available in the container.
 
         Returns:
-            List of attributes stored in the container.
+            List of the attributes available in the container.
         """
         return list(self)
 

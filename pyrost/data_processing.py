@@ -1,24 +1,19 @@
-"""CXI file loader class (:class:`pyrost.CXILoader`) uses a protocol to
-automatically load all the necessary data fields from a CXI file.
+"""Transforms are common image transformations. They can be chained together
+using :class:`pyrost.ComposeTransforms`. You pass a :class:`pyrost.Transform`
+instance to a data container :class:`pyrost.STData`. All transform classes
+are inherited from the abstract :class:`pyrost.Transform` class.
 
 :class:`pyrost.STData` contains all the necessary data for the Speckle
 Tracking algorithm, and provides a suite of data processing tools to work
 with the data.
 
 Examples:
-    Extract all the necessary data using a :func:`pyrost.cxi_loader` function.
+    Load all the necessary data using a :func:`pyrost.STData.load` function.
 
     >>> import pyrost as rst
-    >>> loader = rst.cxi_loader()
-    >>> rst_data = loader.load('results/test/data.cxi')
-
-    Mask the bad pixels, integrate the measured frames along the vertical axis,
-    mirror the data, and crop it using a region of interest as follows:
-
-    >>> data = data.update_mask(pmax=99.999, update='multiply')
-    >>> data = data.integrate_data(axis=0)
-    >>> data = data.crop_data(roi=(0, 1, 200, 1240))
-    >>> data = data.mirror_data(axis=0)
+    >>> files = rst.CXIStore(input_files='data.cxi', output_file='data.cxi')
+    >>> data = rst.STData(files)
+    >>> data = data.load()
 """
 from __future__ import annotations
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
@@ -139,7 +134,7 @@ class Crop(Transform):
             Output data array.
         """
         if self.check_shape(inp.shape[-2:]):
-            return inp[..., self.roi[0, 0]:self.roi[1, 0], self.roi[0, 1]:self.roi[1, 1]]
+            return inp[..., self.roi[0][0]:self.roi[1][0], self.roi[0][1]:self.roi[1][1]]
 
         raise ValueError(f'input array has invalid shape: {str(inp.shape):s}')
 
@@ -168,7 +163,7 @@ class Crop(Transform):
             out = np.zeros(inp.shape[:-2] + self.shape, dtype=inp.dtype)
 
         if self.check_shape(out.shape[-2:]):
-            out[..., self.roi[0, 0]:self.roi[1, 0], self.roi[0, 1]:self.roi[1, 1]] = inp
+            out[..., self.roi[0][0]:self.roi[1][0], self.roi[0][1]:self.roi[1][1]] = inp
             return out
 
         raise ValueError(f'output array has invalid shape: {str(out.shape):s}')
@@ -195,7 +190,8 @@ class Crop(Transform):
             A new transform version.
         """
         pdict = self.state_dict()
-        pdict['roi'][:, axis] = np.array([0, 1])
+        pdict['roi'][0][axis] = 0
+        pdict['roi'][1][axis] = 1
 
         if pdict['shape']:
             if axis == 0:
@@ -213,7 +209,7 @@ class Crop(Transform):
         Returns:
             A dictionary with all the attributes.
         """
-        return {'roi': self.roi, 'shape': self.shape}
+        return {'roi': self.roi[:], 'shape': self.shape}
 
 class Downscale(Transform):
     """Downscale the image by a integer ratio.
@@ -402,7 +398,7 @@ class ComposeTransforms(Transform):
         for transform in transforms[1:]:
             pdict = transform.state_dict()
             pdict['shape'] = None
-            self.transforms.append(type(transforms[0])(**pdict))
+            self.transforms.append(type(transform)(**pdict))
 
     def __iter__(self) -> Iterable:
         return self.transforms.__iter__()
@@ -582,7 +578,7 @@ class STData(DataContainer):
 
         Raises:
             ValueError : If any of the necessary attributes specified in :class:`pyrost.STData`
-            notes have not been provided.
+                notes have not been provided.
         """
         super(STData, self).__init__(files=files, transform=transform, **kwargs)
 
@@ -620,7 +616,7 @@ class STData(DataContainer):
         else:
             axes.append(get_axis(self.transform))
 
-        basis_vectors = self.basis_vectors
+        basis_vectors = np.copy(self.basis_vectors)
         for axis in axes:
             if axis > 0:
                 basis_vectors[:, axis] *= -1
@@ -661,6 +657,9 @@ class STData(DataContainer):
     def pixel_map(self, dtype: np.dtype=np.float64) -> np.ndarray:
         """Return a preliminary pixel mapping.
 
+        Args:
+            dtype : The data type of the output pixel mapping.
+
         Returns:
             Pixel mapping array.
         """
@@ -689,8 +688,8 @@ class STData(DataContainer):
             verbose : Set the verbosity of the loading process.
 
         Raises:
-            ValueError : if attribute is not existing in the input file(s).
-            ValueError : if attribute is invalid.
+            ValueError : If attribute is not existing in the input file(s).
+            ValueError : If attribute is invalid.
 
         Returns:
             New :class:`STData` object with the attributes loaded.
@@ -739,13 +738,6 @@ class STData(DataContainer):
                 * `overwrite` : Overwrite the existing dataset.
 
             verbose : Set the verbosity of the loading process.
-
-        Raises:
-            ValueError : if attribute is not existing in the input file(s).
-            ValueError : if attribute is invalid.
-
-        Returns:
-            New :class:`STData` object with the attributes loaded.
         """
         if attributes is None:
             attributes = list(self.contents())
@@ -765,7 +757,7 @@ class STData(DataContainer):
                     self.files.save_attribute(attr, np.asarray(data), mode=mode, idxs=idxs)
 
     @dict_to_object
-    def clear(self, attributes: Union[str, List[str], None]=None):
+    def clear(self, attributes: Union[str, List[str], None]=None) -> STData:
         """Clear the container.
 
         Args:
@@ -1016,8 +1008,8 @@ class STData(DataContainer):
                                                           loss=loss)
 
     def defocus_sweep(self, defoci_x: np.ndarray, defoci_y: Optional[np.ndarray]=None, size: int=51,
-                      extra_args: Dict[str, Union[float, bool, str]]={}, return_extra: bool=False,
-                      verbose: bool=True) -> Tuple[List[float], Dict[str, np.ndarray]]:
+                      hval: Optional[float]=None, extra_args: Dict[str, Union[float, bool, str]]={},
+                      return_extra: bool=False, verbose: bool=True) -> Tuple[List[float], Dict[str, np.ndarray]]:
         r"""Calculate a set of reference images for each defocus in `defoci` and
         return an average R-characteristic of an image (the higher the value the
         sharper reference image is). Return the intermediate results if `return_extra`
@@ -1026,6 +1018,9 @@ class STData(DataContainer):
         Args:
             defoci_x : Array of defocus distances along the horizontal detector axis [m].
             defoci_y : Array of defocus distances along the vertical detector axis [m].
+            hval : Kernel bandwidth in pixels for the reference image update. Estimated
+                with :func:`pyrost.SpeckleTracking.find_hopt` at each defocus distance if
+                None.
             size : Local variance filter size in pixels.
             extra_args : Extra arguments parser to the :func:`STData.get_st` and
                 :func:`SpeckleTracking.update_reference` methods. The following
@@ -1040,8 +1035,6 @@ class STData(DataContainer):
                   is False.
                 * `ff_correction` : Apply dynamic flatfield correction if it's True.
                   The default value is False.
-                * `hval` : Kernel bandwidth in pixels for the reference image update.
-                  The default value is 1.0.
                 * `ref_method` : Choose the reference image update algorithm. The
                   following keyword values are allowed:
 
@@ -1051,6 +1044,7 @@ class STData(DataContainer):
                   The default value is 'KerReg'.
 
             return_extra : Return a dictionary with the intermediate results if True.
+            verbose : Set the verbosity of the process.
 
         Returns:
             A tuple of two items ('r_vals', 'extra'). The elements are as
@@ -1089,7 +1083,6 @@ class STData(DataContainer):
         ds_x = extra_args.get('ds_x', 1.0)
         aberrations = extra_args.get('aberrations', False)
         ff_correction = extra_args.get('ff_correction', False)
-        hval = extra_args.get('hval', 1.0)
         ref_method = extra_args.get('ref_method', 'KerReg')
 
         r_vals = []
@@ -1099,6 +1092,9 @@ class STData(DataContainer):
         st_obj = self.update_defocus(df0_x, df0_y).get_st(ds_y=ds_y, ds_x=ds_x,
                                                           aberrations=aberrations,
                                                           ff_correction=ff_correction)
+        update_hval = hval is None
+        if update_hval:
+            hval = 1.0
 
         for df1_x, df1_y in tqdm(zip(defoci_x.ravel(), defoci_y.ravel()),
                                total=len(defoci_x), disable=not verbose,
@@ -1106,6 +1102,8 @@ class STData(DataContainer):
             st_obj.di_pix *= np.abs(df0_y / df1_y)
             st_obj.dj_pix *= np.abs(df0_x / df1_x)
             df0_x, df0_y = df1_x, df1_y
+            if update_hval:
+                hval = st_obj.find_hopt(hval, method=ref_method)
             st_obj.update_reference.inplace_update(hval=hval, method=ref_method)
             extra['reference_image'].append(st_obj.reference_image)
             mean = st_obj.reference_image.copy()
@@ -1178,8 +1176,8 @@ class STData(DataContainer):
                                    ds_x=ds_x, whitefield=whitefield)
 
         return SpeckleTracking(parent=ref(self), data=data, dj_pix=dij_pix[1], di_pix=dij_pix[0],
-                               num_threads=self.num_threads, pixel_map=pixel_map, ds_y=ds_y, ds_x=ds_x,
-                               whitefield=whitefield)
+                               num_threads=self.num_threads, pixel_map=pixel_map, ds_y=ds_y,
+                               ds_x=ds_x, whitefield=whitefield)
 
     def get_fit(self, center: int=0, axis: int=1) -> AberrationsFit:
         """Return an :class:`AberrationsFit` object for parametric regression
@@ -1278,7 +1276,7 @@ class STData(DataContainer):
             ValueError : If the `method` keyword is invalid.
             AttributeError : If the `whitefield` is absent in the :class:`STData`
                 container when using the 'pca' generation method.
-            ValuerError : If `effs` were not provided when using the 'pca' generation
+            ValueError : If `effs` were not provided when using the 'pca' generation
                 method.
 
         Returns:

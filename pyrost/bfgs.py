@@ -42,7 +42,7 @@ class BFGS():
     def update_loss(self, loss: Callable[[np.ndarray], float],
                     grad: Optional[Callable[[np.ndarray], float]]=None) -> None:
         """Update the objective function to minimize.
-        
+
         Args:
             loss : Objective function to be minimized.
             grad : Gradient of the objective function.
