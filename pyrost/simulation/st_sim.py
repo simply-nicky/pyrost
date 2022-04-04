@@ -21,7 +21,7 @@ Examples:
 from __future__ import annotations
 import os
 import argparse
-from typing import Iterable, Optional, Union
+from typing import Iterable, Optional, Tuple, Union
 import numpy as np
 from ..cxi_protocol import CXIProtocol, CXIStore
 from ..data_container import DataContainer, dict_to_object
@@ -84,7 +84,7 @@ class STSim(DataContainer):
     det_wfy     : np.ndarray
     lens_wfx    : np.ndarray
     lens_wfy    : np.ndarray
-    roi         : np.ndarray
+    roi         : Tuple[int, int, int, int]
     smp_pos     : np.ndarray
     smp_profile : np.ndarray
     smp_wfx     : np.ndarray
@@ -167,7 +167,7 @@ class STSim(DataContainer):
         return fft_convolve(array=det_iy, kernel=sc_y, backend=self.backend,
                             num_threads=self.params.num_threads)
 
-    def find_beam_roi(self) -> np.ndarray:
+    def find_beam_roi(self) -> Tuple[int, int, int, int]:
         """Calculate the beam's field of view at the detector grid as a
         list of four pixel coordinates.
 
@@ -206,7 +206,7 @@ class STSim(DataContainer):
                                              num_threads=self.params.num_threads)
         y0 = (np.argmax(grad_y[:cnt_y]) * self.params.dety_size) // self.y_size
         y1 = ((cnt_y + np.argmax(grad_y[cnt_y:])) * self.params.dety_size) // self.y_size
-        return np.array([[y0, x0], [y1, x1]])
+        return (y0, y1, x0, x1)
 
     @property
     def x_size(self) -> int:
@@ -381,6 +381,8 @@ class STConverter(DataContainer):
 
         Args:
             out_path : Path to the folder, where all the files are saved.
+            apply_transform : Apply :class:`pyrost.Crop` to crop in the data with
+                the region of interest `roi`.
             protocol : CXI file protocol.
 
         Returns:
@@ -403,9 +405,17 @@ class STConverter(DataContainer):
 
         Args:
             out_path : Path to the folder, where all the files are saved.
+            apply_transform : Apply :class:`pyrost.Crop` to crop in the data with
+                the region of interest `roi`.
             protocol : CXI file protocol.
-            apply_transform : Apply :class:`pyrost.Transform` object to the
-                generated `data` if True.
+            mode : Writing mode:
+
+                * `append` : Append the data array to already existing dataset.
+                * `insert` : Insert the data under the given indices `idxs`.
+                * `overwrite` : Overwrite the existing dataset.
+
+            idxs : A set of frame indices where the data is saved if `mode` is
+                `insert`.
 
         Returns:
             None

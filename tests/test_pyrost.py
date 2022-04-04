@@ -47,7 +47,11 @@ def attributes():
 
 @pytest.fixture
 def crop(roi: Tuple[int, int, int, int]) -> rst.Crop:
-    return rst.Crop([[roi[0], roi[2]], [roi[1], roi[3]]])
+    return rst.Crop(roi)
+
+@pytest.fixture
+def good_frames_list(good_frames: Tuple[int, int]) -> np.ndarray:
+    return np.arange(good_frames[0], good_frames[1])
 
 @pytest.mark.st_sim
 def test_st_params(st_params: st_sim.STParams, ini_path: str):
@@ -91,26 +95,30 @@ def test_load_exp(scan_num: int, temp_dir: str, attributes: List[str]):
         assert attr in attributes
 
 @pytest.mark.rst
-def test_defocus_sweep_exp(scan_num: int, temp_dir: str, crop: rst.Crop, defocus: float):
+def test_defocus_sweep_exp(scan_num: int, temp_dir: str, crop: rst.Crop,
+                           good_frames_list: np.ndarray, defocus: float):
     out_path = os.path.join(temp_dir, 'sigray.cxi')
     data = rst.cxi_converter_sigray(out_path=out_path, scan_num=scan_num,
                                     target='Mo', transform=crop)
+    data = data.mask_frames(good_frames_list)
     data = data.integrate_data()
     defoci = np.linspace(0.5 * defocus, 2.0 * defocus)
-    sweep_scan = data.defocus_sweep(defoci_x=defoci, size=50, hval=10.0)
+    sweep_scan = data.defocus_sweep(defoci_x=defoci)
     df_est = defoci[np.argmax(sweep_scan)]
     assert np.abs(df_est - defocus) < 0.1 * defocus
 
 @pytest.mark.rst
-def test_st_udpate_exp(scan_num: int, temp_dir: str, crop: rst.Crop, defocus: float, alpha: float):
+def test_st_udpate_exp(scan_num: int, temp_dir: str, crop: rst.Crop,
+                       good_frames_list: np.ndarray, defocus: float, alpha: float):
     print(crop)
     out_path = os.path.join(temp_dir, 'sigray.cxi')
     data = rst.cxi_converter_sigray(out_path=out_path, scan_num=scan_num,
                                     target='Mo', transform=crop, defocus_x=defocus)
+    data = data.mask_frames(good_frames_list)
     data = data.integrate_data()
     st_obj = data.get_st()
     h0 = st_obj.find_hopt()
-    st_res = st_obj.train_adapt(search_window=(0.0, 10.0, 0.1), h0=h0, blur=12.0)
+    st_res = st_obj.train_adapt(search_window=(0.0, 10.0, 0.1), h0=h0, blur=18.0)
     data.import_st(st_res)
-    fit = data.get_fit(axis=1).remove_linear_term().fit(max_order=3)
-    assert np.abs(fit['c_3'] - alpha) < 0.1 * np.abs(alpha)
+    fit = data.get_fit(axis=1).remove_linear_term().fit(max_order=2)
+    assert np.abs(fit['c_3'] - alpha) < 0.3 * np.abs(alpha)

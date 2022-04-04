@@ -532,7 +532,7 @@ class SpeckleTracking(DataContainer):
         raise ValueError('kind keyword is invalid')
 
     def find_hopt(self, h0: float=1.0, method: str='KerReg',
-                  epsilon: float=1e-4, maxiter: int=10, gtol: float=1e-5,
+                  epsilon: float=1e-3, maxiter: int=10, gtol: float=1e-5,
                   verbose: bool=False) -> float:
         """Find the optimal kernel bandwidth by finding the bandwidth, that minimized
         the Cross-validation error metric. The minimization process is performed with
@@ -646,16 +646,13 @@ class SpeckleTracking(DataContainer):
 
             options : Extra options. Accepts the following keyword arguments:
 
-                * `h0` : Initial guess of the optimal bandwidth in
-                  :func:`SpeckleTracking.find_hopt`. The value is used
-                  if `h0` is None.
                 * `epsilon` : Increment to `h0` to use for determining the
                   function gradient for `h0` update algorithm. The default
                   value is 1.4901161193847656e-08.
                 * `maxiter` : Maximum number of iterations in the line search at the
-                  optimal kernel bandwidth update.
+                  optimal kernel bandwidth update. The default value is 10.
                 * `momentum` : Momentum used in the next error calculation. Helps to
-                  smooth out the change of error.
+                  smooth out the change of error. The default value is 0.0.
                 * `update_translations` : Update sample pixel translations
                   if True. The default value is False.
                 * `return_extra` : Return errors and `h0` array if True. The default
@@ -680,8 +677,8 @@ class SpeckleTracking(DataContainer):
         """
         integrate = pm_args.get('integrate', False)
 
-        epsilon = options.get('epsilon', 1e-4)
-        maxiter = options.get('maxiter', 50)
+        epsilon = options.get('epsilon', 1e-3)
+        maxiter = options.get('maxiter', 10)
         momentum = options.get('momentum', 0.0)
         update_translations = options.get('update_translations', False)
         return_extra = options.get('return_extra', False)

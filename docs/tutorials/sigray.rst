@@ -48,14 +48,15 @@ The function returns a :class:`pyrost.STData` data container, which has a set of
 (see :class:`pyrost.STData` for the full list of methods). Usually the pre-processing of a Sigray
 dataset consists of (see :ref:`diatom-preprocessing` for more info):
 
-* Defining a region of interest (:class:`pyrost.Crop`, :func:`pyrost.STData.update_transform`).
+* Defining a region of interest `[y_min, y_max, x_min, x_max]` (:class:`pyrost.Crop`,
+  :func:`pyrost.STData.update_transform`).
 * Mirroring the data around the vertical detector axis if needed (:class:`pyrost.Mirror`,
   :func:`pyrost.STData.update_transform`).
 * Masking bad pixels (:func:`pyrost.STData.update_mask`).
 
 .. code-block::
 
-    >>> crop = rst.Crop([[270, 200], [300, 1240]])
+    >>> crop = rst.Crop([270, 300, 200, 1240])
     >>> transform = rst.ComposeTransforms([crop, rst.Mirror(axis=1)])
     >>> data = data.update_transform(transform=transform)
     >>> data = data.update_mask(vmax=100000)

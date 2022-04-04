@@ -110,15 +110,15 @@ class Crop(Transform):
     """Crop transform. Crops a frame according to a region of interest.
 
     Attributes:
-        roi : Region of interest. Comprised of four elements `[[y_min, x_min],
-            [y_max, x_max]]`.
+        roi : Region of interest. Comprised of four elements `[y_min, y_max,
+            x_min, x_max]`.
         shape : Data frame shape.
     """
     def __init__(self, roi: Iterable[int], shape: Optional[Tuple[int, int]]=None) -> None:
         """
         Args:
-            roi : Region of interest. Comprised of four elements `[[y_min, x_min],
-                [y_max, x_max]]`.
+            roi : Region of interest. Comprised of four elements `[y_min, y_max,
+                x_min, x_max]`.
             shape : Data frame shape.
         """
         super().__init__(shape=shape)
@@ -134,7 +134,7 @@ class Crop(Transform):
             Output data array.
         """
         if self.check_shape(inp.shape[-2:]):
-            return inp[..., self.roi[0][0]:self.roi[1][0], self.roi[0][1]:self.roi[1][1]]
+            return inp[..., self.roi[0]:self.roi[1], self.roi[2]:self.roi[3]]
 
         raise ValueError(f'input array has invalid shape: {str(inp.shape):s}')
 
@@ -147,7 +147,7 @@ class Crop(Transform):
         Returns:
             Output array of points.
         """
-        return pts - self.roi[0]
+        return pts - self.roi[::2]
 
     def backward(self, inp: np.ndarray, out: Optional[np.ndarray]=None) -> np.ndarray:
         """Tranform back a data array.
@@ -163,7 +163,7 @@ class Crop(Transform):
             out = np.zeros(inp.shape[:-2] + self.shape, dtype=inp.dtype)
 
         if self.check_shape(out.shape[-2:]):
-            out[..., self.roi[0][0]:self.roi[1][0], self.roi[0][1]:self.roi[1][1]] = inp
+            out[..., self.roi[0]:self.roi[1], self.roi[2]:self.roi[3]] = inp
             return out
 
         raise ValueError(f'output array has invalid shape: {str(out.shape):s}')
@@ -177,7 +177,7 @@ class Crop(Transform):
         Returns:
             Output array of points.
         """
-        return pts + self.roi[0]
+        return pts + self.roi[::2]
 
     def integrate(self, axis: int) -> Crop:
         """Return a transform version for the dataset integrated
@@ -190,8 +190,12 @@ class Crop(Transform):
             A new transform version.
         """
         pdict = self.state_dict()
-        pdict['roi'][0][axis] = 0
-        pdict['roi'][1][axis] = 1
+        if axis == 0:
+            pdict['roi'] = (0, 1, pdict['roi'][2], pdict['roi'][3])
+        elif axis == 1:
+            pdict['roi'] = (pdict['roi'][0], pdict['roi'][1], 0, 1)
+        else:
+            raise ValueError('Axis must be equal to 0 or 1')
 
         if pdict['shape']:
             if axis == 0:
@@ -584,8 +588,8 @@ class STData(DataContainer):
 
         self._init_functions(num_threads=lambda: np.clip(1, 64, cpu_count()))
         if self._isdata:
-            self._init_functions(good_frames=lambda: np.arange(self.data.shape[0]),
-                                 mask=lambda: np.ones(self.data.shape, dtype=bool),
+            self._init_functions(good_frames=lambda: np.arange(self.shape[0]),
+                                 mask=lambda: np.ones(self.shape, dtype=bool),
                                  whitefield=self._whitefield)
         if self._isdefocus:
             self._init_functions(defocus_y=lambda: self.get('defocus_x', None),
@@ -604,6 +608,18 @@ class STData(DataContainer):
     @property
     def _isphase(self) -> bool:
         return not self.pixel_aberrations is None and not self.phase is None
+
+    @property
+    def shape(self) -> Tuple[int, int, int]:
+        shape = [0, 0, 0]
+        for attr, data in self.items():
+            if attr in self.files.protocol and data is not None:
+                kind = self.files.protocol.get_kind(attr)
+                if kind == 'stack':
+                    shape[:] = data.shape
+                if kind == 'frame':
+                    shape[1:] = data.shape
+        return tuple(shape)
 
     def _basis_vectors(self) -> np.ndarray:
         def get_axis(transform: Transform):
@@ -664,8 +680,8 @@ class STData(DataContainer):
         Returns:
             Pixel mapping array.
         """
-        if self._isdata:
-            pixel_map = np.indices(self.data.shape[1:], dtype=dtype)
+        if sum(self.shape[1:]):
+            pixel_map = np.indices(self.shape[1:], dtype=dtype)
 
             if self._isdefocus:
                 if self.defocus_y < 0.0 and pixel_map[0, 0, 0] < pixel_map[0, -1, 0]:
@@ -731,12 +747,17 @@ class STData(DataContainer):
         Args:
             attributes : List of attributes to save. Saves all the data attributes
                 contained in the container by default.
-            apply_transform : Apply `transform` to the data arrays if True.
+            apply_transform : Apply `transform` to the data arrays if True. The
+                saved data will be expanded to comply with the original shape of
+                detector grid.
             mode : Writing mode:
 
                 * `append` : Append the data array to already existing dataset.
                 * `insert` : Insert the data under the given indices `idxs`.
                 * `overwrite` : Overwrite the existing dataset.
+
+            idxs : A set of frame indices where the data is saved if `mode` is
+                `insert`.
 
             verbose : Set the verbosity of the loading process.
         """
@@ -800,8 +821,8 @@ class STData(DataContainer):
                     if kind in ['stack', 'frame']:
                         data_dict[attr] = None
 
-            data = np.zeros(self.data.shape, self.data.dtype)
-            data[self.good_frames] = self.data * self.mask
+            data = np.zeros(self.shape, self.data.dtype)
+            data[self.good_frames] = (self.data * self.mask)[self.good_frames]
             data_dict['data'] = data.sum(axis=axis - 2, keepdims=True)
 
             return data_dict
@@ -885,9 +906,18 @@ class STData(DataContainer):
             New :class:`STData` object with the updated transform object.
         """
         data_dict = {'transform': transform}
+
+        if self.transform is None:
+            for attr, data in self.items():
+                if attr in self.files.protocol and data is not None:
+                    data_dict[attr] = self._transform_attribute(attr, data, transform)
+            return data_dict
+
         for attr, data in self.items():
             if attr in self.files.protocol and data is not None:
-                data_dict[attr] = self._transform_attribute(attr, data, transform)
+                kind = self.files.protocol.get_kind(attr)
+                if kind in ['stack', 'frame'] or attr in self.is_points:
+                    data_dict[attr] = None
         return data_dict
 
     @dict_to_object
@@ -1013,15 +1043,16 @@ class STData(DataContainer):
                       return_extra: bool=False, verbose: bool=True) -> Tuple[List[float], Dict[str, np.ndarray]]:
         r"""Calculate a set of reference images for each defocus in `defoci` and
         return an average R-characteristic of an image (the higher the value the
-        sharper reference image is). Return the intermediate results if `return_extra`
+        sharper reference image is). The kernel bandwidth `hval` is automatically
+        estimated by default. Return the intermediate results if `return_extra`
         is True.
 
         Args:
             defoci_x : Array of defocus distances along the horizontal detector axis [m].
             defoci_y : Array of defocus distances along the vertical detector axis [m].
             hval : Kernel bandwidth in pixels for the reference image update. Estimated
-                with :func:`pyrost.SpeckleTracking.find_hopt` at each defocus distance if
-                None.
+                with :func:`pyrost.SpeckleTracking.find_hopt` for an average defocus value
+                if None.
             size : Local variance filter size in pixels.
             extra_args : Extra arguments parser to the :func:`STData.get_st` and
                 :func:`SpeckleTracking.update_reference` methods. The following
@@ -1089,13 +1120,12 @@ class STData(DataContainer):
         r_vals = []
         extra = {'reference_image': [], 'r_image': []}
         kernel = np.ones(int(size)) / size
-        df0_x, df0_y = defoci_x.ravel()[0], defoci_y.ravel()[0]
+        df0_x, df0_y = defoci_x.mean(), defoci_y.mean()
         st_obj = self.update_defocus(df0_x, df0_y).get_st(ds_y=ds_y, ds_x=ds_x,
                                                           aberrations=aberrations,
                                                           ff_correction=ff_correction)
-        update_hval = hval is None
-        if update_hval:
-            hval = 1.0
+        if hval is None:
+            hval = st_obj.find_hopt(method=ref_method)
 
         for df1_x, df1_y in tqdm(zip(defoci_x.ravel(), defoci_y.ravel()),
                                total=len(defoci_x), disable=not verbose,
@@ -1103,8 +1133,6 @@ class STData(DataContainer):
             st_obj.di_pix *= np.abs(df0_y / df1_y)
             st_obj.dj_pix *= np.abs(df0_x / df1_x)
             df0_x, df0_y = df1_x, df1_y
-            if update_hval:
-                hval = st_obj.find_hopt(hval, method=ref_method)
             st_obj.update_reference.inplace_update(hval=hval, method=ref_method)
             extra['reference_image'].append(st_obj.reference_image)
             mean = st_obj.reference_image.copy()
@@ -1210,11 +1238,11 @@ class STData(DataContainer):
             raise ValueError(f'invalid axis value: {axis:d}')
 
         data_dict['defocus'] = np.abs(data_dict['defocus'])
-        if center <= self.data.shape[axis - 2]:
-            data_dict['pixels'] = np.arange(self.data.shape[axis - 2]) - center
+        if center <= self.shape[axis - 2]:
+            data_dict['pixels'] = np.arange(self.shape[axis - 2]) - center
             data_dict['pixel_aberrations'] = data_dict['pixel_aberrations'][axis].mean(axis=1 - axis)
-        elif center >= self.data.shape[axis - 2] - 1:
-            data_dict['pixels'] = center - np.arange(self.data.shape[axis - 2])
+        elif center >= self.shape[axis - 2] - 1:
+            data_dict['pixels'] = center - np.arange(self.shape[axis - 2])
             idxs = np.argsort(data_dict['pixels'])
             data_dict['pixel_aberrations'] = -data_dict['pixel_aberrations'][axis].mean(axis=1 - axis)[idxs]
             data_dict['pixels'] = data_dict['pixels'][idxs]
@@ -1242,14 +1270,18 @@ class STData(DataContainer):
                     normalization using eigen flat fields in X-ray imaging," Opt.
                     Express 23, 27975-27989 (2015).
         """
-        dtype = np.promote_types(self.whitefield.dtype, int)
-        cor_data = np.zeros(self.data.shape, dtype=dtype)
-        np.subtract(self.data, self.whitefield, dtype=dtype,
-                    where=self.mask, out=cor_data)
-        mat_svd = np.tensordot(cor_data, cor_data, axes=((1, 2), (1, 2)))
-        eig_vals, eig_vecs = np.linalg.eig(mat_svd)
-        effs = np.tensordot(eig_vecs, cor_data, axes=((0,), (0,)))
-        return cor_data, effs, eig_vals / eig_vals.sum()
+        if self._isdata:
+
+            dtype = np.promote_types(self.whitefield.dtype, int)
+            cor_data = np.zeros(self.shape, dtype=dtype)
+            np.subtract(self.data, self.whitefield, dtype=dtype,
+                        where=self.mask, out=cor_data)
+            mat_svd = np.tensordot(cor_data, cor_data, axes=((1, 2), (1, 2)))
+            eig_vals, eig_vecs = np.linalg.eig(mat_svd)
+            effs = np.tensordot(eig_vecs, cor_data, axes=((0,), (0,)))
+            return cor_data, effs, eig_vals / eig_vals.sum()
+
+        raise AttributeError('Data has not been loaded')
 
     @dict_to_object
     def update_whitefields(self, method: str='median', size: int=11,
@@ -1286,23 +1318,27 @@ class STData(DataContainer):
         See Also:
             :func:`pyrost.STData.get_pca` : Method to generate eigen flatfields.
         """
-        if method == 'median':
-            outliers = np.abs(self.data - self.whitefield) < 3 * np.sqrt(self.whitefield)
-            whitefields = median_filter(self.data, size=(size, 1, 1), mask=outliers,
-                                        num_threads=self.num_threads)
-        elif method == 'pca':
-            if cor_data is None:
-                dtype = np.promote_types(self.whitefield.dtype, int)
-                cor_data = np.zeros(self.data.shape, dtype=dtype)
-                np.subtract(self.data, self.whitefield, dtype=dtype,
-                            where=self.mask, out=cor_data)
-            if effs is None:
-                raise ValueError('No eigen flat fields were provided')
+        if self._isdata:
 
-            weights = np.tensordot(cor_data, effs, axes=((1, 2), (1, 2))) / \
-                      np.sum(effs * effs, axis=(1, 2))
-            whitefields = np.tensordot(weights, effs, axes=((1,), (0,))) + self.whitefield
-        else:
-            raise ValueError('Invalid method argument')
+            if method == 'median':
+                outliers = np.abs(self.data - self.whitefield) < 3 * np.sqrt(self.whitefield)
+                whitefields = median_filter(self.data, size=(size, 1, 1), mask=outliers,
+                                            num_threads=self.num_threads)
+            elif method == 'pca':
+                if cor_data is None:
+                    dtype = np.promote_types(self.whitefield.dtype, int)
+                    cor_data = np.zeros(self.shape, dtype=dtype)
+                    np.subtract(self.data, self.whitefield, dtype=dtype,
+                                where=self.mask, out=cor_data)
+                if effs is None:
+                    raise ValueError('No eigen flat fields were provided')
 
-        return {'whitefields': whitefields}
+                weights = np.tensordot(cor_data, effs, axes=((1, 2), (1, 2))) / \
+                        np.sum(effs * effs, axis=(1, 2))
+                whitefields = np.tensordot(weights, effs, axes=((1,), (0,))) + self.whitefield
+            else:
+                raise ValueError('Invalid method argument')
+
+            return {'whitefields': whitefields}
+
+        raise ValueError('Data has not been loaded')
