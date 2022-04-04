@@ -35,7 +35,7 @@ class BFGS():
 
         self._p['fval'] = self.loss(self._p['xk'])
         self._p['I'] = np.eye(len(self._p['xk']), dtype=int)
-        self._p['Hk'] = self._p['I']
+        self._p['Hk'] = np.eye(len(self._p['xk']))
         self._update_gnorm()
         self._p['old_fval'] = self._p['fval'] + 0.5 * norm(self._p['gfk'])
 
@@ -52,6 +52,7 @@ class BFGS():
         self._loss = loss
         self._grad = grad
         self._p['gfk'] = self.grad(self._p['xk'])
+        self._p['gfkp1'] = self._p['gfk']
 
     def loss(self, x: np.ndarray) -> float:
         """Return the objective value for a given argument.
@@ -88,10 +89,11 @@ class BFGS():
         return self.loss(self._p['xk'] + s * self._p['pk'])
 
     def _derphi(self, s: np.ndarray) -> float:
-        gval = self.grad(self._p['xk'] + s * self._p['pk'])
-        return np.dot(gval, self._p['pk'])
+        self._p['gfkp1'] = self.grad(self._p['xk'] + s * self._p['pk'])
+        return np.dot(self._p['gfkp1'], self._p['pk'])
 
-    def _line_search(self, maxiter: int=5, amin: float=1e-8, amax: float=1e3):
+    def _line_search(self, maxiter: int, amin: float, amax: float):
+        self._p['gfkp1'] = self._p['gfk']
         phi0 = self._p['fval']
         old_phi0 = self._p['old_fval']
         derphi0 = self._derphi(0.0)
@@ -122,14 +124,11 @@ class BFGS():
             else:
                 break
 
-        if stp <= 0.0 or task[:5] == b'ERROR' or task[:4] == b'WARN':
-            stp = 1e-2
-
         self._p['alpha_k'] = stp
         self._p['fval'] = phi1
         self._p['old_fval'] = phi0
 
-    def step(self, maxiter: int=5, amin: float=1e-8, amax: float=1e3):
+    def step(self, maxiter: int=10, amin: float=1e-100, amax: float=1e100):
         """Performs a single optimization step.
 
         Args:
@@ -145,9 +144,8 @@ class BFGS():
         sk = xkp1 - self._p['xk']
         self._p['xk'] = xkp1
 
-        gfkp1 = self.grad(self._p['xk'])
-        yk = gfkp1 - self._p['gfk']
-        self._p['gfk'] = gfkp1
+        yk = self._p['gfkp1'] - self._p['gfk']
+        self._p['gfk'] = self._p['gfkp1']
         self._update_gnorm()
 
         rhok_inv = np.dot(yk, sk)
@@ -160,6 +158,9 @@ class BFGS():
         A2 = self._p['I'] - yk[:, np.newaxis] * sk[np.newaxis, :] * rhok
         self._p['Hk'] = np.dot(A1, np.dot(self._p['Hk'], A2)) + \
                         (rhok * sk[:, np.newaxis] * sk[np.newaxis, :])
+
+        if np.trace(self._p['Hk']) < 0.0:
+            raise RuntimeError('Line search failed: inverse Hessian matrix is negative')
 
     def state_dict(self):
         """Returns the state of the optimizer as a dict.

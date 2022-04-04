@@ -110,7 +110,7 @@ can be passed to the container:
 
 .. code-block:: python
 
-    >>> crop = rst.Crop(roi=np.array([[75, 55], [420, 455]]))
+    >>> crop = rst.Crop(roi=[80, 420, 60, 450])
     >>> data = data.update_transform(transform=crop)
 
 :class:`pyrost.STData` contains a set of data processing tools to work with the data. In
@@ -247,7 +247,7 @@ Fletcher, Goldfarb, and Shanno [BFGS]_:
 .. code-block:: python
 
     >>> st_obj = data.get_st(ds_x=1.0, ds_y=1.0)
-    >>> h0 = st_obj.find_hopt(maxiter=10, verbose=True)
+    >>> h0 = st_obj.find_hopt(verbose=True)
     >>> print(h0)
     0.7537624318448054
 

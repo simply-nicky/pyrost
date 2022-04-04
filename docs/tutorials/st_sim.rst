@@ -45,7 +45,7 @@ saves the results to a CXI file using the provided CXI protocol.
     >>> sim_obj = st_sim.STSim(params)
     >>> ptych = sim_obj.ptychograph()
     >>> st_conv = st_sim.STConverter(sim_obj, ptych)
-    >>> st_conv.save('sim.cxi') # doctest: +SKIP
+    >>> st_conv.save('sim.cxi', mode='overwrite') # doctest: +SKIP
 
     >>> fig, ax = plt.subplots(figsize=(14, 6)) # doctest: +SKIP
     >>> ax.imshow(ptych[:, 0, 500:1480]) # doctest: +SKIP
