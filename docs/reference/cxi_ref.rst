@@ -105,12 +105,11 @@ is given by:
 :class:`CXIStore <pyrost.CXIStore>`
 -----------------------------------
 
-CXI file handler class (:class:`pyrost.CXIStore`) accepts paths to the input files and
-the output file together with a protocol. :class:`pyrost.CXIStore` searches the input files
-for any data attributes defined by the protocol. It provides an interface to load
-the data of the given attribute from the input files (see :func:`pyrost.CXIStore.load`) and
-save the data of the attribute to the output file (see :func:`pyrost.CXIStore.save`). The input
-files may be multiple or a single one. The output and input files may be the same file.
+CXI file handler class (:class:`pyrost.CXIStore`) accepts a set of paths to the files together with
+a protocol object. :class:`pyrost.CXIStore` searches the files for any data attributes defined by
+the protocol. It provides an interface to load the data of the given attribute from the files
+(see :func:`pyrost.CXIStore.load`) and save the data of the attribute to the first file in the set
+(see :func:`pyrost.CXIStore.save`). The files may be multiple or a single one.
 
 .. automodule:: pyrost.cxi_protocol
 

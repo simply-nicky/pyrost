@@ -11,8 +11,8 @@ Examples:
     Load all the necessary data using a :func:`pyrost.STData.load` function.
 
     >>> import pyrost as rst
-    >>> files = rst.CXIStore(input_files='data.cxi', output_file='data.cxi')
-    >>> data = rst.STData(files)
+    >>> inp_file = rst.CXIStore('data.cxi')
+    >>> data = rst.STData(input_file=inp_file)
     >>> data = data.load()
 """
 from __future__ import annotations
@@ -73,13 +73,7 @@ class Transform():
     def forward(self, inp: np.ndarray) -> np.ndarray:
         raise NotImplementedError
 
-    def forward_points(self, pts: np.ndarray) -> np.ndarray:
-        raise NotImplementedError
-
     def backward(self, inp: np.ndarray, out: Optional[np.ndarray]=None) -> np.ndarray:
-        raise NotImplementedError
-
-    def backward_points(self, pts: np.ndarray) -> np.ndarray:
         raise NotImplementedError
 
     def integrate(self, axis: int) -> Transform:
@@ -138,17 +132,6 @@ class Crop(Transform):
 
         raise ValueError(f'input array has invalid shape: {str(inp.shape):s}')
 
-    def forward_points(self, pts: np.ndarray) -> np.ndarray:
-        """Apply the transform to a set of points.
-
-        Args:
-            pts : Input array of points.
-
-        Returns:
-            Output array of points.
-        """
-        return pts - self.roi[::2]
-
     def backward(self, inp: np.ndarray, out: Optional[np.ndarray]=None) -> np.ndarray:
         """Tranform back a data array.
 
@@ -167,17 +150,6 @@ class Crop(Transform):
             return out
 
         raise ValueError(f'output array has invalid shape: {str(out.shape):s}')
-
-    def backward_points(self, pts: np.ndarray) -> np.ndarray:
-        """Tranform back an array of points.
-
-        Args:
-            pts : Input tranformed array of points.
-
-        Returns:
-            Output array of points.
-        """
-        return pts + self.roi[::2]
 
     def integrate(self, axis: int) -> Crop:
         """Return a transform version for the dataset integrated
@@ -245,17 +217,6 @@ class Downscale(Transform):
 
         raise ValueError(f'input array has invalid shape: {str(inp.shape):s}')
 
-    def forward_points(self, pts: np.ndarray) -> np.ndarray:
-        """Apply the transform to a set of points.
-
-        Args:
-            pts : Input array of points.
-
-        Returns:
-            Output array of points.
-        """
-        return pts / self.scale
-
     def backward(self, inp: np.ndarray, out: Optional[np.ndarray]=None) -> np.ndarray:
         """Tranform back a data array.
 
@@ -275,17 +236,6 @@ class Downscale(Transform):
             return out
 
         raise ValueError(f'output array has invalid shape: {str(out.shape):s}')
-
-    def backward_points(self, pts: np.ndarray) -> np.ndarray:
-        """Tranform back an array of points.
-
-        Args:
-            pts : Input tranformed array of points.
-
-        Returns:
-            Output array of points.
-        """
-        return pts * self.scale
 
     def state_dict(self) -> Dict[str, Any]:
         """Returns the state of the transform as a dict.
@@ -328,18 +278,6 @@ class Mirror(Transform):
 
         raise ValueError(f'input array has invalid shape: {str(inp.shape):s}')
 
-    def forward_points(self, pts: np.ndarray) -> np.ndarray:
-        """Apply the transform to a set of points.
-
-        Args:
-            pts : Input array of points.
-
-        Returns:
-            Output array of points.
-        """
-        pts[:, self.axis] = self.shape[self.axis] - pts[:, self.axis]
-        return pts
-
     def backward(self, inp: np.ndarray, out: Optional[np.ndarray]=None) -> np.ndarray:
         """Tranform back a data array.
 
@@ -358,17 +296,6 @@ class Mirror(Transform):
             return out
 
         raise ValueError(f'output array has invalid shape: {str(out.shape):s}')
-
-    def backward_points(self, pts: np.ndarray) -> np.ndarray:
-        """Tranform back an array of points.
-
-        Args:
-            pts : Input tranformed array of points.
-
-        Returns:
-            Output array of points.
-        """
-        return self.forward_points(pts)
 
     def state_dict(self) -> Dict[str, Any]:
         """Returns the state of the transform as a dict.
@@ -423,19 +350,6 @@ class ComposeTransforms(Transform):
             inp = transform.forward(inp)
         return inp
 
-    def forward_points(self, pts: np.ndarray) -> np.ndarray:
-        """Apply the transform to a set of points.
-
-        Args:
-            pts : Input array of points.
-
-        Returns:
-            Output array of points.
-        """
-        for transform in self:
-            pts = transform.forward_points(pts)
-        return pts
-
     def backward(self, inp: np.ndarray, out: Optional[np.ndarray]=None) -> np.ndarray:
         """Tranform back a data array.
 
@@ -449,19 +363,6 @@ class ComposeTransforms(Transform):
         for transform in self[1::-1]:
             inp = transform.backward(inp)
         return self[0].backward(inp, out)
-
-    def backward_points(self, pts: np.ndarray) -> np.ndarray:
-        """Tranform back an array of points.
-
-        Args:
-            pts : Input tranformed array of points.
-
-        Returns:
-            Output array of points.
-        """
-        for transform in self[::-1]:
-            pts = transform.backward_points(pts)
-        return pts
 
     def integrate(self, axis: int) -> ComposeTransforms:
         """Return a transform version for the dataset integrated
@@ -502,7 +403,7 @@ class STData(DataContainer):
     be tranformed using any of the :class:`pyrost.Transform` classes.
 
     Attributes:
-        files : HDF5 or CXI file handler.
+        input_file : HDF5 or CXI file handler.
         transform : Frames transform object.
 
     Notes:
@@ -524,6 +425,7 @@ class STData(DataContainer):
         * good_frames : An array of good frames' indices.
         * mask : Bad pixels mask.
         * num_threads : Number of threads used in computations.
+        * output_file : Output file handler.
         * phase : Phase profile of lens' aberrations.
         * pixel_aberrations : Lens' aberrations along the horizontal and
           vertical axes in pixels.
@@ -535,15 +437,15 @@ class STData(DataContainer):
         * whitefields : Set of dynamic white-fields for each of the measured
           images.
     """
-    attr_set = {'files'}
+    attr_set = {'input_file'}
     init_set = {'basis_vectors', 'data', 'distance', 'frames', 'translations', 'wavelength',
                 'x_pixel_size', 'y_pixel_size', 'defocus_x', 'defocus_y', 'good_frames',
-                'mask', 'num_threads', 'phase', 'pixel_aberrations',  'pixel_translations',
-                'reference_image', 'scale_map', 'transform', 'whitefield', 'whitefields'}
-    is_points = {}
+                'mask', 'num_threads', 'output_file', 'phase', 'pixel_aberrations',
+                'pixel_translations', 'reference_image', 'scale_map', 'transform', 'whitefield',
+                'whitefields'}
 
     # Necessary attributes
-    files               : CXIStore
+    input_file         : CXIStore
     transform           : Transform
 
     # Optional attributes
@@ -553,6 +455,7 @@ class STData(DataContainer):
     defocus_y           : Optional[float]
     distance            : Optional[np.ndarray]
     frames              : Optional[np.ndarray]
+    output_file         : Optional[CXIStore]
     phase               : Optional[np.ndarray]
     pixel_aberrations   : Optional[np.ndarray]
     reference_image     : Optional[np.ndarray]
@@ -570,11 +473,12 @@ class STData(DataContainer):
     pixel_translations  : Optional[np.ndarray]
     whitefield          : Optional[np.ndarray]
 
-    def __init__(self, files: CXIStore, transform: Optional[Transform]=None,
-                 **kwargs: Union[int, float, np.ndarray]) -> None:
+    def __init__(self, input_file: CXIStore, output_file: Optional[CXIStore]=None,
+                 transform: Optional[Transform]=None, **kwargs: Union[int, float, np.ndarray]) -> None:
         """
         Args:
-            files : HDF5 or CXI file handler.
+            input_file : HDF5 or CXI file handler of input files.
+            ouput_file : Output file handler.
             transform : Frames transform object.
             kwargs : Dictionary of the necessary and optional data attributes specified
                 in :class:`pyrost.STData` notes. All the necessary attributes must be
@@ -584,13 +488,18 @@ class STData(DataContainer):
             ValueError : If any of the necessary attributes specified in :class:`pyrost.STData`
                 notes have not been provided.
         """
-        super(STData, self).__init__(files=files, transform=transform, **kwargs)
+        super(STData, self).__init__(input_file=input_file, output_file=output_file, 
+                                     transform=transform, **kwargs)
 
         self._init_functions(num_threads=lambda: np.clip(1, 64, cpu_count()))
+        if self.shape[0] > 0:
+            self._init_functions(good_frames=lambda: np.arange(self.shape[0]))
         if self._isdata:
-            self._init_functions(good_frames=lambda: np.arange(self.shape[0]),
-                                 mask=lambda: np.ones(self.shape, dtype=bool),
-                                 whitefield=self._whitefield)
+            self._init_functions(mask=lambda: np.ones(self.shape, dtype=bool))
+            func = lambda: median(data=self.data[self.good_frames], axis=0,
+                                  mask=self.mask[self.good_frames],
+                                  num_threads=self.num_threads)
+            self._init_functions(whitefield=func)
         if self._isdefocus:
             self._init_functions(defocus_y=lambda: self.get('defocus_x', None),
                                  pixel_translations=self._pixel_translations)
@@ -613,8 +522,10 @@ class STData(DataContainer):
     def shape(self) -> Tuple[int, int, int]:
         shape = [0, 0, 0]
         for attr, data in self.items():
-            if attr in self.files.protocol and data is not None:
-                kind = self.files.protocol.get_kind(attr)
+            if attr in self.input_file.protocol and data is not None:
+                kind = self.input_file.protocol.get_kind(attr)
+                if kind == 'sequence':
+                    shape[0] = data.shape[0]
                 if kind == 'stack':
                     shape[:] = data.shape
                 if kind == 'frame':
@@ -648,14 +559,9 @@ class STData(DataContainer):
         pixel_translations -= pixel_translations.mean(axis=0)
         return pixel_translations
 
-    def _whitefield(self) -> np.ndarray:
-        return median(data=self.data[self.good_frames], axis=0,
-                      mask=self.mask[self.good_frames],
-                      num_threads=self.num_threads)
-
     def _transform_attribute(self, attr: str, data: np.ndarray, transform: Transform,
                              mode: str='forward') -> np.ndarray:
-        kind = self.files.protocol.get_kind(attr)
+        kind = self.input_file.protocol.get_kind(attr)
         if kind in ['stack', 'frame']:
             if mode == 'forward':
                 data = transform.forward(data)
@@ -663,11 +569,6 @@ class STData(DataContainer):
                 data = transform.backward(data)
             else:
                 raise ValueError(f'Invalid mode keyword: {mode}')
-        if attr in self.is_points:
-            if data.shape[-1] != 2:
-                raise ValueError(f"'{attr}' has invalid shape: {str(data.shape)}")
-
-            data = self.transform.forward_points(data)
 
         return data
 
@@ -693,14 +594,14 @@ class STData(DataContainer):
         raise AttributeError('Data has not been loaded')
 
     @dict_to_object
-    def load(self, attributes: Union[str, List[str], None]=None, indices: Iterable[int]=None,
+    def load(self, attributes: Union[str, List[str], None]=None, idxs: Optional[Iterable[int]]=None,
              processes: int=1, verbose: bool=True) -> STData:
-        """Load data attributes from the input files in `files` file handler object.
+        """Load data attributes from the input files in `input_file` file handler object.
 
         Args:
             attributes : List of attributes to load. Loads all the data attributes
                 contained in the file(s) by default.
-            indices : List of frame indices to load.
+            idxs : List of frame indices to load.
             processes : Number of parallel workers used during the loading.
             verbose : Set the verbosity of the loading process.
 
@@ -711,26 +612,26 @@ class STData(DataContainer):
         Returns:
             New :class:`STData` object with the attributes loaded.
         """
-        with self.files:
-            self.files.update_indices()
+        with self.input_file:
+            self.input_file.update_indices()
 
             if attributes is None:
-                attributes = [attr for attr in self.files.keys()
+                attributes = [attr for attr in self.input_file.keys()
                               if attr in self.init_set]
             else:
-                attributes = self.files.protocol.str_to_list(attributes)
+                attributes = self.input_file.protocol.str_to_list(attributes)
 
-            if indices is None:
-                indices = self.files.indices()
-            data_dict = {'frames': indices}
+            if idxs is None:
+                idxs = self.input_file.indices()
+            data_dict = {'frames': idxs}
 
             for attr in attributes:
-                if attr not in self.files.keys():
+                if attr not in self.input_file.keys():
                     raise ValueError(f"No '{attr}' attribute in the input files")
                 if attr not in self.init_set:
                     raise ValueError(f"Invalid attribute: '{attr}'")
 
-                data = self.files.load_attribute(attr, indices, processes, verbose)
+                data = self.input_file.load_attribute(attr, idxs, processes, verbose)
 
                 if self.transform and data is not None:
                     data = self._transform_attribute(attr, data, self.transform)
@@ -739,7 +640,7 @@ class STData(DataContainer):
 
         return data_dict
 
-    def save(self, attributes: Union[str, List[str], None]=None, apply_transform=False,
+    def save(self, attributes: Union[str, List[str], None]=None, apply_transform: bool=False,
              mode: str='append', idxs: Optional[Iterable[int]]=None) -> None:
         """Save data arrays of the data attributes contained in the container to
         an output file.
@@ -760,14 +661,20 @@ class STData(DataContainer):
                 `insert`.
 
             verbose : Set the verbosity of the loading process.
+
+        Raises:
+            ValueError : If `output_file` is not defined inside the container.
         """
+        if self.output_file is None:
+            raise ValueError("'output_file' is not defined inside the container")
+
         if attributes is None:
             attributes = list(self.contents())
-        with self.files:
-            for attr in self.files.protocol.str_to_list(attributes):
+        with self.output_file:
+            for attr in self.output_file.protocol.str_to_list(attributes):
                 data = self.get(attr)
-                if attr in self.files.protocol and data is not None:
-                    kind = self.files.protocol.get_kind(attr)
+                if attr in self.output_file.protocol and data is not None:
+                    kind = self.output_file.protocol.get_kind(attr)
 
                     if kind in ['stack', 'sequence']:
                         data = data[self.good_frames]
@@ -776,7 +683,7 @@ class STData(DataContainer):
                         data = self._transform_attribute(attr, data, self.transform,
                                                          mode='backward')
 
-                    self.files.save_attribute(attr, np.asarray(data), mode=mode, idxs=idxs)
+                    self.output_file.save_attribute(attr, np.asarray(data), mode=mode, idxs=idxs)
 
     @dict_to_object
     def clear(self, attributes: Union[str, List[str], None]=None) -> STData:
@@ -791,16 +698,31 @@ class STData(DataContainer):
         if attributes is None:
             attributes = self.keys()
         data_dict = {}
-        for attr in attributes:
+        for attr in self.input_file.protocol.str_to_list(attributes):
             data = self.get(attr)
-            if attr in self.files.protocol and data is not None:
+            if attr in self and isinstance(data, np.ndarray):
                 data_dict[attr] = None
         return data_dict
 
     @dict_to_object
+    def update_output_file(self, output_file: CXIStore) -> STData:
+        """Return a new :class:`STData` object with the new output
+        file handler.
+
+        Args:
+            output_file : A new output file handler.
+
+        Returns:
+            New :class:`STData` object with the new output file
+            handler.
+        """
+        return {'output_file': output_file}
+
+    @dict_to_object
     def integrate_data(self, axis: int=0) -> STData:
         """Return a new :class:`STData` object with the `data` summed
-        over the `axis`.
+        over the `axis`. Clear all the 2D and 3D data attributes inside the
+        container.
 
         Args:
             axis : Axis along which a sum is performed.
@@ -816,14 +738,12 @@ class STData(DataContainer):
                 data_dict['transform'] = self.transform.integrate(axis)
 
             for attr, data in self.items():
-                if attr in self.files.protocol and data is not None:
-                    kind = self.files.protocol.get_kind(attr)
+                if attr in self.input_file.protocol and data is not None:
+                    kind = self.input_file.protocol.get_kind(attr)
                     if kind in ['stack', 'frame']:
                         data_dict[attr] = None
 
-            data = np.zeros(self.shape, self.data.dtype)
-            data[self.good_frames] = (self.data * self.mask)[self.good_frames]
-            data_dict['data'] = data.sum(axis=axis - 2, keepdims=True)
+            data_dict['data'] = (self.data * self.mask).sum(axis=axis - 2, keepdims=True)
 
             return data_dict
 
@@ -831,16 +751,16 @@ class STData(DataContainer):
 
     @dict_to_object
     def mask_frames(self, good_frames: Optional[Iterable[int]]=None) -> STData:
-        """Return a new :class:`STData` object with the updated
-        good frames mask. Mask empty frames by default.
+        """Return a new :class:`STData` object with the updated good frames
+        mask. Mask empty frames by default.
 
         Args:
-            good_frames : List of good frames' indices. Masks empty
-                frames if not provided.
+            good_frames : List of good frames' indices. Masks empty frames
+                if not provided.
 
         Returns:
-            New :class:`STData` object with the updated `good_frames`
-            and `whitefield`.
+            New :class:`STData` object with the updated `good_frames` and
+            `whitefield`.
         """
         if good_frames is None:
             good_frames = np.where(self.data.sum(axis=(1, 2)) > 0)[0]
@@ -876,18 +796,19 @@ class STData(DataContainer):
         elif update == 'multiply':
             data = self.data * self.mask
         else:
-            raise ValueError(f'Invalid update keyword: {update}')
+            raise ValueError(f'Invalid update keyword: {update:s}')
 
         if method == 'no-bad':
-            mask = np.ones(data.shape, dtype=bool)
+            mask = np.ones(self.shape, dtype=bool)
         elif method == 'range-bad':
             mask = (data >= vmin) & (data < vmax)
         elif method == 'perc-bad':
-            offsets = (data - np.median(data))
+            average = median_filter(data, (1, 3, 3), num_threads=self.num_threads)
+            offsets = (data.astype(np.int32) - average.astype(np.int32))
             mask = (offsets >= np.percentile(offsets, pmin)) & \
                    (offsets <= np.percentile(offsets, pmax))
         else:
-            ValueError(f'Invalid method argument: {method}')
+            ValueError('invalid method argument')
 
         if update == 'reset':
             return {'mask': mask, 'whitefield': None}
@@ -909,14 +830,14 @@ class STData(DataContainer):
 
         if self.transform is None:
             for attr, data in self.items():
-                if attr in self.files.protocol and data is not None:
+                if attr in self.input_file.protocol and data is not None:
                     data_dict[attr] = self._transform_attribute(attr, data, transform)
             return data_dict
 
         for attr, data in self.items():
-            if attr in self.files.protocol and data is not None:
-                kind = self.files.protocol.get_kind(attr)
-                if kind in ['stack', 'frame'] or attr in self.is_points:
+            if attr in self.input_file.protocol and data is not None:
+                kind = self.input_file.protocol.get_kind(attr)
+                if kind in ['stack', 'frame']:
                     data_dict[attr] = None
         return data_dict
 
@@ -1288,7 +1209,7 @@ class STData(DataContainer):
                            cor_data: Optional[np.ndarray]=None,
                            effs: Optional[np.ndarray]=None) -> STData:
         """Return a new :class:`STData` object with a new set of dynamic whitefields.
-        The flatfields are generated by the dint of median filtering or Principal
+        A set of whitefields are generated by the dint of median filtering or Principal
         Component Analysis [PCA]_.
 
         Args:
@@ -1321,7 +1242,8 @@ class STData(DataContainer):
         if self._isdata:
 
             if method == 'median':
-                outliers = np.abs(self.data - self.whitefield) < 3 * np.sqrt(self.whitefield)
+                offsets = np.abs(self.data - self.whitefield)
+                outliers = offsets < 3 * np.sqrt(self.whitefield)
                 whitefields = median_filter(self.data, size=(size, 1, 1), mask=outliers,
                                             num_threads=self.num_threads)
             elif method == 'pca':
@@ -1333,9 +1255,10 @@ class STData(DataContainer):
                 if effs is None:
                     raise ValueError('No eigen flat fields were provided')
 
-                weights = np.tensordot(cor_data, effs, axes=((1, 2), (1, 2))) / \
-                        np.sum(effs * effs, axis=(1, 2))
-                whitefields = np.tensordot(weights, effs, axes=((1,), (0,))) + self.whitefield
+                weights = np.tensordot(cor_data, effs, axes=((1, 2), (1, 2)))
+                weights /= np.sum(effs * effs, axis=(1, 2))
+                whitefields = np.tensordot(weights, effs, axes=((1,), (0,)))
+                whitefields += self.whitefield
             else:
                 raise ValueError('Invalid method argument')
 

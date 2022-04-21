@@ -73,15 +73,20 @@ CXI file handler
 ^^^^^^^^^^^^^^^^
 
 :class:`pyrost.CXIStore` is a file handler object, it accepts a :class:`pyrost.CXIProtocol` protocol and
-paths to the input files and an output file. It reads the input files for all the data attributes
-specified in the procotol. The file handler provides two method to load and save the data for the
-specified data attrubute (:func:`pyrost.CXIStore.load_attribute` and :func:`pyrost.CXIStore.save_attribute`).
+paths to a single file or a set of files. It reads the files for all the data attributes specified in the
+procotol. The file handler provides two method to load and save the data for the specified data attrubute
+(:func:`pyrost.CXIStore.load_attribute` and :func:`pyrost.CXIStore.save_attribute`).
 
 Read `diatom.cxi` file as follows:
 .. doctest::
 
-    >>> files = rst.CXIStore(input_files='diatom.cxi', output_file='diatom_proc.cxi',
-    >>>                      protocol=protocol)
+    >>> inp_file = rst.CXIStore('diatom.cxi', protocol=protocol)
+
+We will save the results to a `diatom_proc.cxi` file:
+.. doctest::
+
+    >>> out_file = rst.CXIStore('results/exp/diatom_proc.cxi', mode='a',
+    >>>                         protocol=protocol)
 
 .. _diatom-preprocessing:
 
@@ -90,11 +95,13 @@ Preprocessing of a PXST dataset
 
 Now one may load the data from `diatom.cxi` file and generate the quantities needed prior
 to the main speckle tracking update procedure with a :class:`pyrost.STData` data container.
-Pass the file handler generated earlier to :class:`pyrost.STData` to create a container:
+:class:`pyrost.STData` need a :class:`pyrost.CXIStore` file handler for an input file for
+the initialization. We pass also a file handler of the output file too (it's optional, the
+output file handler can be updated with :func:`pyrost.STData.update_output_file`):
 
 .. code-block:: python
 
-    >>> data = rst.STData(files=files)
+    >>> data = rst.STData(input_file=inp_file, output_file=out_file)
 
 :class:`pyrost.STData` offers two methods to load the data to the container from the input
 files (:func:`pyrost.STData.load`) and save the data stored in the container to the output
@@ -336,11 +343,15 @@ which can be obtained with :func:`pyrost.STData.get_fit` method.
 Saving the results
 ------------------
 In the end you can save the results to a CXI file. By default :func:`pyrost.STData.save` saves all
-the data it contains.
+the data it contains. The method offers three modes:
+
+* 'overwrite' : Overwrite all the data stored already in the output file.
+* 'append' : Append data to the already existing data in the file.
+* 'insert' : Insert the data into the already existing data at the set of frame indices `idxs`.
 
 .. code-block:: python
 
-    >>> data.save()
+    >>> data.save(mode='overwrite')
 
 To see al the attributes stored in the container, use :func:`pyrost.STData.contents`:
 
@@ -372,13 +383,13 @@ Here are all the results saved in the output file `diatom_proc.cxi`:
     /speckle_tracking/basis_vectors Dataset {120/Inf, 2, 3}
     /speckle_tracking/defocus_x Dataset {SCALAR}
     /speckle_tracking/defocus_y Dataset {SCALAR}
-    /speckle_tracking/mask   Dataset {360/Inf, 340, 390}
+    /speckle_tracking/mask   Dataset {120/Inf, 340, 390}
     /speckle_tracking/phase  Dataset {340, 390}
     /speckle_tracking/pixel_aberrations Dataset {2, 340, 390}
     /speckle_tracking/pixel_translations Dataset {120/Inf, 2}
-    /speckle_tracking/reference_image Dataset {1442, 1476}
+    /speckle_tracking/reference_image Dataset {1442, 1475}
     /speckle_tracking/scale_map Dataset {340, 390}
-    /speckle_tracking/translations Dataset {360/Inf, 3}
+    /speckle_tracking/translations Dataset {120/Inf, 3}
     /speckle_tracking/whitefield Dataset {340, 390}
 
 As you can see all the results have been saved using the same CXI protocol.
