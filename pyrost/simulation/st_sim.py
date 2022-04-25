@@ -389,12 +389,15 @@ class STConverter(DataContainer):
             Data container :class:`pyrost.STData` with all the necessary
             attributes generated.
         """
-        files = CXIStore(out_path, out_path, protocol=protocol)
         data = self.data
         if apply_transform:
             data = self.transform.forward(data)
         data_dict = {attr: self.get(attr) for attr in self.init_set}
-        return STData(files=files, data=data, **data_dict)
+        out_file = CXIStore(out_path, mode='a', protocol=protocol)
+        with out_file:
+            pass
+        return STData(input_file=CXIStore(out_path, protocol=protocol),
+                      output_file=out_file, data=data, **data_dict)
 
     def save(self, out_path: str, apply_transform: bool=True,
              protocol: CXIProtocol=CXIProtocol.import_default(),

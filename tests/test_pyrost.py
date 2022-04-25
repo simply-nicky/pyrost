@@ -41,7 +41,7 @@ def ini_path(temp_dir: str) -> str:
 
 @pytest.fixture
 def attributes():
-    return ['files', 'wavelength', 'num_threads', 'x_pixel_size', 'y_pixel_size',
+    return ['input_file', 'wavelength', 'num_threads', 'x_pixel_size', 'y_pixel_size',
             'whitefield', 'distance', 'good_frames', 'data', 'translations',
             'frames', 'basis_vectors', 'mask']
 
@@ -69,7 +69,7 @@ def test_save_and_load_sim(st_converter: st_sim.STConverter, temp_dir: str):
     st_converter.save(out_path)
     assert os.path.isfile(out_path)
     data = st_converter.export_data(out_path)
-    for attr in data.files:
+    for attr in data.input_file:
         assert attr in data.contents()
 
 @pytest.mark.standalone
@@ -88,18 +88,15 @@ def test_st_update_sim(st_converter: st_sim.STConverter, temp_dir: str):
     assert np.abs(alpha - alpha_est) < 0.1 * alpha
 
 @pytest.mark.rst
-def test_load_exp(scan_num: int, temp_dir: str, attributes: List[str]):
-    out_path = os.path.join(temp_dir, 'sigray.cxi')
-    data = rst.cxi_converter_sigray(out_path=out_path, scan_num=scan_num, target='Mo')
+def test_load_exp(scan_num: int, attributes: List[str]):
+    data = rst.cxi_converter_sigray(scan_num=scan_num, target='Mo')
     for attr in data.contents():
         assert attr in attributes
 
 @pytest.mark.rst
-def test_defocus_sweep_exp(scan_num: int, temp_dir: str, crop: rst.Crop,
+def test_defocus_sweep_exp(scan_num: int, crop: rst.Crop,
                            good_frames_list: np.ndarray, defocus: float):
-    out_path = os.path.join(temp_dir, 'sigray.cxi')
-    data = rst.cxi_converter_sigray(out_path=out_path, scan_num=scan_num,
-                                    target='Mo', transform=crop)
+    data = rst.cxi_converter_sigray(scan_num=scan_num, target='Mo', transform=crop)
     data = data.mask_frames(good_frames_list)
     data = data.integrate_data()
     defoci = np.linspace(0.5 * defocus, 2.0 * defocus)
@@ -108,12 +105,10 @@ def test_defocus_sweep_exp(scan_num: int, temp_dir: str, crop: rst.Crop,
     assert np.abs(df_est - defocus) < 0.1 * defocus
 
 @pytest.mark.rst
-def test_st_udpate_exp(scan_num: int, temp_dir: str, crop: rst.Crop,
+def test_st_udpate_exp(scan_num: int, crop: rst.Crop,
                        good_frames_list: np.ndarray, defocus: float, alpha: float):
-    print(crop)
-    out_path = os.path.join(temp_dir, 'sigray.cxi')
-    data = rst.cxi_converter_sigray(out_path=out_path, scan_num=scan_num,
-                                    target='Mo', transform=crop, defocus_x=defocus)
+    data = rst.cxi_converter_sigray(scan_num=scan_num, target='Mo', transform=crop,
+                                    defocus_x=defocus)
     data = data.mask_frames(good_frames_list)
     data = data.integrate_data()
     st_obj = data.get_st()

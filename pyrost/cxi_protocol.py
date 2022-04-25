@@ -314,42 +314,49 @@ class CXIProtocol(INIParser):
 
 class CXIStore():
     """File handler class for HDF5 and CXI files. Provides an interface to
-    save and load data attributes to a file. Support multiple input files.
-    Input and output file can be the same file.
+    save and load data attributes to a file. Support multiple files. The handler
+    saves data to the first file.
 
     Attributes:
-        inp_dict : Dictionary of paths to the input files and their file
+        file_dict : Dictionary of paths to the files and their file
             objects.
-        out_fname : Path to the output file.
-        out_file : Output file object.
+        file : :class:`h5py.File` object of the first file.
+        protocol : :class:`pyrost.CXIProtocol` protocol object.
+        mode : File mode. Valid modes are:
+
+            * 'r' : Readonly, file must exist (default).
+            * 'r+' : Read/write, file must exist.
+            * 'w' : Create file, truncate if exists.
+            * 'w-' or 'x' : Create file, fail if exists.
+            * 'a' : Read/write if exists, create otherwise.
     """
 
-    out_file : h5py.File
-    inp_dict : Dict[str, h5py.File]
+    file_dict : Dict[str, h5py.File]
 
-    def __init__(self, input_files: Union[str, List[str]], output_file: str,
+    def __init__(self, names: Union[str, List[str]], mode: str='r',
                  protocol: CXIProtocol=CXIProtocol.import_default()) -> None:
         """
         Args:
-            input_files : Paths to the input files.
-            output_file : Path to the output file.
+            names : Paths to the files.
+            mode : Mode in which to open file; one of ('w', 'r', 'r+', 'a', 'w-').
             protocol : CXI protocol. Uses the default protocol if not provided.
         """
-        input_files = protocol.str_to_list(input_files)
+        if mode not in ['r', 'r+', 'w', 'w-', 'x', 'a']:
+            raise ValueError(f'Wrong file mode: {mode}')
+        names = protocol.str_to_list(names)
 
-        self.out_fname, self.out_file = output_file, None
-
-        self.inp_dict = {data_file: None for data_file in input_files}
+        self.file_dict = {data_file: None for data_file in names}
         self.protocol = protocol
+        self.mode = mode
 
         with self:
             self.update_indices()
 
     def __bool__(self) -> bool:
         isopen = True
-        for cxi_file in self.input_files():
+        for cxi_file in self.files():
             isopen &= bool(cxi_file)
-        return isopen & bool(self.out_file)
+        return isopen
 
     def __contains__(self, attr: str) -> bool:
         return attr in self._indices
@@ -372,16 +379,16 @@ class CXIStore():
         self.close()
 
     def update_indices(self) -> None:
-        """Read input files for the data attributes contained in the protocol."""
+        """Read the files for the data attributes contained in the protocol."""
         indices = {}
         if self:
             for attr in self.protocol:
                 kind = self.protocol.get_kind(attr)
                 try:
                     if kind in ['stack', 'sequence', 'scalar']:
-                        idxs = self.protocol.read_attribute_indices(attr, self.input_files())
+                        idxs = self.protocol.read_attribute_indices(attr, self.files())
                     if kind == 'frame':
-                        idxs = self.protocol.read_attribute_indices(attr, self.input_files())
+                        idxs = self.protocol.read_attribute_indices(attr, self.files())
                 except ValueError as err:
                     print(f'{attr:s} is not loaded: {err}')
                 else:
@@ -390,76 +397,73 @@ class CXIStore():
 
         self._indices = indices
 
+    @property
+    def file(self) -> h5py.File:
+        return self.files()[0]
+
     def open(self) -> None:
-        """Open input and output files to read and write."""
+        """Open the files."""
         if not self:
-            self.out_file = h5py.File(self.out_fname, mode='a')
-
-            for data_file in self.inp_dict:
-                if data_file == self.out_fname:
-                    self.inp_dict[data_file] = self.out_file
-                else:
-                    self.inp_dict[data_file] = h5py.File(data_file, mode='r')
-
+            for data_file in self.file_dict:
+                self.file_dict[data_file] = h5py.File(data_file, mode=self.mode)
 
     def close(self) -> None:
-        """Close input and output files."""
-        for cxi_file in self.input_files():
+        """Close the files."""
+        for cxi_file in self.files():
             cxi_file.close()
-        self.out_file.close()
 
-    def input_filenames(self) -> List[str]:
-        """Return a list of paths to the input files.
-
-        Returns:
-            List of paths to the input files.
-        """
-        return list(self.inp_dict.keys())
-
-    def input_files(self) -> List[h5py.File]:
-        """Return a list of file objects of the input files.
+    def filenames(self) -> List[str]:
+        """Return a list of paths to the files.
 
         Returns:
-            List of file objects of the input files.
+            List of paths to the files.
         """
-        return list(self.inp_dict.values())
+        return list(self.file_dict.keys())
+
+    def files(self) -> List[h5py.File]:
+        """Return a list of file objects of the files.
+
+        Returns:
+            List of file objects of the files.
+        """
+        return list(self.file_dict.values())
 
     def indices(self) -> np.ndarray:
-        """Return a list of frame indices of the data contained in the input
+        """Return a list of frame indices of the data contained in the
         files.
 
         Returns:
-            A list of frame indices of the data in the input files.
+            A list of frame indices of the data in the files.
         """
         return np.arange(self._indices.get('data', np.array([])).shape[0])
 
     def keys(self) -> KeysView:
-        """Return a set of the attribute's names contained in the input files.
+        """Return a set of the attribute's names contained in the files.
 
         Returns:
-            A set of the attribute's names in the input files.
+            A set of the attribute's names in the files.
         """
         return self._indices.keys()
 
     def values(self) -> ValuesView:
-        """Return a set of the attribute's indices in the input files.
+        """Return a set of the attribute's indices in the files.
 
         Returns:
-            A set of the attribute's indices in the input files.
+            A set of the attribute's indices in the files.
         """
         return self._indices.values()
 
     def items(self) -> ItemsView:
         """Return a set of `(name, index)` pairs. `name` is the attribute's name
-        contained in the input files, and `index` it's corresponding set of indices.
+        contained in the files, and `index` it's corresponding set of indices.
 
         Returns:
-            A set of `(name, index)` pairs of the data attributes in the input files.
+            A set of `(name, index)` pairs of the data attributes in the files.
         """
         return self._indices.items()
 
     def _read_chunk(self, index: np.ndarray) -> np.ndarray:
-        return self.inp_dict[index[0]][index[1]][index[2]]
+        return self.file_dict[index[0]][index[1]][index[2]]
 
     @staticmethod
     def _read_worker(index: np.ndarray) -> np.ndarray:
@@ -495,7 +499,7 @@ class CXIStore():
 
     def load_attribute(self, attr: str, indices: Optional[Iterable[int]]=None, processes: int=1,
                        verbose: bool=True) -> np.ndarray:
-        """Load a data attribute from the input files.
+        """Load a data attribute from the files.
 
         Args:
             attr : Attribute's name to load.
@@ -511,30 +515,31 @@ class CXIStore():
         """
         kind = self.protocol.get_kind(attr)
 
+        if kind not in ['stack', 'frame', 'scalar', 'sequence']:
+            raise ValueError(f'Invalid kind: {kind:s}')
+
         if self:
             if kind == 'stack':
                 return self._load_stack(attr=attr, indices=indices, processes=processes,
                                         verbose=verbose)
-            elif kind in ['frame', 'scalar']:
+            if kind in ['frame', 'scalar']:
                 return self._load_frame(attr=attr)
-            elif kind == 'sequence':
+            if kind == 'sequence':
                 return self._load_sequence(attr=attr, indices=indices)
-            else:
-                raise ValueError(f'Invalid kind: {kind:s}')
 
         return np.array([], dtype=self.protocol.get_dtype(attr))
 
     def find_dataset(self, attr: str) -> str:
-        """Return the path to the attribute from the output file. Return the default
-        path if the attribute is not found inside the output file.
+        """Return the path to the attribute from the first file. Return the default
+        path if the attribute is not found inside the first file.
 
         Args:
             attr : Attribute's name.
 
         Returns:
-            Path to the attribute inside the output file.
+            Path to the attribute inside the first file.
         """
-        cxi_path = self.protocol.find_path(attr, self.out_file)
+        cxi_path = self.protocol.find_path(attr, self.file)
 
         if cxi_path:
             return cxi_path
@@ -544,25 +549,25 @@ class CXIStore():
                     idxs: Optional[Iterable[int]]=None) -> None:
         cxi_path = self.find_dataset(attr)
 
-        if cxi_path in self.out_file and self.out_file[cxi_path].shape[1:] == data.shape[1:]:
+        if cxi_path in self.file and self.file[cxi_path].shape[1:] == data.shape[1:]:
             if mode == 'append':
-                self.out_file[cxi_path].resize(self.out_file[cxi_path].shape[0] + data.shape[0],
+                self.file[cxi_path].resize(self.file[cxi_path].shape[0] + data.shape[0],
                                                axis=0)
-                self.out_file[cxi_path][-data.shape[0]:] = data
+                self.file[cxi_path][-data.shape[0]:] = data
             elif mode == 'overwrite':
-                self.out_file[cxi_path].resize(data.shape[0], axis=0)
-                self.out_file[cxi_path][...] = data
+                self.file[cxi_path].resize(data.shape[0], axis=0)
+                self.file[cxi_path][...] = data
             elif mode == 'insert':
                 if idxs is None or len(idxs) != data.shape[0]:
                     raise ValueError('Incompatible indices')
-                self.out_file[cxi_path].resize(max(self.out_file[cxi_path].shape[0], max(idxs)),
+                self.file[cxi_path].resize(max(self.file[cxi_path].shape[0], max(idxs) + 1),
                                                axis=0)
-                self.out_file[cxi_path][idxs] = data
+                self.file[cxi_path][idxs] = data
 
         else:
-            if cxi_path in self.out_file:
-                del self.out_file[cxi_path]
-            self.out_file.create_dataset(cxi_path, data=data, shape=data.shape,
+            if cxi_path in self.file:
+                del self.file[cxi_path]
+            self.file.create_dataset(cxi_path, data=data, shape=data.shape,
                                          chunks=(1,) + data.shape[1:],
                                          maxshape=(None,) + data.shape[1:],
                                          dtype=self.protocol.get_dtype(attr, data.dtype))
@@ -570,18 +575,18 @@ class CXIStore():
     def _save_data(self, attr: str, data: np.ndarray) -> None:
         cxi_path = self.find_dataset(attr)
 
-        if cxi_path in self.out_file and self.out_file[cxi_path].shape == data.shape:
-            self.out_file[cxi_path][...] = data
+        if cxi_path in self.file and self.file[cxi_path].shape == data.shape:
+            self.file[cxi_path][...] = data
 
         else:
-            if cxi_path in self.out_file:
-                del self.out_file[cxi_path]
-            self.out_file.create_dataset(cxi_path, data=data, shape=data.shape,
+            if cxi_path in self.file:
+                del self.file[cxi_path]
+            self.file.create_dataset(cxi_path, data=data, shape=data.shape,
                                          dtype=self.protocol.get_dtype(attr, data.dtype))
 
     def save_attribute(self, attr: str, data: np.ndarray, mode: str='overwrite',
                        idxs: Optional[Iterable[int]]=None) -> None:
-        """Save a data array pertained to the data attribute into the output file.
+        """Save a data array pertained to the data attribute into the first file.
 
         Args:
             attr : Attribute's name.
@@ -598,6 +603,8 @@ class CXIStore():
         Raises:
             ValueError : If the attribute's kind is invalid.
         """
+        if self.mode == 'r':
+            raise ValueError('File is open in read-only mode')
         kind = self.protocol.get_kind(attr)
 
         if self:
@@ -608,4 +615,4 @@ class CXIStore():
             else:
                 raise ValueError(f'Invalid kind: {kind:s}')
 
-        raise ValueError('Invalid file objects: the output file is closed')
+        raise ValueError('Invalid file objects: the file is closed')

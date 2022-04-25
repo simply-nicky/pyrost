@@ -190,23 +190,25 @@ class LogProtocol(INIParser):
                                 attr_dict[part_name][attr] *= self._get_unit(raw_str)
         return attr_dict
 
-    def load_data(self, path: str, indices: Optional[Iterable[int]]=None,
-                  return_indices=False) -> Tuple[Dict[str, np.ndarray], np.ndarray]:
+    def load_data(self, path: str, idxs: Optional[Iterable[int]]=None,
+                  return_idxs=False) -> Tuple[Dict[str, np.ndarray], np.ndarray]:
         """Retrieve the main data array from the log file.
 
         Args:
             path : Path to the log file.
-            indices : Array of data indices to load. Loads info for all
-                the frames by default.
+            idxs : Array of data indices to load. Loads info for all
+                the frames if None.
+            return_idxs : Return a set of indices loaded from the log file.
 
         Returns:
-            Dictionary with data fields and their names retrieved
-            from the log file.
+            Dictionary with data fields and their names retrieved from the
+            log file.
         """
-        if indices is not None:
-            indices.sort()
+        if idxs is not None:
+            idxs = np.asarray(idxs)
+            idxs.sort()
 
-        row_cnt = 0
+        line_count = 0
         with open(path, 'r') as log_file:
             for line_idx, line in enumerate(log_file):
                 if line.startswith('# '):
@@ -215,25 +217,23 @@ class LogProtocol(INIParser):
                 else:
                     data_line = line
 
-                    if row_cnt == 0:
-                        first_row = line_idx
-                    if indices is not None and row_cnt == indices[0]:
-                        skiprows = line_idx - first_row
-                    if indices is not None and row_cnt == indices[-1]:
-                        max_rows = line_idx - skiprows
+                    if idxs is None:
+                        skiprows = line_idx
+                        max_rows = None
                         break
 
-                    row_cnt += 1
-            else:
-                if indices is None:
-                    indices = np.arange(row_cnt)
-                    skiprows = 0
-                    max_rows = line_idx - skiprows
-                else:
-                    indices = indices[:np.searchsorted(indices, row_cnt)]
-                    if not indices.size:
+                    if idxs.size == 0:
                         skiprows = line_idx
-                    max_rows = line_idx - skiprows
+                        max_rows = 0
+                        break
+
+                    if line_count == idxs[0]:
+                        skiprows = line_idx
+                    if line_count == idxs[-1]:
+                        max_rows = line_idx - skiprows + 1
+                        break
+
+                    line_count += 1
 
         keys = keys_line.strip('\n').split(';')
         data_strings = data_line.strip('\n').split(';')
@@ -244,40 +244,49 @@ class LogProtocol(INIParser):
             dtypes['names'].append(key)
             unit = self._get_unit(key)
             if 'float' in key:
-                dtypes['formats'].append(np.float_)
+                dtypes['formats'].append(np.dtype(float))
                 converters[idx] = lambda item, unit=unit: unit * float(item)
             elif 'int' in key:
                 if self._has_unit(key):
                     converters[idx] = lambda item, unit=unit: unit * float(item)
-                    dtypes['formats'].append(np.float_)
+                    dtypes['formats'].append(np.dtype(float))
                 else:
-                    dtypes['formats'].append(np.int)
+                    dtypes['formats'].append(np.dtype(int))
             elif 'Array' in key:
                 dtypes['formats'].append(np.ndarray)
-                converters[idx] = lambda item, unit=unit: np.array([float(part.strip(b' []')) * unit
-                                                                    for part in item.split(b',')])
+                func = lambda part, unit=unit: unit * float(part)
+                conv = lambda item, func=func: np.asarray(list(map(func, item.strip(b' []').split(b','))))
+                converters[idx] = conv
             else:
                 dtypes['formats'].append('<S' + str(len(val)))
                 converters[idx] = lambda item: item.strip(b' []')
 
-        data_tuple = np.loadtxt(path, delimiter=';', converters=converters,
-                                dtype=dtypes, unpack=True, skiprows=skiprows,
-                                max_rows=max_rows + 1)
-        data_dict = {key: data[indices - skiprows] for key, data in zip(keys, data_tuple)}
+        txt_dict = {}
+        txt_tuple = np.loadtxt(path, delimiter=';', converters=converters,
+                               dtype=dtypes, unpack=True, skiprows=skiprows,
+                               max_rows=max_rows)
 
-        if return_indices:
-            return data_dict, indices
-        return data_dict
+        if idxs is None:
+            txt_dict.update(zip(keys, txt_tuple))
+            idxs = np.arange(txt_tuple[0].size)
+        elif idxs.size == 0:
+            txt_dict.update(zip(keys, txt_tuple))
+        else:
+            txt_dict.update({key: np.atleast_1d(data)[idxs - np.min(idxs)]
+                             for key, data in zip(keys, txt_tuple)})
 
-def cxi_converter_sigray(out_path: str, scan_num: int, dir_path: str='/gpfs/cfel/group/cxi/labs/MLL-Sigray',
+        if return_idxs:
+            return txt_dict, idxs
+        return txt_dict
+
+def cxi_converter_sigray(scan_num: int, dir_path: str='/gpfs/cfel/group/cxi/labs/MLL-Sigray',
                          target: str='Mo', distance: Optional[float]=None, lens: str='up',
-                         indices: Optional[Iterable[int]]=None, transform: Optional[Transform]=None,
+                         idxs: Optional[Iterable[int]]=None, transform: Optional[Transform]=None,
                          **attributes: Any) -> STData:
     """Convert measured frames and log files from the Sigray laboratory to a
     :class:`pyrost.STData` data container.
 
     Args:
-        out_path : Path to the file, where all the results can be saved.
         scan_num : Scan number.
         dir_path : Path to the root directory, where the data is located.
         target : Sigray X-ray source target used. The following values are
@@ -291,7 +300,7 @@ def cxi_converter_sigray(out_path: str, scan_num: int, dir_path: str='/gpfs/cfel
         lens : Specify if the lens mounted in the upper holder ('up') or in
             the lower holder ('down'). If specified, the lens-to-detector
             distance will be automatically parsed from the log file.
-        indices : Array of data indices to load. Loads info for all the
+        idxs : Array of data indices to load. Loads info for all the
             frames by default.
         transform : Frames transform object.
         attributes : Dictionary of attribute values, that override the loaded
@@ -303,7 +312,6 @@ def cxi_converter_sigray(out_path: str, scan_num: int, dir_path: str='/gpfs/cfel
     wl_dict = {'Mo': 7.092917530503447e-11, 'Cu': 1.5498024804150033e-10,
                'Rh': 6.137831605603974e-11}
 
-
     ss_vec = np.array([0., -1., 0.])
     fs_vec = np.array([-1., 0., 0.])
 
@@ -312,17 +320,16 @@ def cxi_converter_sigray(out_path: str, scan_num: int, dir_path: str='/gpfs/cfel
     h5_files = sorted([os.path.join(data_dir, path) for path in os.listdir(data_dir)
                        if path.endswith('Lambda.nxs')])
 
-    files = CXIStore(input_files=h5_files, output_file=out_path)
+    input_file = CXIStore(h5_files, mode='r')
 
     log_prt = LogProtocol.import_default()
     log_attrs = log_prt.load_attributes(log_path)
-    log_data, indices = log_prt.load_data(log_path, indices=indices,
-                                          return_indices=True)
+    log_data, idxs = log_prt.load_data(log_path, idxs=idxs, return_idxs=True)
 
     x_pixel_size = 55e-6
     y_pixel_size = 55e-6
 
-    n_frames = indices.size
+    n_frames = idxs.size
     pix_vec = np.tile(np.array([[x_pixel_size, y_pixel_size, 0]]), (n_frames, 1))
     basis_vectors = np.stack([pix_vec * ss_vec, pix_vec * fs_vec], axis=1)
 
@@ -352,10 +359,10 @@ def cxi_converter_sigray(out_path: str, scan_num: int, dir_path: str='/gpfs/cfel
         else:
             raise ValueError(f'lens keyword is invalid: {lens:s}')
 
-    data = STData(files, basis_vectors=basis_vectors, mask=mask, translations=translations,
-                  distance=distance, x_pixel_size=x_pixel_size, y_pixel_size=y_pixel_size,
-                  wavelength=wl_dict[target], **attributes)
+    data = STData(input_file=input_file, basis_vectors=basis_vectors, mask=mask,
+                  translations=translations, distance=distance, x_pixel_size=x_pixel_size,
+                  y_pixel_size=y_pixel_size, wavelength=wl_dict[target], **attributes)
     if transform:
         data = data.update_transform(transform)
-    data = data.load('data', indices=indices)
+    data = data.load('data', idxs=idxs)
     return data

@@ -40,7 +40,8 @@ Loading the file
 The procedure for loading the data from a file is the same as in :doc:`diatom`:
 
 * Create a :class:`pyrost.CXIProtocol` protocol.
-* Open the file with :class:`pyrost.CXIStore` file handler.
+* Open the input file with :class:`pyrost.CXIStore` file handler. Create an output
+  file. In this case the output file is the same as the input one.
 * Create a :class:`pyrost.STData` R-PXST data container.
 * Load all the data from the file with :func:`pyrost.STData.load`.
 
@@ -48,9 +49,9 @@ The procedure for loading the data from a file is the same as in :doc:`diatom`:
 
     >>> import pyrost as rst
     >>> protocol = rst.CXIProtocol.import_default()
-    >>> files = rst.CXIStore(input_files='sim.cxi', output_file='sim.cxi',
-    >>>                      protocol=protocol)
-    >>> data = rst.STData(files=files)
+    >>> inp_file = rst.CXIStore('sim.cxi', protocol=protocol)
+    >>> out_file = rst.CXIStore('sim.cxi', mode='a', protocol=protocol)
+    >>> data = rst.STData(input_file=inp_file, output_file=out_file)
     >>> data = data.load()
 
 The file already contains all the necessary attributes to perform the speckle tracking
@@ -148,11 +149,16 @@ and to the phase profile with :func:`pyrost.AberrationsFit.fit_phase`:
 
 Saving the results
 ------------------
-In the end you can save the results to a CXI file.
+In the end you can save the results to a CXI file. By default :func:`pyrost.STData.save` saves all
+the data it contains. The method offers three modes:
+
+* 'overwrite' : Overwrite all the data stored already in the output file.
+* 'append' : Append data to the already existing data in the file.
+* 'insert' : Insert the data into the already existing data at the set of frame indices `idxs`.
 
 .. code-block:: python
 
-    >>> data.save()
+    >>> data.save(mode='overwrite')
 
 .. code-block:: console
 

@@ -14,7 +14,7 @@ between a MLL lens and the detector in meters. We parse it to
 .. code-block:: python
 
     >>> import pyrost as rst
-    >>> data = rst.cxi_converter_sigray(out_path='sigray.cxi', scan_num=2989, target='Mo', distance=2.0)
+    >>> data = rst.cxi_converter_sigray(scan_num=2989, target='Mo', distance=2.0)
 
 The function reads the log files and a detector bad pixels mask to initiate `basis_vectors`,
 `distance`, `mask`, `translations`, `x_pixel_size`, `y_pixel_size`, and `wavelength` and loads
@@ -203,3 +203,24 @@ and to the phase profile with :func:`pyrost.AberrationsFit.fit_phase`:
 .. image:: ../figures/sigray_fits.png
     :width: 100 %
     :alt: Phase polynomial fit.
+
+Saving the results
+------------------
+:func:`pyrost.cxi_converter_sigray` passes only a file handler :class:`pyrost.CXIStore` for the input file.
+In order to be able to save the results, we need to create a file handler for the output file:
+
+.. code-block:: python
+    
+    >>> out_file = rst.CXIStore('sigray.cxi', mode='a')
+    >>> data = data.update_output_file(out_file)
+
+Now we can save the results to the output file. By default :func:`pyrost.STData.save` saves all the data stored
+inside the container. The method offers three modes:
+
+* 'overwrite' : Overwrite all the data stored already in the output file.
+* 'append' : Append data to the already existing data in the file.
+* 'insert' : Insert the data into the already existing data at the set of frame indices `idxs`.
+
+.. code-block:: python
+
+    >>> data.save(mode='overwrite')
