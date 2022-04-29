@@ -95,25 +95,24 @@ def test_load_exp(scan_num: int, attributes: List[str]):
 
 @pytest.mark.rst
 def test_defocus_sweep_exp(scan_num: int, crop: rst.Crop,
-                           good_frames_list: np.ndarray, defocus: float):
-    data = rst.cxi_converter_sigray(scan_num=scan_num, target='Mo', transform=crop)
+                           good_frames_list: np.ndarray, defocus: float, distance: float):
+    data = rst.cxi_converter_sigray(scan_num=scan_num, target='Mo', distance=distance, transform=crop)
     data = data.mask_frames(good_frames_list)
     data = data.integrate_data()
     defoci = np.linspace(0.5 * defocus, 2.0 * defocus)
-    sweep_scan = data.defocus_sweep(defoci_x=defoci)
+    sweep_scan = data.defocus_sweep(defoci_x=defoci, size=50)
     df_est = defoci[np.argmax(sweep_scan)]
     assert np.abs(df_est - defocus) < 0.1 * defocus
 
-@pytest.mark.rst
 def test_st_udpate_exp(scan_num: int, crop: rst.Crop,
-                       good_frames_list: np.ndarray, defocus: float, alpha: float):
-    data = rst.cxi_converter_sigray(scan_num=scan_num, target='Mo', transform=crop,
+                       good_frames_list: np.ndarray, defocus: float, distance: float, c4: float):
+    data = rst.cxi_converter_sigray(scan_num=scan_num, target='Mo', distance=distance, transform=crop,
                                     defocus_x=defocus)
     data = data.mask_frames(good_frames_list)
     data = data.integrate_data()
     st_obj = data.get_st()
     h0 = st_obj.find_hopt()
-    st_res = st_obj.train_adapt(search_window=(0.0, 10.0, 0.1), h0=h0, blur=18.0)
+    st_res = st_obj.train_adapt(search_window=(0.0, 10.0, 0.1), h0=h0, blur=8.0)
     data.import_st(st_res)
-    fit = data.get_fit(axis=1).remove_linear_term().fit(max_order=2)
-    assert np.abs(fit['c_3'] - alpha) < 0.3 * np.abs(alpha)
+    fit = data.get_fit(axis=1).remove_linear_term().fit(max_order=3)
+    assert np.abs(fit['c_4'] - c4) < 0.3 * np.abs(c4)

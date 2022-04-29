@@ -130,3 +130,4 @@ Contents
 
     classes/st_data
     classes/speckle_tracking
+    classes/bfgs

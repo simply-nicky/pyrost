@@ -379,7 +379,11 @@ class SpeckleTracking(DataContainer):
             raise ValueError('Method keyword is invalid')
 
         dpm = pm - self.pixel_map
-        derr = (derr - derr.min() + 1.0) / derr.std()
+        std = derr.std()
+        if std:
+            derr = (derr - derr.min() + 1.0) / std
+        else:
+            derr = (derr - derr.min() + 1.0)
         if blur > 0.0:
             norm = gaussian_filter(derr, (blur, blur))
             dpm = gaussian_filter(dpm * derr, (0, blur, blur),

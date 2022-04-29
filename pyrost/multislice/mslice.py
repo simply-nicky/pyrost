@@ -153,8 +153,8 @@ class MLL(DataContainer):
             The generator, which yields lens' transmission profiles.
         """
         for idx, layer in enumerate(self.layers):
-            output[idx, :] = mll_profile(x_arr=x_arr, layers=layer, mt0=self.mat1_r,
-                                         mt1=self.mat2_r, sigma=self.sigma,
+            output[idx, :] = mll_profile(x_arr=x_arr, layers=layer, t0=self.mat1_r,
+                                         t1=self.mat2_r, sigma=self.sigma,
                                          num_threads=num_threads)
             yield output[idx]
 
