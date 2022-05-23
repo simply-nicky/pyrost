@@ -488,6 +488,7 @@ class STData(DataContainer):
 
         if attributes is None:
             attributes = list(self.contents())
+
         with self.output_file:
             for attr in self.output_file.protocol.str_to_list(attributes):
                 data = self.get(attr)
