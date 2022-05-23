@@ -202,6 +202,14 @@ cpdef ones_aligned(shape, dtype='float64', order='C', n=None):
     array.fill(1)
     return array
 
+# the total number of types pyfftw can support
+cdef int _n_types = 3
+cdef object _all_types = ['32', '64']
+_all_types_human_readable = {
+    '32': 'single',
+    '64': 'double'
+}
+
 cdef object directions
 directions = {'FFTW_FORWARD': FFTW_FORWARD,
         'FFTW_BACKWARD': FFTW_BACKWARD,
@@ -299,6 +307,54 @@ cdef void* _fftw_plan_guru_r2r(
             <double *>_in, <double *>_out,
             direction, flags)
 
+# Complex single precision
+cdef void* _fftwf_plan_guru_dft(
+            int rank, fftw_iodim *dims,
+            int howmany_rank, fftw_iodim *howmany_dims,
+            void *_in, void *_out,
+            int *direction, unsigned flags) nogil:
+
+    return <void *>fftwf_plan_guru_dft(rank, dims,
+            howmany_rank, howmany_dims,
+            <cfloat *>_in, <cfloat *>_out,
+            direction[0], flags)
+
+# real to complex single precision
+cdef void* _fftwf_plan_guru_dft_r2c(
+            int rank, fftw_iodim *dims,
+            int howmany_rank, fftw_iodim *howmany_dims,
+            void *_in, void *_out,
+            int *direction, unsigned flags) nogil:
+
+    return <void *>fftwf_plan_guru_dft_r2c(rank, dims,
+            howmany_rank, howmany_dims,
+            <float *>_in, <cfloat *>_out,
+            flags)
+
+# complex to real single precision
+cdef void* _fftwf_plan_guru_dft_c2r(
+            int rank, fftw_iodim *dims,
+            int howmany_rank, fftw_iodim *howmany_dims,
+            void *_in, void *_out,
+            int *direction, unsigned flags) nogil:
+
+    return <void *>fftwf_plan_guru_dft_c2r(rank, dims,
+            howmany_rank, howmany_dims,
+            <cfloat *>_in, <float *>_out,
+            flags)
+
+# real to real single precision
+cdef void* _fftwf_plan_guru_r2r(
+            int rank, fftw_iodim *dims,
+            int howmany_rank, fftw_iodim *howmany_dims,
+            void *_in, void *_out,
+            int *direction, int flags):
+
+    return <void *>fftwf_plan_guru_r2r(rank, dims,
+            howmany_rank, howmany_dims,
+            <float *>_in, <float *>_out,
+            direction, flags)
+
 #    Executors
 #    =========
 #
@@ -320,10 +376,33 @@ cdef void _fftw_execute_dft_c2r(void *_plan, void *_in, void *_out) nogil:
     fftw_execute_dft_c2r(<fftw_plan>_plan,
             <cdouble *>_in, <double *>_out)
 
+# Complex single precision
+cdef void _fftwf_execute_dft(void *_plan, void *_in, void *_out) nogil:
+
+    fftwf_execute_dft(<fftwf_plan>_plan,
+            <cfloat *>_in, <cfloat *>_out)
+
+# real to complex single precision
+cdef void _fftwf_execute_dft_r2c(void *_plan, void *_in, void *_out) nogil:
+
+    fftwf_execute_dft_r2c(<fftwf_plan>_plan,
+            <float *>_in, <cfloat *>_out)
+
+# complex to real single precision
+cdef void _fftwf_execute_dft_c2r(void *_plan, void *_in, void *_out) nogil:
+
+    fftwf_execute_dft_c2r(<fftwf_plan>_plan,
+            <cfloat *>_in, <float *>_out)
+
 # real to real double precision
 cdef void _fftw_execute_r2r(void *_plan, void *_in, void *_out) nogil:
 
     fftw_execute_r2r(<fftw_plan>_plan, <double *>_in, <double *>_out)
+
+# real to real single precision
+cdef void _fftwf_execute_r2r(void *_plan, void *_in, void *_out) nogil:
+
+    fftwf_execute_r2r(<fftwf_plan>_plan, <float *>_in, <float *>_out)
 
 #    Destroyers
 #    ==========
@@ -333,43 +412,63 @@ cdef void _fftw_destroy_plan(void *_plan):
 
     fftw_destroy_plan(<fftw_plan>_plan)
 
+# Single precision
+cdef void _fftwf_destroy_plan(void *_plan):
+
+    fftwf_destroy_plan(<fftwf_plan>_plan)
+
 # Function lookup tables
 # ======================
 # Planner table (of size the number of planners).
-cdef fftw_generic_plan_guru planners[4]
+cdef fftw_generic_plan_guru planners[8]
 
 cdef fftw_generic_plan_guru * _build_planner_list():
     planners[0] = <fftw_generic_plan_guru>&_fftw_plan_guru_dft
-    planners[1] = <fftw_generic_plan_guru>&_fftw_plan_guru_dft_r2c
-    planners[2] = <fftw_generic_plan_guru>&_fftw_plan_guru_dft_c2r
-    planners[3] = <fftw_generic_plan_guru>&_fftw_plan_guru_r2r
+    planners[2] = <fftw_generic_plan_guru>&_fftw_plan_guru_dft_r2c
+    planners[4] = <fftw_generic_plan_guru>&_fftw_plan_guru_dft_c2r
+    planners[6] = <fftw_generic_plan_guru>&_fftw_plan_guru_r2r
+    planners[1] = <fftw_generic_plan_guru>&_fftwf_plan_guru_dft
+    planners[3] = <fftw_generic_plan_guru>&_fftwf_plan_guru_dft_r2c
+    planners[5] = <fftw_generic_plan_guru>&_fftwf_plan_guru_dft_c2r
+    planners[7] = <fftw_generic_plan_guru>&_fftwf_plan_guru_r2r
 
 # Executor table (of size the number of executors)
-cdef fftw_generic_execute executors[4]
+cdef fftw_generic_execute executors[8]
 
 cdef fftw_generic_execute * _build_executor_list():
     executors[0] = <fftw_generic_execute>&_fftw_execute_dft
-    executors[1] = <fftw_generic_execute>&_fftw_execute_dft_r2c
-    executors[2] = <fftw_generic_execute>&_fftw_execute_dft_c2r
-    executors[3] = <fftw_generic_execute>&_fftw_execute_r2r
+    executors[2] = <fftw_generic_execute>&_fftw_execute_dft_r2c
+    executors[4] = <fftw_generic_execute>&_fftw_execute_dft_c2r
+    executors[6] = <fftw_generic_execute>&_fftw_execute_r2r
+    executors[1] = <fftw_generic_execute>&_fftwf_execute_dft
+    executors[3] = <fftw_generic_execute>&_fftwf_execute_dft_r2c
+    executors[5] = <fftw_generic_execute>&_fftwf_execute_dft_c2r
+    executors[7] = <fftw_generic_execute>&_fftwf_execute_r2r
 
 # Destroyer table (of size the number of destroyers)
-cdef fftw_generic_destroy_plan destroyers[1]
+cdef fftw_generic_destroy_plan destroyers[2]
 
 cdef fftw_generic_destroy_plan * _build_destroyer_list():
     destroyers[0] = <fftw_generic_destroy_plan>&_fftw_destroy_plan
+    destroyers[1] = <fftw_generic_destroy_plan>&_fftwf_destroy_plan
 
 # nthreads plan setters table
-cdef fftw_generic_plan_with_nthreads nthreads_plan_setters[1]
+cdef fftw_generic_plan_with_nthreads nthreads_plan_setters[2]
 
 cdef fftw_generic_plan_with_nthreads * _build_nthreads_plan_setters_list():
-    nthreads_plan_setters[0] = (<fftw_generic_plan_with_nthreads>&fftw_plan_with_nthreads)
+    nthreads_plan_setters[0] = (
+        <fftw_generic_plan_with_nthreads>&fftw_plan_with_nthreads)
+    nthreads_plan_setters[1] = (
+        <fftw_generic_plan_with_nthreads>&fftwf_plan_with_nthreads)
 
 # Set planner timelimits
-cdef fftw_generic_set_timelimit set_timelimit_funcs[1]
+cdef fftw_generic_set_timelimit set_timelimit_funcs[2]
 
 cdef fftw_generic_set_timelimit * _build_set_timelimit_funcs_list():
-    set_timelimit_funcs[0] = (<fftw_generic_set_timelimit>&fftw_set_timelimit)
+    set_timelimit_funcs[0] = (
+        <fftw_generic_set_timelimit>&fftw_set_timelimit)
+    set_timelimit_funcs[1] = (
+        <fftw_generic_set_timelimit>&fftwf_set_timelimit)
 
 # Data validators table
 cdef validator validators[2]
@@ -482,20 +581,33 @@ def _lookup_shape_c2r_arrays(input_array, output_array):
 cdef object fftw_schemes
 fftw_schemes = {
         (np.dtype('complex128'), np.dtype('complex128')): ('c2c', '64'),
+        (np.dtype('complex64'), np.dtype('complex64')): ('c2c', '32'),
         (np.dtype('float64'), np.dtype('complex128')): ('r2c', '64'),
-        (np.dtype('complex128'), np.dtype('float64')): ('c2r', '64')}
+        (np.dtype('float32'), np.dtype('complex64')): ('r2c', '32'),
+        (np.dtype('complex128'), np.dtype('float64')): ('c2r', '64'),
+        (np.dtype('complex64'), np.dtype('float32')): ('c2r', '32'),
+        (np.dtype('float32'), np.dtype('float32')): ('r2r', '32'),
+        (np.dtype('float64'), np.dtype('float64')): ('r2r', '64')}
 
 cdef object fftw_default_output
 fftw_default_output = {
+    np.dtype('float32'): np.dtype('complex64'),
     np.dtype('float64'): np.dtype('complex128'),
+    np.dtype('complex64'): np.dtype('complex64'),
     np.dtype('complex128'): np.dtype('complex128')}
 
 cdef object scheme_directions
 scheme_directions = {
         ('c2c', '64'): ['FFTW_FORWARD', 'FFTW_BACKWARD'],
+        ('c2c', '32'): ['FFTW_FORWARD', 'FFTW_BACKWARD'],
         ('r2c', '64'): ['FFTW_FORWARD'],
+        ('r2c', '32'): ['FFTW_FORWARD'],
         ('c2r', '64'): ['FFTW_BACKWARD'],
+        ('c2r', '32'): ['FFTW_BACKWARD'],
         ('r2r', '64'): ['FFTW_REDFT00', 'FFTW_REDFT10', 'FFTW_REDFT01',
+                        'FFTW_REDFT11', 'FFTW_RODFT00', 'FFTW_RODFT10',
+                        'FFTW_RODFT01', 'FFTW_RODFT11'],
+        ('r2r', '32'): ['FFTW_REDFT00', 'FFTW_REDFT10', 'FFTW_REDFT01',
                         'FFTW_REDFT11', 'FFTW_RODFT00', 'FFTW_RODFT10',
                         'FFTW_RODFT01', 'FFTW_RODFT11']}
 
@@ -504,16 +616,29 @@ scheme_directions = {
 # sufficiently trivial to use -1 in place of None, especially given
 # that scheme_functions is an internal cdef object.
 cdef object _scheme_functions = {}
+
 _scheme_functions.update({
-('c2c', '64'): {'planner': 0, 'executor':0, 'generic_precision':0,
+('c2c', '64'): {'planner': 0, 'executor': 0, 'generic_precision': 0,
     'validator': -1, 'fft_shape_lookup': -1},
-('r2c', '64'): {'planner': 1, 'executor': 1, 'generic_precision':0,
+('r2c', '64'): {'planner': 2, 'executor': 2, 'generic_precision': 0,
     'validator': 0,
     'fft_shape_lookup': _lookup_shape_r2c_arrays},
-('c2r', '64'): {'planner': 2, 'executor': 2, 'generic_precision':0,
+('c2r', '64'): {'planner': 4, 'executor': 4, 'generic_precision': 0,
     'validator': 1,
     'fft_shape_lookup': _lookup_shape_c2r_arrays},
-('r2r', '64'): {'planner': 3, 'executor': 3, 'generic_precision':0,
+('r2r', '64'): {'planner': 6, 'executor': 6, 'generic_precision': 0,
+    'validator': -1, 'fft_shape_lookup': -1}})
+
+_scheme_functions.update({
+('c2c', '32'): {'planner': 1, 'executor': 1, 'generic_precision': 1,
+    'validator': -1, 'fft_shape_lookup': -1},
+('r2c', '32'): {'planner': 3, 'executor': 3, 'generic_precision': 1,
+    'validator': 0,
+    'fft_shape_lookup': _lookup_shape_r2c_arrays},
+('c2r', '32'): {'planner': 5, 'executor': 5, 'generic_precision': 1,
+    'validator': 1,
+    'fft_shape_lookup': _lookup_shape_c2r_arrays},
+('r2r', '32'): {'planner': 7, 'executor': 7, 'generic_precision': 1,
     'validator': -1, 'fft_shape_lookup': -1}})
 
 def scheme_functions(scheme):
@@ -521,12 +646,17 @@ def scheme_functions(scheme):
         return _scheme_functions[scheme]
     else:
         msg = "The scheme '%s' is not supported." % str(scheme)
+        if scheme[1] in _all_types:
+            msg += "\nRebuild pyFFTW with support for %s precision!" % \
+                   _all_types_human_readable[scheme[1]]
         raise NotImplementedError(msg)
 
 # Set the cleanup routine
 cdef void _cleanup():
     fftw_cleanup()
+    fftwf_cleanup()
     fftw_cleanup_threads()
+    fftwf_cleanup_threads()
 
 # Initialize the module
 
@@ -539,6 +669,7 @@ _build_validators_list()
 _build_set_timelimit_funcs_list()
 
 fftw_init_threads()
+fftwf_init_threads()
 
 Py_AtExit(_cleanup)
 

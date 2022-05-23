@@ -16,86 +16,42 @@ Examples:
     >>> data = data.load()
 """
 from __future__ import annotations
-from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
+from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple, Union
 from weakref import ref
 from multiprocessing import cpu_count
 from tqdm.auto import tqdm
 import numpy as np
 from .aberrations_fit import AberrationsFit
 from .data_container import DataContainer, dict_to_object
-from .cxi_protocol import CXIStore
+from .cxi_protocol import CXIStore, Indices
 from .rst_update import SpeckleTracking
 from .bin import median, median_filter, fft_convolve, ct_integrate
 
-Indices = Union[int, slice]
-
 class Transform():
-    """Abstract transform class.
+    """Abstract transform class."""
 
-    Attributes:
-        shape : Data frame shape.
+    def index_array(self, ss_idxs: np.ndarray, fs_idxs: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        raise NotImplementedError
 
-    Raises:
-        AttributeError : If shape isn't initialized.
-    """
-    def __init__(self, shape: Optional[Tuple[int, int]]=None) -> None:
-        """
-        Args:
-            shape : Data frame shape.
-        """
-        self._shape = shape
+    def __repr__(self) -> str:
+        return self.state_dict().__repr__()
 
-    @property
-    def shape(self) -> Tuple[int, int]:
-        return self._shape
+    def __str__(self) -> str:
+        return self.state_dict().__str__()
 
-    @shape.setter
-    def shape(self, value: Tuple[int, int]):
-        if self._shape is None:
-            self._shape = value
-        else:
-            raise ValueError("Shape is already defined.")
-
-    def check_shape(self, shape: Tuple[int, int]) -> bool:
-        """Check if shape is equal to the saved shape.
-
-        Args:
-            shape : shape to check.
-
-        Returns:
-            True if the shapes are equal.
-        """
-        if self.shape is None:
-            self.shape = shape
-            return True
-        return self.shape == shape
 
     def forward(self, inp: np.ndarray) -> np.ndarray:
-        raise NotImplementedError
-
-    def backward(self, inp: np.ndarray, out: Optional[np.ndarray]=None) -> np.ndarray:
-        raise NotImplementedError
-
-    def integrate(self, axis: int) -> Transform:
-        """Return a transform version for the dataset integrated
-        along the axis.
+        """Return a transformed image.
 
         Args:
-            axis : Axis of integration.
+            inp : Input image.
 
         Returns:
-            A new transform version.
+            Transformed image.
         """
-        pdict = self.state_dict()
-        if pdict['shape']:
-            if axis == 0:
-                pdict['shape'] = (1, pdict['shape'][1])
-            elif axis == 1:
-                pdict['shape'] = (pdict['shape'][0], 1)
-            else:
-                raise ValueError('Axis must be equal to 0 or 1')
-
-        return type(self)(**pdict)
+        ss_idxs, fs_idxs = np.indices(inp.shape[-2:])
+        ss_idxs, fs_idxs = self.index_array(ss_idxs, fs_idxs)
+        return inp[..., ss_idxs, fs_idxs]
 
     def state_dict(self) -> Dict[str, Any]:
         raise NotImplementedError
@@ -106,78 +62,36 @@ class Crop(Transform):
     Attributes:
         roi : Region of interest. Comprised of four elements `[y_min, y_max,
             x_min, x_max]`.
-        shape : Data frame shape.
     """
-    def __init__(self, roi: Iterable[int], shape: Optional[Tuple[int, int]]=None) -> None:
+    def __init__(self, roi: Iterable[int]) -> None:
         """
         Args:
             roi : Region of interest. Comprised of four elements `[y_min, y_max,
                 x_min, x_max]`.
-            shape : Data frame shape.
         """
-        super().__init__(shape=shape)
         self.roi = roi
 
-    def forward(self, inp: np.ndarray) -> np.ndarray:
-        """Apply the transform to the input.
+    def index_array(self, ss_idxs: np.ndarray, fs_idxs: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """Filter the indices of a frame `(ss_idxs, fs_idxs)` according to 
+        the cropping transform.
 
         Args:
-            inp : Input data array.
+            ss_idxs: Slow axis indices of a frame.
+            fs_idxs: Fast axis indices of a frame.
 
         Returns:
-            Output data array.
+            A tuple of filtered frame indices `(ss_idxs, fs_idxs)`.
         """
-        if self.check_shape(inp.shape[-2:]):
-            return inp[..., self.roi[0]:self.roi[1], self.roi[2]:self.roi[3]]
+        if ss_idxs.shape[0] == 1:
+            return (ss_idxs[:, self.roi[2]:self.roi[3]],
+                    fs_idxs[:, self.roi[2]:self.roi[3]])
 
-        raise ValueError(f'input array has invalid shape: {str(inp.shape):s}')
+        if ss_idxs.shape[1] == 1:
+            return (ss_idxs[self.roi[0]:self.roi[1], :],
+                    fs_idxs[self.roi[0]:self.roi[1], :])
 
-    def backward(self, inp: np.ndarray, out: Optional[np.ndarray]=None) -> np.ndarray:
-        """Tranform back a data array.
-
-        Args:
-            inp : Input tranformed data array.
-            out : Output data array. A new one created if not prodived.
-
-        Returns:
-            Output data array.
-        """
-        if out is None:
-            out = np.zeros(inp.shape[:-2] + self.shape, dtype=inp.dtype)
-
-        if self.check_shape(out.shape[-2:]):
-            out[..., self.roi[0]:self.roi[1], self.roi[2]:self.roi[3]] = inp
-            return out
-
-        raise ValueError(f'output array has invalid shape: {str(out.shape):s}')
-
-    def integrate(self, axis: int) -> Crop:
-        """Return a transform version for the dataset integrated
-        along the axis.
-
-        Args:
-            axis : Axis of integration.
-
-        Returns:
-            A new transform version.
-        """
-        pdict = self.state_dict()
-        if axis == 0:
-            pdict['roi'] = (0, 1, pdict['roi'][2], pdict['roi'][3])
-        elif axis == 1:
-            pdict['roi'] = (pdict['roi'][0], pdict['roi'][1], 0, 1)
-        else:
-            raise ValueError('Axis must be equal to 0 or 1')
-
-        if pdict['shape']:
-            if axis == 0:
-                pdict['shape'] = (1, pdict['shape'][1])
-            elif axis == 1:
-                pdict['shape'] = (pdict['shape'][0], 1)
-            else:
-                raise ValueError('Axis must be equal to 0 or 1')
-
-        return Crop(**pdict)
+        return (ss_idxs[self.roi[0]:self.roi[1], self.roi[2]:self.roi[3]],
+                fs_idxs[self.roi[0]:self.roi[1], self.roi[2]:self.roi[3]])
 
     def state_dict(self) -> Dict[str, Any]:
         """Returns the state of the transform as a dict.
@@ -185,57 +99,33 @@ class Crop(Transform):
         Returns:
             A dictionary with all the attributes.
         """
-        return {'roi': self.roi[:], 'shape': self.shape}
+        return {'roi': self.roi[:]}
 
 class Downscale(Transform):
     """Downscale the image by a integer ratio.
 
     Attributes:
         scale : Downscaling integer ratio.
-        shape : Data frame shape.
     """
-    def __init__(self, scale: int, shape: Optional[Tuple[int, int]]=None) -> None:
+    def __init__(self, scale: int) -> None:
         """
         Args:
             scale : Downscaling integer ratio.
-            shape : Data frame shape.
         """
-        super().__init__(shape=shape)
         self.scale = scale
 
-    def forward(self, inp: np.ndarray) -> np.ndarray:
-        """Apply the transform to the input.
+    def index_array(self, ss_idxs: np.ndarray, fs_idxs: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """Filter the indices of a frame `(ss_idxs, fs_idxs)` according to
+        the downscaling transform.
 
         Args:
-            inp : Input data array.
+            ss_idxs: Slow axis indices of a frame.
+            fs_idxs: Fast axis indices of a frame.
 
         Returns:
-            Output data array.
+            A tuple of filtered frame indices `(ss_idxs, fs_idxs)`.
         """
-        if self.check_shape(inp.shape[-2:]):
-            return inp[..., ::self.scale, ::self.scale]
-
-        raise ValueError(f'input array has invalid shape: {str(inp.shape):s}')
-
-    def backward(self, inp: np.ndarray, out: Optional[np.ndarray]=None) -> np.ndarray:
-        """Tranform back a data array.
-
-        Args:
-            inp : Input tranformed data array.
-            out : Output data array. A new one created if not prodived.
-
-        Returns:
-            Output data array.
-        """
-        if out is None:
-            out = np.empty(inp.shape[:-2] + self.shape, dtype=inp.dtype)
-
-        if self.check_shape(out.shape[-2:]):
-            out[...] = np.repeat(np.repeat(inp, self.scale, axis=-2),
-                                 self.scale, axis=-1)[..., :self.shape[0], :self.shape[1]]
-            return out
-
-        raise ValueError(f'output array has invalid shape: {str(out.shape):s}')
+        return (ss_idxs[::self.scale, ::self.scale], fs_idxs[::self.scale, ::self.scale])
 
     def state_dict(self) -> Dict[str, Any]:
         """Returns the state of the transform as a dict.
@@ -243,59 +133,39 @@ class Downscale(Transform):
         Returns:
             A dictionary with all the attributes.
         """
-        return {'scale': self.scale, 'shape': self.shape}
+        return {'scale': self.scale}
 
 class Mirror(Transform):
     """Mirror the data around an axis.
 
     Attributes:
         axis : Axis of reflection.
-        shape : Data frame shape.
     """
-    def __init__(self, axis: int, shape: Optional[Tuple[int, int]]=None) -> None:
+    def __init__(self, axis: int) -> None:
         """
         Args:
             axis : Axis of reflection.
-            shape : Data frame shape.
         """
         if axis not in [0, 1]:
             raise ValueError('Axis must equal to 0 or 1')
-
-        super().__init__(shape=shape)
         self.axis = axis
 
-    def forward(self, inp: np.ndarray) -> np.ndarray:
-        """Apply the transform to the input.
+    def index_array(self, ss_idxs: np.ndarray, fs_idxs: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """Filter the indices of a frame `(ss_idxs, fs_idxs)` according to 
+        the mirroring transform.
 
         Args:
-            inp : Input data array.
+            ss_idxs: Slow axis indices of a frame.
+            fs_idxs: Fast axis indices of a frame.
 
         Returns:
-            Output data array.
+            A tuple of filtered frame indices `(ss_idxs, fs_idxs)`.
         """
-        if self.check_shape(inp.shape[-2:]):
-            return np.flip(inp, axis=self.axis - 2)
-
-        raise ValueError(f'input array has invalid shape: {str(inp.shape):s}')
-
-    def backward(self, inp: np.ndarray, out: Optional[np.ndarray]=None) -> np.ndarray:
-        """Tranform back a data array.
-
-        Args:
-            inp : Input tranformed data array.
-            out : Output data array. A new one created if not prodived.
-
-        Returns:
-            Output data array.
-        """
-        if out is None:
-            out = np.empty(inp.shape[:-2] + self.shape, dtype=inp.dtype)
-
-        if self.check_shape(out.shape[-2:]):
-            out[...] = self.forward(inp)
-            return out
-
-        raise ValueError(f'output array has invalid shape: {str(out.shape):s}')
+        if self.axis == 0:
+            return (ss_idxs[::-1], fs_idxs[::-1])
+        if self.axis == 1:
+            return (ss_idxs[:, ::-1], fs_idxs[:, ::-1])
+        raise ValueError('Axis must equal to 0 or 1')
 
     def state_dict(self) -> Dict[str, Any]:
         """Returns the state of the transform as a dict.
@@ -303,89 +173,49 @@ class Mirror(Transform):
         Returns:
             A dictionary with all the attributes.
         """
-        return {'axis': self.axis, 'shape': self.shape}
+        return {'axis': self.axis}
 
 class ComposeTransforms(Transform):
     """Composes several transforms together.
 
     Attributes:
         transforms: List of transforms.
-        shape : Data frame shape.
     """
-    def __init__(self, transforms: List[Transform], shape: Optional[Tuple[int, int]]=None) -> None:
+    transforms : List[Transform]
+
+    def __init__(self, transforms: List[Transform]) -> None:
         """
         Args:
             transforms: List of transforms.
-            shape : Data frame shape.
         """
-        super().__init__(shape=shape)
         if len(transforms) < 2:
             raise ValueError('Two or more transforms are needed to compose')
 
-        pdict = transforms[0].state_dict()
-        pdict['shape'] = self.shape
-        self.transforms = [type(transforms[0])(**pdict),]
-
-        for transform in transforms[1:]:
+        self.transforms = []
+        for transform in transforms:
             pdict = transform.state_dict()
-            pdict['shape'] = None
             self.transforms.append(type(transform)(**pdict))
 
-    def __iter__(self) -> Iterable:
+    def __iter__(self) -> Iterator[Transform]:
         return self.transforms.__iter__()
 
     def __getitem__(self, idx: Indices) -> Transform:
         return self.transforms[idx]
 
-    def forward(self, inp: np.ndarray) -> np.ndarray:
-        """Apply the transform to the input.
+    def index_array(self, ss_idxs: np.ndarray, fs_idxs: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """Filter the indices of a frame `(ss_idxs, fs_idxs)` according to 
+        the composed transform.
 
         Args:
-            inp : Input data array.
+            ss_idxs: Slow axis indices of a frame.
+            fs_idxs: Fast axis indices of a frame.
 
         Returns:
-            Output data array.
+            A tuple of filtered frame indices `(ss_idxs, fs_idxs)`.
         """
         for transform in self:
-            inp = transform.forward(inp)
-        return inp
-
-    def backward(self, inp: np.ndarray, out: Optional[np.ndarray]=None) -> np.ndarray:
-        """Tranform back a data array.
-
-        Args:
-            inp : Input tranformed data array.
-            out : Output data array. A new one created if not prodived.
-
-        Returns:
-            Output data array.
-        """
-        for transform in self[1::-1]:
-            inp = transform.backward(inp)
-        return self[0].backward(inp, out)
-
-    def integrate(self, axis: int) -> ComposeTransforms:
-        """Return a transform version for the dataset integrated
-        along the axis.
-
-        Args:
-            axis : Axis of integration.
-
-        Returns:
-            A new transform version.
-        """
-        pdict = self.state_dict()
-        pdict['transforms'] = [transform.integrate(axis) for transform in pdict['transforms']]
-
-        if pdict['shape']:
-            if axis == 0:
-                pdict['shape'] = (1, pdict['shape'][1])
-            elif axis == 1:
-                pdict['shape'] = (pdict['shape'][0], 1)
-            else:
-                raise ValueError('Axis must be equal to 0 or 1')
-
-        return ComposeTransforms(**pdict)
+            ss_idxs, fs_idxs = transform.index_array(ss_idxs, fs_idxs)
+        return ss_idxs, fs_idxs
 
     def state_dict(self) -> Dict[str, Any]:
         """Returns the state of the transform as a dict.
@@ -393,7 +223,7 @@ class ComposeTransforms(Transform):
         Returns:
             A dictionary with all the attributes.
         """
-        return {'transforms': self.transforms, 'shape': self.shape}
+        return {'transforms': self.transforms[:]}
 
 class STData(DataContainer):
     """Speckle tracking data container class. Needs a :class:`pyrost.CXIStore` file
@@ -478,7 +308,7 @@ class STData(DataContainer):
         """
         Args:
             input_file : HDF5 or CXI file handler of input files.
-            ouput_file : Output file handler.
+            output_file : Output file handler.
             transform : Frames transform object.
             kwargs : Dictionary of the necessary and optional data attributes specified
                 in :class:`pyrost.STData` notes. All the necessary attributes must be
@@ -526,51 +356,27 @@ class STData(DataContainer):
                 kind = self.input_file.protocol.get_kind(attr)
                 if kind == 'sequence':
                     shape[0] = data.shape[0]
-                if kind == 'stack':
-                    shape[:] = data.shape
+
+        for attr, data in self.items():
+            if attr in self.input_file.protocol and data is not None:
+                kind = self.input_file.protocol.get_kind(attr)
                 if kind == 'frame':
                     shape[1:] = data.shape
+
+        for attr, data in self.items():
+            if attr in self.input_file.protocol and data is not None:
+                kind = self.input_file.protocol.get_kind(attr)
+                if kind == 'stack':
+                    shape[:] = data.shape
         return tuple(shape)
 
-    def _basis_vectors(self) -> np.ndarray:
-        def get_axis(transform: Transform):
-            return transform.state_dict().get('axis', -1)
-
-        axes = []
-        if isinstance(self.transform, Transform):
-            if isinstance(self.transform, ComposeTransforms):
-                for t in self.transform:
-                    axes.append(get_axis(t))
-            else:
-                axes.append(get_axis(self.transform))
-
-        basis_vectors = np.copy(self.basis_vectors)
-        for axis in axes:
-            if axis > 0:
-                basis_vectors[:, axis] *= -1
-        return basis_vectors
-
     def _pixel_translations(self) -> np.ndarray:
-        basis_vectors = self._basis_vectors()
-        pixel_translations = (self.translations[:, None] * basis_vectors).sum(axis=-1)
+        pixel_translations = (self.translations[:, None] * self.basis_vectors).sum(axis=-1)
         mag = np.abs(self.distance / np.array([self.defocus_y, self.defocus_x]))
-        pixel_translations *= mag / (basis_vectors**2).sum(axis=-1)
+        pixel_translations *= mag / (self.basis_vectors**2).sum(axis=-1)
         pixel_translations -= pixel_translations[0]
         pixel_translations -= pixel_translations.mean(axis=0)
         return pixel_translations
-
-    def _transform_attribute(self, attr: str, data: np.ndarray, transform: Transform,
-                             mode: str='forward') -> np.ndarray:
-        kind = self.input_file.protocol.get_kind(attr)
-        if kind in ['stack', 'frame']:
-            if mode == 'forward':
-                data = transform.forward(data)
-            elif mode == 'backward':
-                data = transform.backward(data)
-            else:
-                raise ValueError(f'Invalid mode keyword: {mode}')
-
-        return data
 
     def pixel_map(self, dtype: np.dtype=np.float64) -> np.ndarray:
         """Return a preliminary pixel mapping.
@@ -581,17 +387,27 @@ class STData(DataContainer):
         Returns:
             Pixel mapping array.
         """
-        if sum(self.shape[1:]):
-            pixel_map = np.indices(self.shape[1:], dtype=dtype)
+        with self.input_file:
+            self.input_file.update_indices()
+            shape = self.input_file.read_shape()
 
-            if self._isdefocus:
-                if self.defocus_y < 0.0 and pixel_map[0, 0, 0] < pixel_map[0, -1, 0]:
-                    pixel_map = np.flip(pixel_map, axis=1)
-                if self.defocus_x < 0.0 and pixel_map[1, 0, 0] < pixel_map[1, 0, -1]:
-                    pixel_map = np.flip(pixel_map, axis=2)
-            return np.asarray(pixel_map, order='C')
+        # Check if STData is integrated
+        if self.shape[1] == 1:
+            shape = (1, shape[1])
+        if self.shape[2] == 1:
+            shape = (shape[0], 1)
 
-        raise AttributeError('Data has not been loaded')
+        ss_idxs, fs_idxs = np.indices(shape, dtype=dtype)
+        if self.transform:
+            ss_idxs, fs_idxs = self.transform.index_array(ss_idxs, fs_idxs)
+        pixel_map = np.stack((ss_idxs, fs_idxs))
+
+        if self._isdefocus:
+            if self.defocus_y < 0.0:
+                pixel_map = np.flip(pixel_map, axis=1)
+            if self.defocus_x < 0.0:
+                pixel_map = np.flip(pixel_map, axis=2)
+        return np.asarray(pixel_map, order='C')
 
     @dict_to_object
     def load(self, attributes: Union[str, List[str], None]=None, idxs: Optional[Iterable[int]]=None,
@@ -614,6 +430,7 @@ class STData(DataContainer):
         """
         with self.input_file:
             self.input_file.update_indices()
+            shape = self.input_file.read_shape()
 
             if attributes is None:
                 attributes = [attr for attr in self.input_file.keys()
@@ -623,7 +440,7 @@ class STData(DataContainer):
 
             if idxs is None:
                 idxs = self.input_file.indices()
-            data_dict = {'frames': idxs}
+            data_dict = {'frames': idxs, 'good_frames': None}
 
             for attr in attributes:
                 if attr not in self.input_file.keys():
@@ -631,16 +448,20 @@ class STData(DataContainer):
                 if attr not in self.init_set:
                     raise ValueError(f"Invalid attribute: '{attr}'")
 
-                data = self.input_file.load_attribute(attr, idxs, processes, verbose)
-
-                if self.transform and data is not None:
-                    data = self._transform_attribute(attr, data, self.transform)
+                if self.transform and shape[0] * shape[1]:
+                    ss_idxs, fs_idxs = np.indices(shape)
+                    ss_idxs, fs_idxs = self.transform.index_array(ss_idxs, fs_idxs)
+                    data = self.input_file.load_attribute(attr, idxs=idxs, ss_idxs=ss_idxs, fs_idxs=fs_idxs,
+                                                          processes=processes, verbose=verbose)
+                else:
+                    data = self.input_file.load_attribute(attr, idxs=idxs, processes=processes,
+                                                          verbose=verbose)
 
                 data_dict[attr] = data
 
         return data_dict
 
-    def save(self, attributes: Union[str, List[str], None]=None, apply_transform: bool=False,
+    def save(self, attributes: Union[str, List[str], None]=None,
              mode: str='append', idxs: Optional[Iterable[int]]=None) -> None:
         """Save data arrays of the data attributes contained in the container to
         an output file.
@@ -648,9 +469,6 @@ class STData(DataContainer):
         Args:
             attributes : List of attributes to save. Saves all the data attributes
                 contained in the container by default.
-            apply_transform : Apply `transform` to the data arrays if True. The
-                saved data will be expanded to comply with the original shape of
-                detector grid.
             mode : Writing mode:
 
                 * `append` : Append the data array to already existing dataset.
@@ -678,10 +496,6 @@ class STData(DataContainer):
 
                     if kind in ['stack', 'sequence']:
                         data = data[self.good_frames]
-
-                    if apply_transform and self.transform:
-                        data = self._transform_attribute(attr, data, self.transform,
-                                                         mode='backward')
 
                     self.output_file.save_attribute(attr, np.asarray(data), mode=mode, idxs=idxs)
 
@@ -733,9 +547,6 @@ class STData(DataContainer):
         """
         if self._isdata:
             data_dict = {}
-
-            if self.transform:
-                data_dict['transform'] = self.transform.integrate(axis)
 
             for attr, data in self.items():
                 if attr in self.input_file.protocol and data is not None:
@@ -831,7 +642,11 @@ class STData(DataContainer):
         if self.transform is None:
             for attr, data in self.items():
                 if attr in self.input_file.protocol and data is not None:
-                    data_dict[attr] = self._transform_attribute(attr, data, transform)
+                    kind = self.input_file.protocol.get_kind(attr)
+                    if kind in ['stack', 'frame']:
+                        data = transform.forward(data)
+                    data_dict[attr] = data
+
             return data_dict
 
         for attr, data in self.items():
@@ -1049,7 +864,7 @@ class STData(DataContainer):
             hval = st_obj.find_hopt(method=ref_method)
 
         for df1_x, df1_y in tqdm(zip(defoci_x.ravel(), defoci_y.ravel()),
-                               total=len(defoci_x), disable=not verbose,
+                               total=defoci_x.size, disable=not verbose,
                                desc='Generating defocus sweep'):
             st_obj.di_pix *= np.abs(df0_y / df1_y)
             st_obj.dj_pix *= np.abs(df0_x / df1_x)
@@ -1194,9 +1009,9 @@ class STData(DataContainer):
         if self._isdata:
 
             dtype = np.promote_types(self.whitefield.dtype, int)
-            cor_data = np.zeros(self.shape, dtype=dtype)
-            np.subtract(self.data, self.whitefield, dtype=dtype,
-                        where=self.mask, out=cor_data)
+            cor_data = np.zeros(self.shape, dtype=dtype)[self.good_frames]
+            np.subtract(self.data[self.good_frames], self.whitefield, dtype=dtype,
+                        where=self.mask[self.good_frames], out=cor_data)
             mat_svd = np.tensordot(cor_data, cor_data, axes=((1, 2), (1, 2)))
             eig_vals, eig_vecs = np.linalg.eig(mat_svd)
             effs = np.tensordot(eig_vecs, cor_data, axes=((0,), (0,)))

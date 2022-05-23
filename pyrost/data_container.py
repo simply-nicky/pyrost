@@ -1,7 +1,7 @@
 """:class:`DataContainer` class implementation.
 """
 from __future__ import annotations
-from typing import (Any, Callable, Dict, ItemsView, Iterable,
+from typing import (Any, Callable, Dict, ItemsView, Iterable, Iterator,
                     List, Optional, ValuesView, TypeVar, Type)
 
 T = TypeVar('T')
@@ -126,7 +126,7 @@ class DataContainer:
             if self.__dict__.get(attr, None) is None:
                 self.__setattr__(attr, init_func())
 
-    def __iter__(self) -> Iterable:
+    def __iter__(self) -> Iterator[str]:
         return (self.attr_set | self.init_set).__iter__()
 
     def __contains__(self, attr: str) -> bool:

@@ -15,11 +15,12 @@ Examples:
     'data': 'True', 'defocus_x': 'False', '...': '...'}}
 """
 from __future__ import annotations
+from functools import partial
 from multiprocessing import Pool
 import os
 from configparser import ConfigParser
 from types import TracebackType
-from typing import (Dict, ItemsView, Iterable, Iterator, KeysView,
+from typing import (Callable, Dict, ItemsView, Iterable, Iterator, KeysView,
                     List, Optional, Tuple, Union, ValuesView)
 import h5py
 import numpy as np
@@ -27,6 +28,7 @@ from tqdm.auto import tqdm
 from .ini_parser import ROOT_PATH, INIParser
 
 CXI_PROTOCOL = os.path.join(ROOT_PATH, 'config/cxi_protocol.ini')
+Indices = Union[int, slice, np.ndarray, List[int], Tuple[int]]
 
 class CXIProtocol(INIParser):
     """CXI protocol class. Contains a CXI file tree path with
@@ -312,6 +314,14 @@ class CXIProtocol(INIParser):
 
         return np.array([files, cxi_paths, fidxs], dtype=object).T
 
+def initializer(read_worker: Callable[[np.ndarray, Indices, Indices], np.ndarray],
+                ss_idxs: np.ndarray, fs_idxs: np.ndarray):
+    global worker
+    worker = partial(read_worker, ss_idxs=ss_idxs, fs_idxs=fs_idxs)
+
+def read_frame(index: np.ndarray) -> np.ndarray:
+    return worker(index)
+
 class CXIStore():
     """File handler class for HDF5 and CXI files. Provides an interface to
     save and load data attributes to a file. Support multiple files. The handler
@@ -361,7 +371,7 @@ class CXIStore():
     def __contains__(self, attr: str) -> bool:
         return attr in self._indices
 
-    def __iter__(self) -> Iterable:
+    def __iter__(self) -> Iterator:
         return self._indices.__iter__()
 
     def __repr__(self) -> str:
@@ -462,49 +472,73 @@ class CXIStore():
         """
         return self._indices.items()
 
-    def _read_chunk(self, index: np.ndarray) -> np.ndarray:
-        return self.file_dict[index[0]][index[1]][index[2]]
+    def read_shape(self) -> Tuple[int, int]:
+        """Read the input files and return a shape of the `frame` type data attribute.
+
+        Returns:
+            The shape of the 2D `frame`-like data attribute.
+        """
+        if self:
+            for attr, indices in self._indices.items():
+                kind = self.protocol.get_kind(attr)
+                if kind in ['stack', 'frame']:
+                    return self.file_dict[indices[0, 0]][indices[0, 1]].shape[-2:]
+
+            return (0, 0)
+
+        raise ValueError('Invalid file objects: the file is closed')
 
     @staticmethod
-    def _read_worker(index: np.ndarray) -> np.ndarray:
-        with h5py.File(index[0], 'r') as cxi_file:
-            return cxi_file[index[1]][index[2]]
+    def _read_worker_sequence(index: np.ndarray) -> np.ndarray:
+        return h5py.File(index[0])[index[1]][index[2]]
 
-    def _load_stack(self, attr: str, indices: Optional[Iterable[int]]=None, processes: int=1,
-                    verbose: bool=True) -> np.ndarray:
+    @staticmethod
+    def _read_worker_frame(index: np.ndarray, ss_idxs: Indices, fs_idxs: Indices) -> np.ndarray:
+        return h5py.File(index[0])[index[1]][index[2]][..., ss_idxs, fs_idxs]
+
+    def _load_stack(self, attr: str, idxs: Optional[Indices], ss_idxs: Indices,
+                    fs_idxs: Indices, processes: int, verbose: bool) -> np.ndarray:
         stack = []
-        if indices is None:
-            indices = self.indices()
+        if idxs is None:
+            idxs = self.indices()
+        idxs = np.atleast_1d(idxs)
 
-        with Pool(processes=processes) as pool:
-            for frame in tqdm(pool.imap(type(self)._read_worker, self._indices[attr][indices]),
-                              total=self.indices()[indices].size, disable=not verbose,
+        with Pool(processes=processes, initializer=initializer,
+                  initargs=(type(self)._read_worker_frame, ss_idxs, fs_idxs)) as pool:
+            for frame in tqdm(pool.imap(read_frame, self._indices[attr][idxs]),
+                              total=self.indices()[idxs].size, disable=not verbose,
                               desc=f'Loading {attr:s}'):
                 stack.append(frame)
 
         return self.protocol.cast(attr, np.stack(stack, axis=0))
 
-    def _load_frame(self, attr: str) -> np.ndarray:
-        return self.protocol.cast(attr, self._read_chunk(self._indices[attr][0]))
+    def _load_frame(self, attr: str, ss_idxs: Indices, fs_idxs: Indices) -> np.ndarray:
+        dset = self._read_worker_frame(self._indices[attr][0], ss_idxs, fs_idxs)
+        return self.protocol.cast(attr, dset)
 
-    def _load_sequence(self, attr: str, indices: Optional[Iterable[int]]=None) -> np.ndarray:
+    def _load_sequence(self, attr: str, idxs: Optional[Indices]) -> np.ndarray:
         sequence = []
-        if indices is None:
-            indices = self.indices()
+        if idxs is None:
+            idxs = self.indices()
+        idxs = np.atleast_1d(idxs)
 
-        for index in self._indices[attr][indices]:
-            sequence.append(self._read_chunk(index))
+        for index in self._indices[attr][idxs]:
+            sequence.append(self._read_worker_sequence(index))
 
         return self.protocol.cast(attr, np.array(sequence))
 
-    def load_attribute(self, attr: str, indices: Optional[Iterable[int]]=None, processes: int=1,
-                       verbose: bool=True) -> np.ndarray:
+    def load_attribute(self, attr: str, idxs: Optional[Indices]=None, processes: int=1,
+                       ss_idxs: Indices=slice(None), fs_idxs: Indices=slice(None), verbose: bool=True) -> np.ndarray:
         """Load a data attribute from the files.
 
         Args:
             attr : Attribute's name to load.
-            indices : A list of frames' indices to load.
+            idxs : A list of frames' indices to load.
             processes : Number of parallel workers used during the loading.
+            ss_idxs : Slow (vertical) axis indices used to load the data attributes of
+                `frame` and `stack` types.
+            fs_idxs : Fast (horizontal) axis indices used to lead the data attributes
+                of `frame` and `stack` types.
             verbose : Set the verbosity of the loading process.
 
         Raises:
@@ -520,14 +554,16 @@ class CXIStore():
 
         if self:
             if kind == 'stack':
-                return self._load_stack(attr=attr, indices=indices, processes=processes,
-                                        verbose=verbose)
-            if kind in ['frame', 'scalar']:
-                return self._load_frame(attr=attr)
+                return self._load_stack(attr=attr, idxs=idxs, processes=processes,
+                                        ss_idxs=ss_idxs, fs_idxs=fs_idxs, verbose=verbose)
+            if kind == 'frame':
+                return self._load_frame(attr=attr, ss_idxs=ss_idxs, fs_idxs=fs_idxs, )
+            if kind == 'scalar':
+                return self._load_sequence(attr, idxs=0)
             if kind == 'sequence':
-                return self._load_sequence(attr=attr, indices=indices)
+                return self._load_sequence(attr=attr, idxs=idxs)
 
-        return np.array([], dtype=self.protocol.get_dtype(attr))
+        raise ValueError('Invalid file objects: the file is closed')
 
     def find_dataset(self, attr: str) -> str:
         """Return the path to the attribute from the first file. Return the default
@@ -546,7 +582,7 @@ class CXIStore():
         return self.protocol.get_load_paths(attr)[0]
 
     def _save_stack(self, attr: str, data: np.ndarray, mode: str='overwrite',
-                    idxs: Optional[Iterable[int]]=None) -> None:
+                    idxs: Optional[Indices]=None) -> None:
         cxi_path = self.find_dataset(attr)
 
         if cxi_path in self.file and self.file[cxi_path].shape[1:] == data.shape[1:]:
@@ -610,9 +646,10 @@ class CXIStore():
         if self:
             if kind in ['stack', 'sequence']:
                 return self._save_stack(attr=attr, data=data, mode=mode, idxs=idxs)
-            elif kind in ['frame', 'scalar']:
+
+            if kind in ['frame', 'scalar']:
                 return self._save_data(attr=attr, data=data)
-            else:
-                raise ValueError(f'Invalid kind: {kind:s}')
+
+            raise ValueError(f'Invalid kind: {kind:s}')
 
         raise ValueError('Invalid file objects: the file is closed')
