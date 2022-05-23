@@ -16,7 +16,7 @@ extension_args = {'language': 'c',
                   'extra_compile_args': ['-fopenmp', '-std=c99', '-Wno-unreachable-code', '-Wno-maybe-uninitialized',
                                          '-Wno-sometimes-uninitialized', '-Wno-unused-variable'],
                   'extra_link_args': ['-lgomp', '-Wl,-rpath,/usr/local/lib'],
-                  'libraries': ['gsl', 'gslcblas', 'fftw3', 'fftw3_omp'],
+                  'libraries': ['gsl', 'gslcblas', 'fftw3', 'fftw3f', 'fftw3_omp', 'fftw3f_omp'],
                   'library_dirs': ['/usr/local/lib',
                                    os.path.join(sys.prefix, 'lib')],
                   'include_dirs': [numpy.get_include(),
@@ -45,7 +45,7 @@ with open('README.md', 'r') as readme:
     long_description = readme.read()
 
 setup(name='pyrost',
-      version='0.7.3',
+      version='0.7.4',
       author='Nikolay Ivanov',
       author_email="nikolay.ivanov@desy.de",
       long_description=long_description,

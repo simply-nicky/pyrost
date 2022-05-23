@@ -33,7 +33,9 @@ Performing the simulation
 Now you're able to generate the simulated data. It takes time to calculate the
 wavefronts, :class:`pyrost.simulation.STSim` will post it's status during the process. You can
 either generate a stack of frames or a ptychograph. :class:`pyrost.simulation.STConverter`
-saves the results to a CXI file using the provided CXI protocol.
+generates all the data attributes necessary for the speckle tracking reconstruction. Also
+it provides an interface to save the generated attributes to a CXI file with
+:func:`pyrost.simulation.STConverter.save` method.
 
 .. testsetup:: [st_simulation]
 
@@ -57,7 +59,12 @@ saves the results to a CXI file using the provided CXI protocol.
     :width: 100 %
     :alt: Ptychograph.
 
-Or you can directly generate an :class:`pyrost.STData` data container to perform the speckle tracking algorithm.
+Or you can save the simulated data and generate an :class:`pyrost.STData` data container with 
+:func:`pyrost.simulation.STConverter` method.
+
+.. note:: :func:`pyrost.simulation.STConverter` returns a :class:`pyrost.STData` container
+    without any attributes already loaded, use :func:`pyrost.STData.load` to load the data
+    from the file.
 
 .. doctest:: [st_simulation]
 
@@ -65,7 +72,7 @@ Or you can directly generate an :class:`pyrost.STData` data container to perform
     >>> ptych = sim_obj.ptychograph()
     >>> st_conv = st_sim.STConverter(sim_obj, ptych)
     >>> data = st_conv.export_data('sim.cxi')
-
+    >>> data = data.load()
 
 Command-line interface
 ----------------------

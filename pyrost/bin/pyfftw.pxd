@@ -40,6 +40,7 @@ ctypedef struct _fftw_iodim:
     int _is
     int _os
 
+ctypedef float cfloat[2]
 ctypedef double cdouble[2]
 
 cdef extern from "cpu.h":
@@ -57,6 +58,12 @@ cdef extern from 'fftw3.h':
 
     ctypedef fftw_plan_struct *fftw_plan
 
+    # Single precision plans
+    ctypedef struct fftwf_plan_struct:
+        pass
+
+    ctypedef fftwf_plan_struct *fftwf_plan
+
     # The stride info structure. I think that strictly
     # speaking, this should be defined with a type suffix
     # on fftw (ie fftw, fftwf or fftwl), but since the
@@ -72,11 +79,25 @@ cdef extern from 'fftw3.h':
             cdouble *_in, cdouble *_out,
             int sign, unsigned flags) nogil
 
+    # Single precision complex planner
+    fftwf_plan fftwf_plan_guru_dft(
+            int rank, fftw_iodim *dims,
+            int howmany_rank, fftw_iodim *howmany_dims,
+            cfloat *_in, cfloat *_out,
+            int sign, unsigned flags) nogil
+
     # Double precision real to complex planner
     fftw_plan fftw_plan_guru_dft_r2c(
             int rank, fftw_iodim *dims,
             int howmany_rank, fftw_iodim *howmany_dims,
             double *_in, cdouble *_out,
+            unsigned flags) nogil
+
+    # Single precision real to complex planner
+    fftwf_plan fftwf_plan_guru_dft_r2c(
+            int rank, fftw_iodim *dims,
+            int howmany_rank, fftw_iodim *howmany_dims,
+            float *_in, cfloat *_out,
             unsigned flags) nogil
 
     # Double precision complex to real planner
@@ -86,6 +107,13 @@ cdef extern from 'fftw3.h':
             cdouble *_in, double *_out,
             unsigned flags) nogil
 
+    # Single precision complex to real planner
+    fftwf_plan fftwf_plan_guru_dft_c2r(
+            int rank, fftw_iodim *dims,
+            int howmany_rank, fftw_iodim *howmany_dims,
+            cfloat *_in, float *_out,
+            unsigned flags) nogil
+
     # Double precision real planner
     fftw_plan fftw_plan_guru_r2r(
             int rank, fftw_iodim *dims,
@@ -93,36 +121,70 @@ cdef extern from 'fftw3.h':
             double *_in, double *_out,
             int *kind, unsigned flags)
 
+    # Single precision real planner
+    fftwf_plan fftwf_plan_guru_r2r(
+            int rank, fftw_iodim *dims,
+            int howmany_rank, fftw_iodim *howmany_dims,
+            float *_in, float *_out,
+            int *kind, unsigned flags)
     # Double precision complex new array execute
     void fftw_execute_dft(fftw_plan,
           cdouble *_in, cdouble *_out) nogil
+
+    # Single precision complex new array execute
+    void fftwf_execute_dft(fftwf_plan,
+          cfloat *_in, cfloat *_out) nogil
 
     # Double precision real to complex new array execute
     void fftw_execute_dft_r2c(fftw_plan,
           double *_in, cdouble *_out) nogil
 
+    # Single precision real to complex new array execute
+    void fftwf_execute_dft_r2c(fftwf_plan,
+          float *_in, cfloat *_out) nogil
+
     # Double precision complex to real new array execute
     void fftw_execute_dft_c2r(fftw_plan,
           cdouble *_in, double *_out) nogil
+
+    # Single precision complex to real new array execute
+    void fftwf_execute_dft_c2r(fftwf_plan,
+          cfloat *_in, float *_out) nogil
 
     # Double precision real new array execute
     void fftw_execute_r2r(fftw_plan,
           double *_in, double *_out) nogil
 
+    # Single precision real new array execute
+    void fftwf_execute_r2r(fftwf_plan,
+          float *_in, float *_out) nogil
+
     # Double precision plan destroyer
     void fftw_destroy_plan(fftw_plan)
 
+    # Single precision plan destroyer
+    void fftwf_destroy_plan(fftwf_plan)
+
     # Double precision set timelimit
     void fftw_set_timelimit(double seconds)
+
+    # Single precision set timelimit
+    void fftwf_set_timelimit(double seconds)
 
     # Threading routines
     # Double precision
     void fftw_init_threads()
     void fftw_plan_with_nthreads(int n)
 
+    # Single precision
+    void fftwf_init_threads()
+    void fftwf_plan_with_nthreads(int n)
+
     # cleanup routines
     void fftw_cleanup()
+    void fftwf_cleanup()
     void fftw_cleanup_threads()
+    void fftwf_cleanup_threads()
 
     double FFTW_NO_TIMELIMIT
 

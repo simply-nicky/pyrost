@@ -68,14 +68,14 @@ def test_save_and_load_sim(st_converter: st_sim.STConverter, temp_dir: str):
     out_path = os.path.join(temp_dir, 'sim.cxi')
     st_converter.save(out_path)
     assert os.path.isfile(out_path)
-    data = st_converter.export_data(out_path)
+    data = st_converter.export_data(out_path).load()
     for attr in data.input_file:
         assert attr in data.contents()
 
 @pytest.mark.standalone
 def test_st_update_sim(st_converter: st_sim.STConverter, temp_dir: str):
     out_path = os.path.join(temp_dir, 'sim.cxi')
-    data = st_converter.export_data(out_path)
+    data = st_converter.export_data(out_path).load()
     st_obj = data.get_st()
     h0 = st_obj.find_hopt()
     st_res = st_obj.train(search_window=(0.0, 10.0, 0.1), h0=h0, blur=8.0)

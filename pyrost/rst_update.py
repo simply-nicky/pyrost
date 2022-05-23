@@ -925,7 +925,7 @@ class SpeckleTracking(DataContainer):
                                num_threads=self.num_threads)
         return error
 
-    def CV_curve(self, harr: np.ndarray, method: str='KerReg') -> np.ndarray:
+    def CV_curve(self, harr: np.ndarray, method: str='KerReg', verbose: bool=True) -> np.ndarray:
         """Return a set of cross-validation errors for a set of kernel
         bandwidths.
 
@@ -937,6 +937,8 @@ class SpeckleTracking(DataContainer):
                 * `KerReg` : Kernel regression algorithm.
                 * `LOWESS` : Local weighted linear regression.
 
+            verbose : Set the verbosity of the process.
+
         Returns:
             An array of cross-validation errors.
 
@@ -944,6 +946,7 @@ class SpeckleTracking(DataContainer):
             :func:`pyrost.bin.pm_total_error` : Full details of the error metric.
         """
         mse_list = []
-        for hval in np.array(harr, ndmin=1):
+        for hval in tqdm(np.array(harr, ndmin=1), total=len(harr),
+                         disable=not verbose, desc='Calculating CV'):
             mse_list.append(self.CV(hval, method=method))
         return np.array(mse_list)

@@ -306,8 +306,6 @@ class STConverter(DataContainer):
         * defocus_y : Defocus distance along the vertical detector axis.
         * distance : Sample-to-detector distance.
         * translations : Sample's translations.
-        * transform : a :class:`pyrost.Crop` transform, that crops the frames
-          according to automatically generated region of interest.
         * wavelength : Incoming beam's wavelength.
         * x_pixel_size : Pixel's size along the horizontal detector axis.
         * y_pixel_size : Pixel's size along the vertical detector axis.
@@ -316,7 +314,7 @@ class STConverter(DataContainer):
     unit_vector_ss = np.array([0, -1, 0])
     attr_set = {'sim_obj', 'data', 'crd_rat'}
     init_set = {'basis_vectors', 'defocus_x', 'defocus_y', 'distance', 'translations',
-                'transform', 'wavelength', 'x_pixel_size', 'y_pixel_size'}
+                'wavelength', 'x_pixel_size', 'y_pixel_size'}
 
     # Necessary attributes
     sim_obj         : STSim
@@ -328,7 +326,6 @@ class STConverter(DataContainer):
     defocus_x       : float
     defocus_y       : float
     distance        : float
-    transform       : Crop
     translations    : np.ndarray
     wavelength      : float
     x_pixel_size    : float
@@ -351,8 +348,7 @@ class STConverter(DataContainer):
                              wavelength=lambda: self.crd_rat * self.sim_obj.params.wl,
                              x_pixel_size=lambda: self.crd_rat * self.sim_obj.params.pix_size,
                              y_pixel_size=lambda: self.crd_rat * self.sim_obj.params.pix_size,
-                             basis_vectors=self._basis_vectors, transform=self._crop,
-                             translations=self._translations)
+                             basis_vectors=self._basis_vectors, translations=self._translations)
 
         self._init_attributes()
 
@@ -362,11 +358,14 @@ class STConverter(DataContainer):
         vec_ss = np.tile(pix_vec * self.unit_vector_ss, (self.sim_obj.params.n_frames, 1))
         return np.stack((vec_ss, vec_fs), axis=1)
 
-    def _crop(self):
-        crop = Crop(self.sim_obj.roi)
-        if self.data.shape[1] == 1:
-            crop = crop.integrate(axis=0)
-        return crop
+    def get_transform(self):
+        """Return a :class:`pyrost.Crop` transform corresponding to the ROI of
+        the beam on the detector.
+
+        Returns:
+            :class:`pyrost.Crop` transform corresponding to the ROI of the beam.
+        """
+        return Crop(self.sim_obj.roi)
 
     def _translations(self):
         t_arr = np.zeros((self.sim_obj.params.n_frames, 3))
@@ -375,41 +374,30 @@ class STConverter(DataContainer):
 
     def export_data(self, out_path: str, apply_transform: bool=True,
                     protocol: CXIProtocol=CXIProtocol.import_default()) -> STData:
-        """Export simulated data `data` (fetched from :func:`STSim.frames`
-        or :func:`STSim.ptychograph`) and a :class:`STSim` object `sim_obj`
-        to a data container.
+        """Save simulated data to the path specified in `out_path` and return
+        :class:`pyrost.STData` object.
 
         Args:
             out_path : Path to the folder, where all the files are saved.
-            apply_transform : Apply :class:`pyrost.Crop` to crop in the data with
-                the region of interest `roi`.
+            apply_transform : Apply the cropping transform from :func:`STSim.get_transform`.
             protocol : CXI file protocol.
 
         Returns:
-            Data container :class:`pyrost.STData` with all the necessary
-            attributes generated.
+            Data container :class:`pyrost.STData`.
         """
-        data = self.data
+        self.save(out_path, apply_transform, protocol)
         if apply_transform:
-            data = self.transform.forward(data)
-        data_dict = {attr: self.get(attr) for attr in self.init_set}
-        out_file = CXIStore(out_path, mode='a', protocol=protocol)
-        with out_file:
-            pass
-        return STData(input_file=CXIStore(out_path, protocol=protocol),
-                      output_file=out_file, data=data, **data_dict)
+            return STData(CXIStore(out_path, protocol=protocol))
+        return STData(CXIStore(out_path, protocol=protocol), transform=self.get_transform())
 
     def save(self, out_path: str, apply_transform: bool=True,
              protocol: CXIProtocol=CXIProtocol.import_default(),
-             mode: str='append', idxs: Optional[Iterable[int]]=None) -> None:
-        """Export simulated data `data` (fetched from :func:`STSim.frames`
-        or :func:`STSim.ptychograph`), `smp_pos`, and `st_params` to `dir_path`
-        folder.
+             mode: str='overwrite', idxs: Optional[Iterable[int]]=None) -> None:
+        """Save simulated data to the path specified in `out_path`.
 
         Args:
             out_path : Path to the folder, where all the files are saved.
-            apply_transform : Apply :class:`pyrost.Crop` to crop in the data with
-                the region of interest `roi`.
+            apply_transform :  Apply the cropping transform from :func:`STSim.get_transform`.
             protocol : CXI file protocol.
             mode : Writing mode:
 
@@ -423,9 +411,13 @@ class STConverter(DataContainer):
         Returns:
             None
         """
-        data = self.export_data(out_path=out_path, protocol=protocol,
-                                apply_transform=apply_transform)
-        data.save(mode=mode, idxs=idxs)
+        data_dict = {attr: self.get(attr) for attr in self.init_set}
+        out_file = CXIStore(out_path, mode='a', protocol=protocol)
+        data_obj = STData(input_file=CXIStore(out_path, protocol=protocol),
+                          output_file=out_file, data=self.data, **data_dict)
+        if apply_transform:
+            data_obj = data_obj.update_transform(self.get_transform())
+        data_obj.save(mode=mode, idxs=idxs)
 
 def main():
     """Main fuction to run Speckle Tracking simulation and save the results to a CXI file.

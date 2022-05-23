@@ -3,7 +3,8 @@ Image transforms
 
 Transforms are common image transformations. They can be chained together using :class:`pyrost.ComposeTransforms`.
 You pass a :class:`pyrost.Transform` instance to a data container :class:`pyrost.STData`. All transform classes
-are inherited from the abstract :class:`pyrost.Transform` class.
+are inherited from the abstract :class:`pyrost.Transform` class. Use :func:`pyrost.Transform.forward` to apply
+transform to an image.
 
 :class:`Transform <pyrost.Transform>`
 -----------------------------------------------------
@@ -16,6 +17,7 @@ are inherited from the abstract :class:`pyrost.Transform` class.
 
 .. autoclass:: pyrost.ComposeTransforms
     :members:
+    :inherited-members:
 
 
 Transforms on images
