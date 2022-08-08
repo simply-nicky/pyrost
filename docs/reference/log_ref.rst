@@ -8,10 +8,10 @@ Log protocol (:class:`pyrost.LogProtocol`) is a helper class to
 retrieve the data from the log files generated at the Sigray laboratory,
 which contain the readouts from the motors and other instruments
 during the speckle tracking scan. The data extracted from the log
-files is used to generate CXI files (look :doc:`funcs/cxi_converter_sigray`).
-The protocol consists of the log keys of the attributes that are
-requisite to extract from the header part of a log file and their
-corresponding data types:
+files is used to generate CXI datasets by :class:`pyrost.KamzikConverter`
+(look :doc:`classes/kamzik_converter`). The protocol consists of
+the log keys of the attributes that are requisite to extract from the
+header part of a log file and their corresponding data types:
 
 * **datatypes** : Data type of the attributes (`float`, `int`, `str`,
   or `bool`).
@@ -65,6 +65,27 @@ The protocol is given by:
     y_sample = Session logged attributes
     z_sample = Session logged attributes
 
+KamzikConverter
+---------------
+
+Log data converter class provides an interface to read Kamzik log files
+(:func:`pyrost.KamzikConverter.read_logs`), and convert data to CXI attributes,
+that can be parsed to :class:`pyrost.STData` container. A converter object
+needs a log protocol (:class:`pyrost.LogProtocol`), fast scan detector axis, and
+slow scan detector axis. One can obtain a list of CXI datasets available to
+generate with :func:`pyrost.KamzikConverter.cxi_keys`, and generate a dictionary of
+CXI datasets with :func:`pyrost.KamzikConverter.cxi_get`.
+
+The following attributes can be extracted from log files:
+
+* **basis_vectors** : A set of detector axes defined for each image.
+* **dist_down** : down-lens-to-detector distance in meters.
+* **dist_up** : up-lens-to-detector distance in meters.
+* **sim_translations** : A set of sample translations simulated from the log attributes.
+* **log_translations** : A set of sample translations read from the log file.
+* **x_pixel_size** : Detector pixel size along the x axis in meters.
+* **y_pixel_size** : Detector pixel size along the y axis in meters.
+
 Contents
 --------
 
@@ -72,4 +93,4 @@ Contents
     :maxdepth: 2
 
     classes/log_protocol
-    funcs/cxi_converter_sigray
+    classes/kamzik_converter

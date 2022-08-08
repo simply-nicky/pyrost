@@ -4,29 +4,75 @@ Processing a wavefront metrology experiment
 Converting raw data at the Sigray lab
 -------------------------------------
 
-**For the experiments at the Sigray lab only**
+.. attention:: The file structure is written for the experiments at the Sigray lab only.
 
-All we need to convert the raw experimental data are a scan number, X-ray target
-used during the measurements (Molybdenum, Cupper or Rhodium), and the distance
-between a MLL lens and the detector in meters. We parse it to
-:func:`pyrost.cxi_converter_sigray` function as follows:
+Here we wrote a small auxilary snippet of code, that defines the paths to image and
+log files. We'll need them in order to generate a :class:`pyrost.STData` container:
 
 .. code-block:: python
 
     >>> import pyrost as rst
-    >>> data = rst.cxi_converter_sigray(scan_num=2989, target='Mo', distance=2.0)
+    >>> import os
+    >>> scan_num = 2989
+    >>> log_path = f'/gpfs/cfel/group/cxi/labs/MLL-Sigray/scan-logs/Scan_{scan_num:d}.log'
+    >>> data_dir = f'/gpfs/cfel/group/cxi/labs/MLL-Sigray/scan-frames/Scan_{scan_num:d}'
+    >>> data_files = sorted([os.path.join(data_dir, path) for path in os.listdir(data_dir)
+    >>>                      if path.endswith('Lambda.nxs')])
+    >>> wl_dict = {'Mo': 7.092917530503447e-11,
+    >>>            'Cu': 1.5498024804150033e-10,
+    >>>            'Rh': 6.137831605603974e-11}
 
-The function reads the log files and a detector bad pixels mask to initiate `basis_vectors`,
-`distance`, `mask`, `translations`, `x_pixel_size`, `y_pixel_size`, and `wavelength` and loads
-`data`:
+Now we need to read a log file to generate a set of basis vectors and sample translations.
+We use :class:`pyrost.KamzikConverter` Kamzik log files converter, that provides an interface
+to read log files with :func:`pyrost.KamzikConverter.read_logs`:
+
+.. code-block:: python
+
+    >>> converter = rst.KamzikConverter()
+    >>> converter = converter.read_logs(log_path)
+
+After the data is obtained from the log files, it's written to `converter.log_attr` and
+`converter.log_data` attributes. As a next, one can get a list of datasets available in log
+data with :func:`pyrost.KamzikConverter.cxi_keys` method:
+
+.. code-block:: python
+
+    >>> converter.cxi_keys()
+    ['basis_vectors', 'dist_down', 'dist_up', 'sim_translations', 'log_translations']
+
+Here, 'basis_vectors' is a set of basis vectors, `'dist_up'` and `'dist_down'` are up-lens-to-detector
+and down-lens-to-detector distances respectively, and `'sim_translations'` and `'log_translations'` are
+a set of sample translations read from log files and simulated based on log attributes. In our case,
+we would like to get a set of basis vectors (`'basis_vectors'`) and sample translations (`'log_translations'`):
+
+.. code-block:: python
+
+    >>> log_data = converter.cxi_get(['basis_vectors', 'log_translations'])
+
+Now we're ready to generate a :class:`pyrost.STData` container. It requires a data file with X-ray images,
+that can be opened with :class:`pyrost.CXIStore` file handler, also we parse attributes obtained from log
+files (`log_data`) and some extra information known from the experimental setup:
+
+.. code-block:: python
+
+    >>> input_file = rst.CXIStore(data_files)
+    >>> data = rst.STData(input_file, **log_data, distance=2.0, wavelength=wl_dict['Mo'])
+
+Now we can inspect what attributes are already stored inside of container:
 
 .. code-block:: python
 
     >>> data.contents()
-    ['good_frames', 'wavelength', 'translations', 'basis_vectors', 'data', 'whitefield', 'mask',
-    'frames', 'x_pixel_size', 'distance', 'y_pixel_size', 'files', 'num_threads']
+    ['y_pixel_size', 'distance', 'translations', 'basis_vectors', 'x_pixel_size',
+    'good_frames', 'wavelength', 'num_threads', 'input_file']
+
+:class:`pyrost.STData` is a main class, that provides different tools to process the data. Also it provides
+methods to load data from a file with :func:`pyrost.STData.load` and save to it with :func:`pyrost.STData.save`.
+Let's load raw X-ray images and look at them:
 
 .. code-block:: python
+
+    >>> data = data.load('data')
 
     >>> fig, ax = plt.subplots(figsize=(8, 3))
     >>> ax.imshow(data.data[0], vmax=100)

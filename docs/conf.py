@@ -22,7 +22,7 @@ copyright = '2020, Nikolay Ivanov'
 author = 'Nikolay Ivanov'
 
 # The full version, including alpha/beta/rc tags
-release = '0.7.4'
+release = '0.7.5'
 
 
 # -- General configuration ---------------------------------------------------

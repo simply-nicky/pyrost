@@ -30,6 +30,11 @@ reconstruction, phase model fitting, etc. All of them are listed in
 pyrost includes a framework to work with CXI files, see :doc:`reference/cxi_ref` for
 more information.
 
+.. note::
+   The theoretical background and technical details behind the machine learning techniques
+   employed in this software are written in the open access article published in
+   `Optica Express <https://opg.optica.org/oe/abstract.cfm?URI=oe-30-14-25450>`_.
+
 pyrost.simulation
 *****************
 
