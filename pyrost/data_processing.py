@@ -188,13 +188,17 @@ class ComposeTransforms(Transform):
         Args:
             transforms: List of transforms.
         """
-        if len(transforms) < 2:
-            raise ValueError('Two or more transforms are needed to compose')
-
         self.transforms = []
-        for transform in transforms:
-            pdict = transform.state_dict()
-            self.transforms.append(type(transform)(**pdict))
+        try:
+            for transform in transforms:
+                pdict = transform.state_dict()
+                self.transforms.append(type(transform)(**pdict))
+        except TypeError:
+            raise TypeError('Invalid argument, must be a sequence of transforms.')
+        else:
+            if len(self.transforms) < 2:
+                raise ValueError('Two or more transforms are needed to compose.')
+
 
     def __iter__(self) -> Iterator[Transform]:
         return self.transforms.__iter__()

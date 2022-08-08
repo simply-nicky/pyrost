@@ -23,6 +23,7 @@ ctypedef fused uint_t:
 
 DEF FLOAT_MAX = 1.7976931348623157e+308
 DEF M_1_SQRT2PI = 0.3989422804014327
+DEF CUTOFF = 3.0
 
 cdef double Huber_loss(double a) nogil:
     cdef double aa = fabs(a)
@@ -56,7 +57,7 @@ cdef void KR_frame_1d(float_t[:, ::1] I0, float_t[:, ::1] w0, uint_t[:, ::1] I_n
                       float_t[:, ::1] W, float_t[:, :, ::1] u, float_t dj,
                       double ds_x, double h) nogil:
     cdef int X = I_n.shape[1], X0 = I0.shape[1], k, kk, k0, kk0, kk1
-    cdef int dn = <int>ceil((4.0 * h) / ds_x)
+    cdef int dn = <int>ceil((CUTOFF * h) / ds_x)
     cdef double x, r
 
     for k in range(X):
@@ -76,7 +77,7 @@ cdef void KR_frame_2d(float_t[:, ::1] I0, float_t[:, ::1] w0, uint_t[:, ::1] I_n
                       double ds_y, double ds_x, double h) nogil:
     cdef int Y = I_n.shape[0], X = I_n.shape[1], Y0 = I0.shape[0], X0 = I0.shape[1]
     cdef int j, k, jj, kk, j0, k0, jj0, jj1, kk0, kk1
-    cdef int dn_y = <int>ceil((4.0 * h) / ds_y), dn_x = <int>ceil((4.0 * h) / ds_x)
+    cdef int dn_y = <int>ceil((CUTOFF * h) / ds_y), dn_x = <int>ceil((CUTOFF * h) / ds_x)
     cdef double y, x, r
 
     for j in range(Y):
@@ -201,7 +202,7 @@ cdef void LOWESS_frame_1d(float_t[:, ::1] W_sum, float_t[:, :, ::1] M_mat, float
                           float_t[:, :, ::1] u, float_t dj, double ds_x, double h) nogil:
     cdef int X = I_n.shape[1], X0 = W_sum.shape[1]
     cdef int k, kk, j0, k0, kk0, kk1
-    cdef int dn = <int>ceil((4.0 * h) / ds_x)
+    cdef int dn = <int>ceil((CUTOFF * h) / ds_x)
     cdef double x, r, w
 
     for k in range(X):
@@ -230,7 +231,7 @@ cdef void LOWESS_frame_2d(float_t[:, ::1] W_sum, float_t[:, :, ::1] M_mat, float
                           float_t[:, :, ::1] u, float_t di, float_t dj, double ds_y, double ds_x, double h) nogil:
     cdef int Y = I_n.shape[0], X = I_n.shape[1], Y0 = W_sum.shape[0], X0 = W_sum.shape[1]
     cdef int j, k, jj, kk, j0, k0, jj0, jj1, kk0, kk1
-    cdef int dn_y = <int>ceil((4.0 * h) / ds_y), dn_x = <int>ceil((4.0 * h) / ds_x)
+    cdef int dn_y = <int>ceil((CUTOFF * h) / ds_y), dn_x = <int>ceil((CUTOFF * h) / ds_x)
     cdef double y, x, r, w
 
     for j in range(Y):
@@ -1163,7 +1164,7 @@ cdef void ref_loss(float_t[:, ::1] errors, float_t[:, ::1] R, float_t[:, ::1] I0
     cdef int Y = I_n.shape[0], X = I_n.shape[1]
     cdef int j, k, jj, kk, j0, k0, jj0, jj1, kk0, kk1
     cdef int Y0 = I0.shape[0], X0 = I0.shape[1]
-    cdef int dn_y = <int>ceil((4.0 * h) / ds_y), dn_x = <int>ceil((4.0 * h) / ds_x)
+    cdef int dn_y = <int>ceil((CUTOFF * h) / ds_y), dn_x = <int>ceil((CUTOFF * h) / ds_x)
     cdef double y, x, r, I
 
     for j in range(Y):

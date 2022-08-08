@@ -13,6 +13,8 @@ algorithm in the case of the high noise present in the measured data.
 
 The documentation can be found on [Read the Docs](https://robust-speckle-tracking.readthedocs.io/en/latest/).
 
+Read the open access scientific article about the technical details of the developed technique published in [Optica Express](https://opg.optica.org/oe/abstract.cfm?URI=oe-30-14-25450).
+
 ## Dependencies
 
 - [Python](https://www.python.org/) 3.6 or later (Python 2.x is **not** supported).

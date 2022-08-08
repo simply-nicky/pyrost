@@ -26,27 +26,30 @@ int ml_profile(double complex *out, double *xcrd, size_t isize, double *layers, 
     int b = 2 * (lsize / 2);
     int dj = (int)(4.0 * sgm * b / (layers[b - 1] - layers[0])) + 1;
 
-    double x0, x1;
-    int jj, j0, j1, j;
-
-    #pragma omp parallel for num_threads(threads)
-    for (int n = 0; n < (int) isize; n++)
+    #pragma omp parallel num_threads(threads)
     {
-        out[n] = 1.0;
-        jj = searchsorted(&xcrd[n], layers, lsize, sizeof(double), compare_double);
-        j0 = 2 * ((jj - dj) / 2) - 1;
-        j1 = 2 * ((jj + dj) / 2);
-        for (j = j0; j < j1; j += 2)
+        double x0, x1;
+        int jj, j0, j1, j;
+
+        #pragma omp for
+        for (int n = 0; n < (int) isize; n++)
         {
-            if (j > 0 && j < b - 1)
+            out[n] = 1.0;
+            jj = searchsorted(&xcrd[n], layers, lsize, sizeof(double), compare_double);
+            j0 = 2 * ((jj - dj) / 2) - 1;
+            j1 = 2 * ((jj + dj) / 2);
+            for (j = j0; j < j1; j += 2)
             {
-                x0 = (xcrd[n] - layers[j]) / sgm;
-                x1 = (layers[j + 1] - xcrd[n]) / sgm;
-                out[n] += 0.5 * (t1 - t0) * (tanh(x0) + tanh(x1));
+                if (j > 0 && j < b - 1)
+                {
+                    x0 = (xcrd[n] - layers[j]) / sgm;
+                    x1 = (layers[j + 1] - xcrd[n]) / sgm;
+                    out[n] += 0.5 * (t1 - t0) * (tanh(x0) + tanh(x1));
+                }
             }
+            out[n] += 0.5 * (t0 - 1.0) * tanh((xcrd[n] - layers[0]) / sgm);
+            out[n] += 0.5 * (t0 - 1.0) * tanh((layers[b - 1] - xcrd[n]) / sgm);
         }
-        out[n] += 0.5 * (t0 - 1.0) * tanh((xcrd[n] - layers[0]) / sgm);
-        out[n] += 0.5 * (t0 - 1.0) * tanh((layers[b - 1] - xcrd[n]) / sgm);
     }
 
     return 0;
@@ -56,18 +59,24 @@ static void rebin_line_double(double *out, const double *inp, size_t osize, size
 {
     double ratio = (double) isize / osize;
     threads = (threads > (unsigned) osize) ? (unsigned) osize : threads;
-    #pragma omp parallel for num_threads(threads)
-    for (int i = 0; i < (int) osize; i++)
+
+    #pragma omp parallel num_threads(threads)
     {
         double lb, ub;
-        out[i] = 0;
-        int j0 = (int)(i * ratio);
-        int j1 = (int)((i + 1) * ratio);
-        for (int j = j0; (j <= j1) && (j < (int) isize); j++)
+        int j0, j1;
+
+        #pragma omp for
+        for (int i = 0; i < (int) osize; i++)
         {
-            lb = ((double) j) > (i * ratio) ? j : i * ratio;
-            ub = ((double) j + 1) < ((i + 1) * ratio) ? j + 1 : (i + 1) * ratio;
-            out[i] += (ub - lb) * inp[j];
+            out[i] = 0;
+            j0 = (int)(i * ratio);
+            j1 = (int)((i + 1) * ratio);
+            for (int j = j0; (j <= j1) && (j < (int) isize); j++)
+            {
+                lb = ((double) j) > (i * ratio) ? j : i * ratio;
+                ub = ((double) j + 1) < ((i + 1) * ratio) ? j + 1 : (i + 1) * ratio;
+                out[i] += (ub - lb) * inp[j];
+            }
         }
     }
 }

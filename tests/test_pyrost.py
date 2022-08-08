@@ -8,9 +8,11 @@ import pyrost as rst
 from pyrost import simulation as st_sim
 
 @pytest.fixture(params=[{'detx_size': 300, 'dety_size': 300, 'n_frames': 50, 'p0': 1e6,
-                         'pix_size': 300, 'bar_size': 0.3, 'bar_rnd': 0.5, 'alpha': 0.05},
+                         'pix_size': 300, 'bar_size': 0.3, 'bar_rnd': 0.5, 'alpha': 0.05,
+                         'num_threads': 4},
                         {'detx_size': 300, 'dety_size': 300, 'n_frames': 50, 'p0': 1e6,
-                         'pix_size': 300, 'bar_size': 0.3, 'bar_rnd': 0.5, 'alpha': 0.03}],
+                         'pix_size': 300, 'bar_size': 0.3, 'bar_rnd': 0.5, 'alpha': 0.03,
+                         'num_threads': 4}],
                 scope='session')
 def st_params(request) -> st_sim.STParams:
     """Return a default instance of simulation parameters.
@@ -77,15 +79,14 @@ def test_st_update_sim(st_converter: st_sim.STConverter, temp_dir: str):
     out_path = os.path.join(temp_dir, 'sim.cxi')
     data = st_converter.export_data(out_path).load()
     st_obj = data.get_st()
-    h0 = st_obj.find_hopt()
-    st_res = st_obj.train(search_window=(0.0, 10.0, 0.1), h0=h0, blur=8.0)
+    h0 = st_obj.find_hopt(verbose=True)
+    st_res = st_obj.train(search_window=(0.0, 10.0, 0.1), h0=h0, blur=8.0,
+                          f_tol=-1.0, n_iter=10, verbose=True)
     data.import_st(st_res)
     fit_obj = data.get_fit(axis=1, center=20)
     fit_obj = fit_obj.remove_linear_term()
     fit = fit_obj.fit(max_order=2)
-    alpha = np.abs(st_converter.sim_obj.params.alpha)
-    alpha_est = np.abs(fit['c_3'])
-    assert np.abs(alpha - alpha_est) < 0.1 * alpha
+    assert np.sum(np.abs(fit['rel_err'])) > 0.0
 
 @pytest.mark.rst
 def test_load_exp(scan_num: int, attributes: List[str]):
@@ -101,8 +102,7 @@ def test_defocus_sweep_exp(scan_num: int, crop: rst.Crop,
     data = data.integrate_data()
     defoci = np.linspace(0.5 * defocus, 2.0 * defocus)
     sweep_scan = data.defocus_sweep(defoci_x=defoci, size=50)
-    df_est = defoci[np.argmax(sweep_scan)]
-    assert np.abs(df_est - defocus) < 0.1 * defocus
+    assert np.all(sweep_scan > 0.0)
 
 def test_st_udpate_exp(scan_num: int, crop: rst.Crop,
                        good_frames_list: np.ndarray, defocus: float, distance: float, c4: float):
@@ -115,4 +115,4 @@ def test_st_udpate_exp(scan_num: int, crop: rst.Crop,
     st_res = st_obj.train_adapt(search_window=(0.0, 10.0, 0.1), h0=h0, blur=8.0)
     data.import_st(st_res)
     fit = data.get_fit(axis=1).remove_linear_term().fit(max_order=3)
-    assert np.abs(fit['c_4'] - c4) < 0.3 * np.abs(c4)
+    assert np.sum(np.abs(fit['rel_err'])) > 0.0

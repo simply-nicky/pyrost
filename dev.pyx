@@ -1,28 +1,14 @@
 #cython: language_level=3, boundscheck=False, wraparound=False, initializedcheck=False, cdivision=True, embedsignature=True, linetrace=False, profile=False
-cimport numpy as np
 import numpy as np
 import cython
-# import speckle_tracking as st
-from libc.math cimport sqrt, exp, pi, floor, ceil, fabs, log
+from speckle_tracking import make_object_map, calc_error, update_pixel_map, update_translations
 from cython.parallel import prange, parallel
-from libc.stdlib cimport malloc, free
-from libc.string cimport memset
-from pyrost.bin cimport pyfftw
 from pyrost.bin import pyfftw
-from pyrost.bin.simulation cimport check_array
-cimport openmp
+from typing import Tuple, Optional
 
 # Numpy must be initialized. When using numpy from C or Cython you must
 # *ALWAYS* do that, or you will have segfaults
 np.import_array()
-
-ctypedef fused float_t:
-    np.float64_t
-    np.float32_t
-
-ctypedef fused uint_t:
-    np.uint64_t
-    np.uint32_t
 
 cdef np.ndarray ml_profile_wrapper(np.ndarray x_arr, np.ndarray layers, complex t0,
                                    complex t1, double sigma, unsigned num_threads):
@@ -82,49 +68,46 @@ def barcode_profile(np.ndarray x_arr not None, np.ndarray bars not None, double 
     cdef complex t1 = sqrt(1.0 - bulk_atn - bar_atn)
     return ml_profile_wrapper(x_arr, bars, t0, t1, bar_sigma, num_threads)
 
-# def st_update(I_n, dij, basis, x_ps, y_ps, z, df, search_window, n_iter=5,
-#               filter=None, update_translations=False, verbose=False):
-#     """
-#     Andrew's speckle tracking update algorithm
+def st_update(I_n: np.ndarray, W: np.ndarray, M: np.ndarray, dij_pix: np.ndarray, u: np.ndarray,
+              search_window: Tuple[int, int], n_iter: int=5, filter: Optional[float]=None,
+              update_translations: bool=False, verbose: bool=False):
+    """
+    Andrew's speckle tracking update algorithm
     
-#     I_n - measured data
-#     W - whitefield
-#     basis - detector plane basis vectors
-#     x_ps, y_ps - x and y pixel sizes
-#     z - distance between the sample and the detector
-#     df - defocus distance
-#     wl - wavelength
-#     sw_max - pixel mapping search window size
-#     n_iter - number of iterations
-#     """
-#     M = np.ones((I_n.shape[1], I_n.shape[2]), dtype=bool)
-#     W = st.make_whitefield(I_n, M, verbose=verbose)
-#     u, dij_pix, res = st.generate_pixel_map(W.shape, dij, basis,
-#                                             x_ps, y_ps, z,
-#                                             df, verbose=verbose)
-#     I0, n0, m0 = st.make_object_map(I_n, M, W, dij_pix, u, subpixel=True, verbose=verbose)
+    Args:
+        I_n : Measured data.
+    W - whitefield
+    basis - detector plane basis vectors
+    x_ps, y_ps - x and y pixel sizes
+    z - distance between the sample and the detector
+    df - defocus distance
+    wl - wavelength
+    sw_max - pixel mapping search window size
+    n_iter - number of iterations
+    """
+    I0, n0, m0 = make_object_map(I_n, M, W, dij_pix, u, subpixel=True, verbose=verbose)
 
-#     es = []
-#     for i in range(n_iter):
+    es = []
+    for i in range(n_iter):
 
-#         # calculate errors
-#         error_total = st.calc_error(I_n, M, W, dij_pix, I0, u, n0, m0, subpixel=True, verbose=verbose)[0]
+        # calculate errors
+        error_total = calc_error(I_n, M, W, dij_pix, I0, u, n0, m0, subpixel=True, verbose=verbose)[0]
 
-#         # store total error
-#         es.append(error_total)
+        # store total error
+        es.append(error_total)
 
-#         # update pixel map
-#         u = st.update_pixel_map(I_n, M, W, I0, u, n0, m0, dij_pix,
-#                                 search_window=search_window, subpixel=True,
-#                                 fill_bad_pix=False, integrate=False,
-#                                 quadratic_refinement=False, verbose=verbose,
-#                                 filter=filter)[0]
+        # update pixel map
+        u = update_pixel_map(I_n, M, W, I0, u, n0, m0, dij_pix,
+                             search_window=search_window, subpixel=True,
+                             fill_bad_pix=False, integrate=False,
+                             quadratic_refinement=False, verbose=verbose,
+                             filter=filter)[0]
 
-#         # make reference image
-#         I0, n0, m0 = st.make_object_map(I_n, M, W, dij_pix, u, subpixel=True, verbose=verbose)
+        # make reference image
+        I0, n0, m0 = make_object_map(I_n, M, W, dij_pix, u, subpixel=True, verbose=verbose)
 
-#         # update translations
-#         if update_translations:
-#             dij_pix = st.update_translations(I_n, M, W, I0, u, n0, m0, dij_pix)[0]
+        # update translations
+        if update_translations:
+            dij_pix = update_translations(I_n, M, W, I0, u, n0, m0, dij_pix)[0]
 
-#     return {'u':u, 'I0':I0, 'errors':es, 'n0': n0, 'm0': m0}
+    return {'u': u, 'I0': I0, 'errors': es, 'n0': n0, 'm0': m0}

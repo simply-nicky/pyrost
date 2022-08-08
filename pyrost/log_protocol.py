@@ -12,14 +12,24 @@ Examples:
     'exposure': ['Type: Method', 'Exposure'], 'n_steps': ['Type: Scan', 'Points count'],
     '...': '...'}, 'datatypes': {'det_dist': 'float', 'exposure': 'float', 'n_steps':
     'int', '...': '...'}}
+
+    Generate the default log file converter:
+
+    >>> rst.KamzikConverter()
+    {'fs_vec': array([-5.5e-05,  0.0e+00,  0.0e+00]), 'protocol': {'datatypes':
+    {'lens_down_dist': 'float', 'lens_up_dist': 'float', 'exposure': 'float', '...': '...'},
+    'log_keys': {'lens_down_dist': ['Z-LENSE-DOWN_det_dist'], 'lens_up_dist':
+    ['Z-LENSE-UP_det_dist'], 'exposure': ['Exposure'], '...': '...'}, 'part_keys':
+    {'lens_down_dist': 'Session logged attributes', 'lens_up_dist': 'Session logged attributes',
+    'exposure': 'Type: Method', '...': '...'}}, 'ss_vec': array([ 0.0e+00, -5.5e-05,  0.0e+00])}
 """
 from __future__ import annotations
 import os
 import re
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 import numpy as np
+from .data_container import DataContainer, dict_to_object
 from .ini_parser import ROOT_PATH, INIParser
-from .data_processing import CXIStore, STData, Transform
 
 LOG_PROTOCOL = os.path.join(ROOT_PATH, 'config/log_protocol.ini')
 
@@ -34,10 +44,10 @@ class LogProtocol(INIParser):
         part_keys : Dictionary with the part names inside the log file
             where the attributes are stored.
     """
-    attr_dict = {'datatypes': ('ALL',), 'log_keys': ('ALL',), 'part_keys': ('ALL',)}
-    fmt_dict = {'datatypes': 'str', 'log_keys': 'str', 'part_keys': 'str'}
-    unit_dict = {'percent': 1e-2, 'mm,mdeg': 1e-3, 'µm,um,udeg,µdeg': 1e-6,
-                 'nm,ndeg': 1e-9, 'pm,pdeg': 1e-12}
+    attr_dict   = {'datatypes': ('ALL',), 'log_keys': ('ALL',), 'part_keys': ('ALL',)}
+    fmt_dict    = {'datatypes': 'str', 'log_keys': 'str', 'part_keys': 'str'}
+    unit_dict   = {'percent': 1e-2, 'mm,mdeg': 1e-3, 'µm,um,udeg,µdeg': 1e-6,
+                   'nm,ndeg': 1e-9, 'pm,pdeg': 1e-12}
 
     datatypes   : Dict[str, str]
     log_keys    : Dict[str, List[str]]
@@ -279,90 +289,241 @@ class LogProtocol(INIParser):
             return txt_dict, idxs
         return txt_dict
 
-def cxi_converter_sigray(scan_num: int, dir_path: str='/gpfs/cfel/group/cxi/labs/MLL-Sigray',
-                         target: str='Mo', distance: Optional[float]=None, lens: str='up',
-                         idxs: Optional[Iterable[int]]=None, transform: Optional[Transform]=None,
-                         **attributes: Any) -> STData:
-    """Convert measured frames and log files from the Sigray laboratory to a
-    :class:`pyrost.STData` data container.
+class KamzikConverter(DataContainer):
+    """A converter class, that generates CXI datasets aceeptable by :class:`pyrost.STData`
+    from Kamzik log files.
 
-    Args:
-        scan_num : Scan number.
-        dir_path : Path to the root directory, where the data is located.
-        target : Sigray X-ray source target used. The following values are
-            accepted:
-
-            * `Mo` : Mollibdenum.
-            * `Cu` : Cuprum.
-            * `Rh` : Rhodium.
-
-        distance : Detector distance in meters.
-        lens : Specify if the lens mounted in the upper holder ('up') or in
-            the lower holder ('down'). If specified, the lens-to-detector
-            distance will be automatically parsed from the log file.
-        idxs : Array of data indices to load. Loads info for all the
-            frames by default.
-        transform : Frames transform object.
-        attributes : Dictionary of attribute values, that override the loaded
-            values in :class:`pyrost.STData`.
-
-    Returns:
-        :class:`pyrost.STData` data container with the extracted data.
+    Attributes:
+        protocol : Log file protocol.
+        fs_vec : Fast (horizontal) scan detector axis.
+        ss_vec : Slow (vertical) scan detector axis.
+        idxs : Frame indices read from a log file.
+        log_attr : Dictionary of log attributes.
+        log_data : Dictionary of log datasets.
     """
-    wl_dict = {'Mo': 7.092917530503447e-11, 'Cu': 1.5498024804150033e-10,
-               'Rh': 6.137831605603974e-11}
+    attr_set = {'protocol', 'fs_vec', 'ss_vec'}
+    init_set = {'idxs', 'log_attr', 'log_data'}
 
-    ss_vec = np.array([0., -1., 0.])
-    fs_vec = np.array([-1., 0., 0.])
+    cxi_attrs = {'basis_vectors': 'basis_vectors', 'dist_down': 'distance', 'dist_up': 'distance',
+                 'sim_translations': 'translations', 'log_translations': 'translations',
+                 'x_pixel_size': 'x_pixel_size', 'y_pixel_size': 'y_pixel_size'}
 
-    log_path = os.path.join(dir_path, f'scan-logs/Scan_{scan_num:d}.log')
-    data_dir = os.path.join(dir_path, f'scan-frames/Scan_{scan_num:d}')
-    h5_files = sorted([os.path.join(data_dir, path) for path in os.listdir(data_dir)
-                       if path.endswith('Lambda.nxs')])
+    protocol:   LogProtocol
+    fs_vec:     np.ndarray
+    ss_vec:     np.ndarray
 
-    input_file = CXIStore(h5_files, mode='r')
+    idxs:       Optional[np.ndarray]
+    log_attr:   Optional[Dict[str, Any]]
+    log_data:   Optional[Dict[str, Any]]
 
-    log_prt = LogProtocol.import_default()
-    log_attrs = log_prt.load_attributes(log_path)
-    log_data, idxs = log_prt.load_data(log_path, idxs=idxs, return_idxs=True)
+    def __init__(self, protocol: LogProtocol=LogProtocol.import_default(),
+                 fs_vec: np.ndarray=np.array([-55e-6, 0., 0.]),
+                 ss_vec: np.ndarray=np.array([0., -55e-6, 0.]),
+                 idxs: Optional[np.ndarray]=None, log_attr: Optional[Dict[str, Any]]=None,
+                 log_data: Optional[Dict[str, Any]]=None) -> None:
+        """
+        Args:
+            protocol : Log file protocol.
+            fs_vec : Fast (horizontal) scan detector axis.
+            ss_vec : Slow (vertical) scan detector axis.
+            idxs : Frame indices read from a log file.
+            log_attr : Dictionary of log attributes read from a log file.
+            log_data : Dictionary of log datasets read from a log file.
+        """
+        super(KamzikConverter, self).__init__(protocol=protocol, fs_vec=fs_vec, ss_vec=ss_vec,
+                                              idxs=idxs, log_attr=log_attr, log_data=log_data)
 
-    x_pixel_size = 55e-6
-    y_pixel_size = 55e-6
+    @property
+    def n_frames(self):
+        return None if self.idxs is None else self.idxs.size
 
-    n_frames = idxs.size
-    pix_vec = np.tile(np.array([[x_pixel_size, y_pixel_size, 0]]), (n_frames, 1))
-    basis_vectors = np.stack([pix_vec * ss_vec, pix_vec * fs_vec], axis=1)
+    @property
+    def x_pixel_size(self):
+        return np.sqrt((self.fs_vec * self.fs_vec).sum())
 
-    with np.load(os.path.join(ROOT_PATH, 'data/sigray_mask.npz')) as mask_file:
-        mask = np.tile(mask_file['mask'][None], (n_frames, 1, 1))
+    @property
+    def y_pixel_size(self):
+        return np.sqrt((self.ss_vec * self.ss_vec).sum())
 
-    x_sample = log_attrs['Session logged attributes'].get('x_sample', 0.0)
-    y_sample = log_attrs['Session logged attributes'].get('y_sample', 0.0)
-    z_sample = log_attrs['Session logged attributes'].get('z_sample', 0.0)
-    translations = np.nan_to_num(np.tile([[x_sample, y_sample, z_sample]], (n_frames, 1)))
-    for data_key, log_dset in log_data.items():
-        for log_key in log_prt.log_keys['x_sample']:
-            if log_key in data_key:
-                translations[:log_dset.size, 0] = log_dset
-        for log_key in log_prt.log_keys['y_sample']:
-            if log_key in data_key:
-                translations[:log_dset.size, 1] = log_dset
-        for log_key in log_prt.log_keys['z_sample']:
-            if log_key in data_key:
-                translations[:log_dset.size, 2] = log_dset
+    @dict_to_object
+    def read_logs(self, log_path: str, idxs: Optional[Iterable[int]]=None) -> KamzikConverter:
+        """Read a log file under the path `log_path`. Read out only the frame indices
+        defined by `idxs`. If `idxs` is None, read the whole log file.
 
-    if distance is None:
-        if lens == 'up':
-            distance = log_attrs['Session logged attributes']['lens_up_dist']
-        elif lens == 'down':
-            distance = log_attrs['Session logged attributes']['lens_down_dist']
-        else:
-            raise ValueError(f'lens keyword is invalid: {lens:s}')
+        Args:
+            log_path : Path to the log file.
+            idxs : List of indices to read. Read the whole log file if None.
 
-    data = STData(input_file=input_file, basis_vectors=basis_vectors, mask=mask,
-                  translations=translations, distance=distance, x_pixel_size=x_pixel_size,
-                  y_pixel_size=y_pixel_size, wavelength=wl_dict[target], **attributes)
-    if transform:
-        data = data.update_transform(transform)
-    data = data.load('data', idxs=idxs)
-    return data
+        Returns:
+            A new :class:`KamzikConverter` object with `log_attr`, `log_data`, and `idxs`
+            updated.
+        """
+        log_attr = self.protocol.load_attributes(log_path)
+        log_data, idxs = self.protocol.load_data(log_path, idxs=idxs, return_idxs=True)
+        return {'log_attr': log_attr, 'log_data': log_data, 'idxs': idxs}
+
+    def find_log_part_key(self, attr: str) -> Optional[str]:
+        """Find a name of the log dictionary corresponding to an attribute
+        name `attr`.
+
+        Args:
+            attr : A name of the attribute to find.
+
+        Returns:
+            A name of the log dictionary, corresponding to the given attribute
+            name `attr`.
+        """
+        log_attr = self.get('log_attr', {})
+        log_keys = self.protocol.log_keys.get(attr, [])
+        for part in log_attr:
+            for log_key in log_keys:
+                if log_key in part:
+                    return part
+        return None
+
+    def find_log_attribute(self, attr: str, part_key: Optional[str]=None) -> Optional[Any]:
+        """Find a value in the log attributes corresponding to an
+        attribute name `attr`.
+
+        Args:
+            attr : A name of the attribute to find.
+            part_key : Search in the given part of the log dictionary if provided.
+
+        Returns:
+            Value of the log attribute. Returns None if nothing is found.
+        """
+        if part_key is None:
+            part_key = self.protocol.part_keys.get(attr, '')
+        log_attr = self.get('log_attr', {})
+        part_dict = log_attr.get(part_key, {})
+        value = part_dict.get(attr, None)
+        return value
+
+    def find_log_dataset(self, attr: str) -> Optional[np.ndarray]:
+        """Find a dataset in the log data corresponding to an
+        attribute name `attr`.
+
+        Args:
+            attr : A name of the attribute to find.
+
+        Returns:
+            Dataset for the given attribute. Returns None if nothing is found.
+        """
+        log_keys = self.protocol.log_keys.get(attr, [])
+        log_data = self.get('log_data', {})
+        for data_key, log_dset in log_data.items():
+            for log_key in log_keys:
+                if log_key in data_key:
+                    return log_dset
+        return None
+
+    def _is_basis_vectors(self) -> bool:
+        return self.n_frames is not None
+
+    def _is_dist_down(self) -> bool:
+        return self.find_log_attribute('lens_down_dist') is not None
+
+    def _is_dist_up(self) -> bool:
+        return self.find_log_attribute('lens_up_dist') is not None
+
+    def _is_log_translations(self) -> bool:
+        return (self.find_log_attribute('x_sample') is not None and
+                self.find_log_attribute('y_sample') is not None and
+                self.find_log_attribute('z_sample') is not None and
+                (self.find_log_dataset('x_sample') is not None or
+                 self.find_log_dataset('y_sample') is not None or
+                 self.find_log_dataset('z_sample') is not None))
+
+    def _is_sim_translations(self) -> bool:
+        return (self.find_log_attribute('x_sample') is not None and
+                self.find_log_attribute('y_sample') is not None and
+                self.find_log_attribute('z_sample') is not None and
+                (self.find_log_part_key('x_sample') is not None or
+                 self.find_log_part_key('y_sample') is not None or
+                 self.find_log_part_key('z_sample') is not None))
+
+    def cxi_keys(self) -> List[str]:
+        """Return a list of available CXI attributes.
+
+        Returns:
+            List of available CXI attributes.
+        """
+        cxi_dict = {'basis_vectors': self._is_basis_vectors,
+                    'dist_down': self._is_dist_down,
+                    'dist_up': self._is_dist_up,
+                    'sim_translations': self._is_sim_translations,
+                    'log_translations': self._is_log_translations}
+        return [attr for attr, func in cxi_dict.items() if func()]
+
+    def _get_basis_vectors(self) -> np.ndarray:
+        return np.stack((np.tile(self.ss_vec, (self.n_frames, 1)),
+                         np.tile(self.fs_vec, (self.n_frames, 1))), axis=1)
+
+    def _get_dist_down(self) -> float:
+        return self.find_log_attribute('lens_down_dist')
+
+    def _get_dist_up(self) -> float:
+        return self.find_log_attribute('lens_up_dist')
+
+    def _get_sim_translations(self) -> np.ndarray:
+        translations = np.tile((self.find_log_attribute('x_sample'),
+                                self.find_log_attribute('y_sample'),
+                                self.find_log_attribute('z_sample')), (self.n_frames, 1))
+        translations = np.nan_to_num(translations)
+
+        step_sizes, n_steps = [], []
+        for scan_motor, unit_vec in zip(['x_sample', 'y_sample', 'z_sample'],
+                                        [np.array([1., 0., 0.]),
+                                         np.array([0., 1., 0.]),
+                                         np.array([0., 0., 1.])]):
+            part_key = self.find_log_part_key(scan_motor)
+            if part_key is not None:
+                step_sizes.append(self.log_attr[part_key].get('step_size') * unit_vec)
+                n_steps.append(self.log_attr[part_key].get('n_points'))
+
+        steps = np.tensordot(np.stack(np.mgrid[[slice(0, n) for n in n_steps]], axis=0),
+                             np.stack(step_sizes, axis=0), (0, 0)).reshape(-1, 3)
+        return translations + steps
+
+    def _get_log_translations(self) -> np.ndarray:
+        translations = np.tile((self.find_log_attribute('x_sample'),
+                                self.find_log_attribute('y_sample'),
+                                self.find_log_attribute('z_sample')), (self.n_frames, 1))
+        translations = np.nan_to_num(translations)
+
+        for idx, scan_motor in enumerate(['x_sample', 'y_sample', 'z_sample']):
+            dset = self.find_log_dataset(scan_motor)
+            if dset is not None:
+                translations[:dset.size, idx] = dset
+        return translations
+
+    def cxi_get(self, attrs: Union[str, List[str]]) -> Dict[str, Any]:
+        """Convert Kamzik log files data into CXI attributes, that are accepted by
+        :class:`pyrost.STData` container. To see full list of available CXI
+        attributes, use :func:`KamzikConverter.cxi_keys`.
+
+        Args:
+            attrs: List of CXI attributes to generate. The method will raise an error
+                if any of the attributes is unavailable.
+
+        Raises:
+            ValueError : If any of attributes in `attrs` in unavailable.
+
+        Returns:
+            A dictionary of CXI attributes, that are accepted by :class:`pyrost.STData`
+            container.
+        """
+        cxi_dict = {'basis_vectors': self._get_basis_vectors,
+                    'dist_down': self._get_dist_down,
+                    'dist_up': self._get_dist_up,
+                    'sim_translations': self._get_sim_translations,
+                    'log_translations': self._get_log_translations}
+        data = {'x_pixel_size': self.x_pixel_size, 'y_pixel_size': self.y_pixel_size}
+        cxi_keys = self.cxi_keys()
+        for attr in attrs:
+            if attr in cxi_keys:
+                data[self.cxi_attrs[attr]] = cxi_dict[attr]()
+            else:
+                raise ValueError(f"CXI attribute '{attr}' is unavailable")
+
+        return data

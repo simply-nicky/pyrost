@@ -1,3 +1,19 @@
+cimport numpy as np
+cimport openmp
+from libc.math cimport sqrt, exp, pi, floor, ceil, fabs, log
+from libc.stdlib cimport malloc, free
+from libc.string cimport memset
+from pyrost.bin cimport pyfftw
+from pyrost.bin.simulation cimport check_array
+
+ctypedef fused float_t:
+    np.float64_t
+    np.float32_t
+
+ctypedef fused uint_t:
+    np.uint64_t
+    np.uint32_t
+
 cdef extern from "Python.h":
     int Py_AtExit(void(*func)())
 
@@ -115,3 +131,6 @@ cdef extern from "gsl/gsl_rng.h":
 
     double gsl_rng_uniform(gsl_rng * r) nogil
     unsigned long gsl_rng_uniform_int(gsl_rng * r, unsigned long n) nogil
+
+cdef np.ndarray ml_profile_wrapper(np.ndarray x_arr, np.ndarray layers, complex t0,
+                                   complex t1, double sigma, unsigned num_threads)
