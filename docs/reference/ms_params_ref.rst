@@ -16,12 +16,12 @@ List of simulation parameters:
 
 * **Experimental geometry parameters**:
 
-  * `x_min`, `x_max` : Wavefront span along the x axis [um].
-  * `x_step` : Beam sampling interval along the x axis [um].
+  * `x_min`, `x_max` : Wavefront span along the x-axis [um].
+  * `x_step` : Beam sampling interval along the x-axis [um].
   * `z_step` : Distance between the slices [um].
   * `wl` : Beam's wavelength [um].
 
-The ms_sim library is able to generate the transmission profile of the 
+The ms_sim library can generate the transmission profile of the 
 Multilayer Laue (MLL) lens. The required parameters to yield a transmission
 profile are as follows: 
 

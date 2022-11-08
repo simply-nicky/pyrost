@@ -38,7 +38,7 @@ such as the sample defocus or the white-field image:
 -------------------------------------------------
 
 :class:`pyrost.SpeckleTracking` provides an interface to perform the reference image and lens wavefront
-reconstruction and offers two methods (:func:`pyrost.SpeckleTracking.train`, func:`pyrost.SpeckleTracking.train_adapt`)
+reconstruction and offers two methods (:func:`pyrost.SpeckleTracking.train`, :func:`pyrost.SpeckleTracking.train_adapt`)
 to perform the iterative R-PXST update until the error metric converges to a minimum. The typical reconstruction
 cycle consists of:
 
@@ -114,11 +114,11 @@ Irrotationality correction
 """"""""""""""""""""""""""
 
 Since the geometric mapping between the reference plane and the detector plane is defined in terms of the
-gradient of a scalar function, the curl of the mapping must be zero. Such vector field is called ‘irrotational’.
+gradient of a scalar function, the curl of the mapping must be zero. Such a vector field is called 'irrotational'.
 However, the pixel mapping is updated at each point separately without any examination of the irrotationality.
-In order to ensure that the pixel mapping field is irrotational, we do the following:
+To ensure that the pixel mapping field is irrotational, we do the following:
 
-* Pixel mapping is integrated with the antisymmetric derivative itegration [ASDI]_
+* Pixel mapping is integrated with the antisymmetric derivative integration [ASDI]_
   (see :func:`pyrost.bin.ct_integrate`)
 * The numerical gradient is calculated with :func:`numpy.gradient`.
 
@@ -131,3 +131,4 @@ Contents
     classes/st_data
     classes/speckle_tracking
     classes/bfgs
+    classes/fftw

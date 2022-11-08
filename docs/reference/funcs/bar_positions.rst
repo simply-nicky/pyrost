@@ -1,4 +1,4 @@
 bar_positions
 =============
 
-.. autofunction:: pyrost.bin.bar_positions
+.. autoapifunction:: pyrost.bin.bar_positions

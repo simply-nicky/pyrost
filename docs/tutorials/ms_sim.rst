@@ -23,8 +23,8 @@ accessed with :func:`pyrost.multislice.MSParams.import_default`.
 Multilayer Laue lens
 --------------------
 
-As a sample we use a Multilayer Laue lens (MLL).
-:class:`pyrost.multislice.MLL` is able to generate the transmission
+As a sample, we use a Multilayer Laue lens (MLL).
+:class:`pyrost.multislice.MLL` can generate the transmission
 profile of the MLL following the zone plate condition.
 
 .. note:: MLL is a volume diffractive element for the efficient
@@ -73,7 +73,7 @@ perform the simulation as follows:
     :doc:`../reference/classes/ms_propagator` for the full list
     of attributes.
 
-Whereupon you can generate the beam profile downstream the sample,
+Whereupon you can generate the beam profile downstream of the sample,
 which is comprised of the direct beam and the convergent beam.
 
 .. code-block:: python

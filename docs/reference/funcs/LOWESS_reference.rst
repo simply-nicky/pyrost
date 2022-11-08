@@ -1,4 +1,4 @@
 LOWESS_reference
 ================
 
-.. autofunction:: pyrost.bin.LOWESS_reference
+.. autoapifunction:: pyrost.bin.LOWESS_reference

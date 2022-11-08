@@ -1,4 +1,4 @@
 KR_reference
 ============
 
-.. autofunction:: pyrost.bin.KR_reference
+.. autoapifunction:: pyrost.bin.KR_reference

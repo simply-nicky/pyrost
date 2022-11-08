@@ -35,7 +35,7 @@ int ml_profile(double complex *out, double *xcrd, size_t isize, double *layers, 
         for (int n = 0; n < (int) isize; n++)
         {
             out[n] = 1.0;
-            jj = searchsorted(&xcrd[n], layers, lsize, sizeof(double), compare_double);
+            jj = searchsorted(&xcrd[n], layers, lsize, sizeof(double), SEARCH_LEFT, compare_double);
             j0 = 2 * ((jj - dj) / 2) - 1;
             j1 = 2 * ((jj + dj) / 2);
             for (j = j0; j < j1; j += 2)
@@ -133,72 +133,6 @@ int frames(double *out, double *pfx, double *pfy, double dx, double dy, size_t *
         out += detx_size * dety_size; pfx += xpts;
     }
     free(pfxss); free(pfyss);
-
-    return 0;
-}
-
-void dot_double(void *out, line line1, line line2)
-{
-    const int num = (int)line1->npts;
-    const int is1 = (int)line1->stride;
-    const double *ip1 = (double *)line1->data;
-    const int is2 = (int)line2->stride;
-    const double *ip2 = (double *)line2->data;
-
-    *(double *)out = ddot_(&num, ip1, &is1, ip2, &is2);
-}
-
-void dot_long(void *out, line line1, line line2)
-{
-    long sum = 0;
-    long *ip1 = (long *)line1->data;
-    long *ip2 = (long *)line2->data;
-    for (int i = 0; i < (int)line1->npts; i++, ip1 += line1->stride, ip2 += line2->stride)
-    {sum += (*ip1) * (*ip2);}
-    *(long *)out = sum;
-}
-
-int dot(void *out, void *inp1, int ndim1, size_t *dims1, int axis1, void *inp2, int ndim2, size_t *dims2,
-    int axis2, size_t item_size, void (*dot_func)(void*, line, line), unsigned threads)
-{
-    /* check parameters */
-    if (!out || !inp1 || !inp2 || !dims1 || !dims2)
-    {ERROR("dot: one of the arguments is NULL."); return -1;}
-    if (ndim1 <= 0 || ndim2 <= 0) {ERROR("dot: ndim1 and ndim2 must be positive."); return -1;}
-    if (axis1 < 0 || axis1 >= ndim1) {ERROR("dot: invalid axis1."); return -1;}
-    if (axis2 < 0 || axis2 >= ndim2) {ERROR("dot: invalid axis2."); return -1;}
-    if (dims1[axis1] != dims2[axis2]) {ERROR("dot: incompatible shapes."); return -1;}
-    if (threads == 0) {ERROR("dot: threads must be positive."); return -1;}
-
-    array arr1 = new_array(ndim1, dims1, item_size, inp1);
-    array arr2 = new_array(ndim2, dims2, item_size, inp2);
-
-    int rep1 = arr1->size / arr1->dims[axis1];
-    int rep2 = arr2->size / arr2->dims[axis2];
-    int repeats = rep1 * rep2;
-    threads = (threads > (unsigned)repeats) ? (unsigned)repeats : threads;
-
-    #pragma omp parallel num_threads(threads)
-    {
-        line line1 = init_line(arr1, axis1);
-        line line2 = init_line(arr2, axis2);
-        int div;
-
-        #pragma omp for
-        for (int i = 0; i < (int)repeats; i++)
-        {
-            div = i / rep2;
-            UPDATE_LINE(line1, div);
-            UPDATE_LINE(line2, i - div * rep2);
-
-            dot_func(out + i * line1->item_size, line1, line2);
-        }
-
-        free(line1); free(line2);
-    }
-
-    free_array(arr1);
-    free_array(arr2);
 
     return 0;
 }

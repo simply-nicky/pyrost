@@ -1,4 +1,4 @@
 rsc_wp
 ======
 
-.. autofunction:: pyrost.bin.rsc_wp
+.. autoapifunction:: pyrost.bin.rsc_wp

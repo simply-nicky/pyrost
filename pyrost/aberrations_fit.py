@@ -119,11 +119,14 @@ class AberrationsFit(DataContainer):
     aberrations, deviation  angles, and phase profile with polynomial
     function. Based on :func:`scipy.optimise.least_squares`.
 
-    Attributes:
+    Args:
+        parent : The Speckle tracking data container, from which the object
+            is derived.
         kwargs : Necessary and optional attributes specified in the notes
             section.
-        det_ap : Aperture angle of a single pixel in detector plane.
-        ref_ap : Aperture angle of a single pixel in reference plane.
+
+    Raises:
+        ValueError : If any of the necessary attributes has not been provided.
 
     Notes:
         **Necessary attributes**:
@@ -170,16 +173,6 @@ class AberrationsFit(DataContainer):
     theta_ab            : np.ndarray
 
     def __init__(self, parent: ReferenceType, **kwargs: Union[float, np.ndarray]) -> None:
-        """
-        Args:
-            parent : The Speckle tracking data container, from which the object
-                is derived.
-            kwargs : Necessary and optional attributes specified in the notes
-                section.
-
-        Raises:
-            ValueError : If any of the necessary attributes has not been provided.
-        """
         super(AberrationsFit, self).__init__(parent=parent, **kwargs)
 
         self._init_functions(det_ap=lambda: self.pixel_size / self.distance,

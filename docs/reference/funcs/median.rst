@@ -1,4 +1,4 @@
 median
 ======
 
-.. autofunction:: pyrost.bin.median
+.. autoapifunction:: pyrost.bin.median

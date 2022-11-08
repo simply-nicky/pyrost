@@ -27,15 +27,22 @@ double ddot_(const int *N, const double *a, const int *inca, const double *b, co
 
 #define SQ(x)   ((x) * (x))
 
-#define RALLOC(type,num) \
-    ((type *)malloc((num)*sizeof(type)))
-#define DEALLOC(ptr) \
-    do { free(ptr); (ptr)=NULL; } while(0)
+#define MALLOC(type, num) \
+    ((type *)malloc((num) * sizeof(type)))
 
-#define SWAP(a,b,type) \
-    do { type tmp_=(a); (a)=(b); (b)=tmp_; } while(0)
-#define SWAP_BUF(a,b,size) \
-    do{ unsigned char buf[(size)]; memmove(buf, (a), (size)); memmove((a), (b), (size)); memmove((b), buf, (size)); } while(0)
+#define REALLOC(buf, type, num) \
+    ((type *)realloc((buf), (num) * sizeof(type)))
+
+/* free() doesn't change ptr, it still points to (now invalid) location */
+#define DEALLOC(ptr) \
+    do { free(ptr); (ptr) = NULL; } while (0)
+
+
+#define SWAP(a, b, type) \
+    do { type tmp_ = (a); (a) = (b); (b) = tmp_; } while (0)
+
+#define SWAP_BUF(a, b, size) \
+    do { unsigned char buf[(size)]; memmove(buf, (a), (size)); memmove((a), (b), (size)); memmove((b), buf, (size)); } while(0)
 
 #define ERROR(msg) \
     (fprintf(stderr, "C Error: %s\n", msg))

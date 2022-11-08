@@ -1,4 +1,4 @@
 pm_devolution
 =============
 
-.. autofunction:: pyrost.bin.pm_devolution
+.. autoapifunction:: pyrost.bin.pm_devolution
