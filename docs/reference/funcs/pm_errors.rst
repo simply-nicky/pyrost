@@ -1,4 +1,4 @@
 pm_errors
 =========
 
-.. autofunction:: pyrost.bin.pm_errors
+.. autoapifunction:: pyrost.bin.pm_errors

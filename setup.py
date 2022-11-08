@@ -1,6 +1,6 @@
 import os
 import sys
-from setuptools import setup, find_packages
+from setuptools import setup, find_namespace_packages
 from distutils.core import Extension
 import numpy
 
@@ -44,15 +44,14 @@ with open('README.md', 'r') as readme:
     long_description = readme.read()
 
 setup(name='pyrost',
-      version='0.7.5',
+      version='0.7.6',
       author='Nikolay Ivanov',
       author_email="nikolay.ivanov@desy.de",
       long_description=long_description,
       long_description_content_type='text/markdown',
       url="https://github.com/simply-nicky/pyrost",
-      packages=find_packages(),
+      packages=find_namespace_packages(),
       include_package_data=True,
-      package_data={'pyrost': ['config/*.ini', 'ini_templates/*.ini', 'data/*.npz']},
       install_requires=['h5py', 'numpy', 'scipy'],
       extras_require={'interactive': ['matplotlib', 'jupyter', 'pyximport', 'ipykernel', 'ipywidgets']},
       ext_modules=extensions,

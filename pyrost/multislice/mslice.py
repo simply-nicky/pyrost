@@ -36,8 +36,7 @@ class MLL(DataContainer):
     """
     Multilayer Laue lens class.
 
-    Attributes:
-        layers : MLL's bilayers x coordinates [um].
+    Args:
         mat1_r: Fresnel transmission coefficients for the first material,
             that the MLL's bilayers are composed of. The coefficients are the
             ratio of a wavefield propagating through a single slice of the
@@ -47,6 +46,7 @@ class MLL(DataContainer):
             ratio of a wavefield propagating through a single slice of the
             lens.
         sigma : Bilayer's interdiffusion length [um].
+        layers : MLL's bilayers x coordinates [um].
     """
     attr_set = {'layers', 'mat1_r', 'mat2_r', 'sigma'}
     en_to_wl = 1.239841929761768 # h * c / e [eV * um]
@@ -58,19 +58,6 @@ class MLL(DataContainer):
 
     def __init__(self, mat1_r: complex, mat2_r: complex, sigma: float,
                  layers: np.ndarray) -> None:
-        """
-        Args:
-            mat1_r: Fresnel transmission coefficients for the first material,
-                that the MLL's bilayers are composed of. The coefficients are the
-                ratio of a wavefield propagating through a single slice of the
-                lens.
-            mat2_r: Fresnel transmission coefficients for the second material,
-                that the MLL's bilayers are composed of. The coefficients are the
-                ratio of a wavefield propagating through a single slice of the
-                lens.
-            sigma : Bilayer's interdiffusion length [um].
-            layers : MLL's bilayers x coordinates [um].
-        """
         super(MLL, self).__init__(mat1_r=mat1_r, mat2_r=mat2_r, sigma=sigma,
                                   layers=layers)
 
@@ -163,10 +150,12 @@ class MSPropagator(DataContainer):
     Generates beam profile, that propagates through the sample
     using multislice approach.
 
-    Attributes:
-        attr_set : Set of attributes in the container which are necessary
-            to initialize in the constructor.
-        init_set : Set of optional data attributes.
+    Args:
+        params : Experimental parameters.
+        sample : Sample class, that generates the sample's
+            transmission profile.
+        num_threads : Number of threads used in the calculations.
+        kwargs : Attributes specified in `init_set`.
 
     Notes:
         **Necessary attributes**:
@@ -207,14 +196,6 @@ class MSPropagator(DataContainer):
 
     def __init__(self, params: MSParams, sample: MLL, num_threads: Optional[int]=None,
                  **kwargs: np.ndarray) -> None:
-        """
-        Args:
-            params : Experimental parameters.
-            sample : Sample class, that generates the sample's
-                transmission profile.
-            num_threads : Number of threads used in the calculations.
-            kwargs : Attributes specified in `init_set`.
-        """
         super(MSPropagator, self).__init__(params=params, sample=sample,
                                            num_threads=num_threads, **kwargs)
 

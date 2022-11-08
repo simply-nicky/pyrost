@@ -1,4 +1,4 @@
 tr_gsearch
 ==========
 
-.. autofunction:: pyrost.bin.tr_gsearch
+.. autoapifunction:: pyrost.bin.tr_gsearch

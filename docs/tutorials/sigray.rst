@@ -6,8 +6,8 @@ Converting raw data at the Sigray lab
 
 .. attention:: The file structure is written for the experiments at the Sigray lab only.
 
-Here we wrote a small auxilary snippet of code, that defines the paths to image and
-log files. We'll need them in order to generate a :class:`pyrost.STData` container:
+Here we wrote a small auxiliary snippet of code, that defines the paths to image and
+log files. We'll need them to generate a :class:`pyrost.STData` container:
 
 .. code-block:: python
 
@@ -23,7 +23,7 @@ log files. We'll need them in order to generate a :class:`pyrost.STData` contain
     >>>            'Rh': 6.137831605603974e-11}
 
 Now we need to read a log file to generate a set of basis vectors and sample translations.
-We use :class:`pyrost.KamzikConverter` Kamzik log files converter, that provides an interface
+We use :class:`pyrost.KamzikConverter` Kamzik log files converter, which provides an interface
 to read log files with :func:`pyrost.KamzikConverter.read_logs`:
 
 .. code-block:: python
@@ -32,7 +32,7 @@ to read log files with :func:`pyrost.KamzikConverter.read_logs`:
     >>> converter = converter.read_logs(log_path)
 
 After the data is obtained from the log files, it's written to `converter.log_attr` and
-`converter.log_data` attributes. As a next, one can get a list of datasets available in log
+`converter.log_data` attributes. As next, one can get a list of datasets available in log
 data with :func:`pyrost.KamzikConverter.cxi_keys` method:
 
 .. code-block:: python
@@ -51,7 +51,7 @@ we would like to get a set of basis vectors (`'basis_vectors'`) and sample trans
 
 Now we're ready to generate a :class:`pyrost.STData` container. It requires a data file with X-ray images,
 that can be opened with :class:`pyrost.CXIStore` file handler, also we parse attributes obtained from log
-files (`log_data`) and some extra information known from the experimental setup:
+files (`log_data`) and some extra information obtained from the experimental setup:
 
 .. code-block:: python
 
@@ -66,7 +66,7 @@ Now we can inspect what attributes are already stored inside of container:
     ['y_pixel_size', 'distance', 'translations', 'basis_vectors', 'x_pixel_size',
     'good_frames', 'wavelength', 'num_threads', 'input_file']
 
-:class:`pyrost.STData` is a main class, that provides different tools to process the data. Also it provides
+:class:`pyrost.STData` is the main class, that provides different tools to process the data. Also, it provides
 methods to load data from a file with :func:`pyrost.STData.load` and save to it with :func:`pyrost.STData.save`.
 Let's load raw X-ray images and look at them:
 
@@ -91,7 +91,7 @@ Let's load raw X-ray images and look at them:
 Working with the data
 ---------------------
 The function returns a :class:`pyrost.STData` data container, which has a set of utility routines
-(see :class:`pyrost.STData` for the full list of methods). Usually the pre-processing of a Sigray
+(see :class:`pyrost.STData` for the full list of methods). Usually, the pre-processing of a Sigray
 dataset consists of (see :ref:`diatom-preprocessing` for more info):
 
 * Defining a region of interest `[y_min, y_max, x_min, x_max]` (:class:`pyrost.Crop`,
@@ -208,19 +208,19 @@ method.
 
 Phase fitting
 -------------
-In the end we want to look at a angular displacement profile of the X-ray beam and
+In the end, we want to look at an angular displacement profile of the X-ray beam and
 find the fit to the profile with a polynomial. All of it could be done with 
 :class:`pyrost.AberrationsFit` fitter object, which can be obtained with
 :func:`pyrost.STData.get_fit` method. We may parse the direct beam coordinate
-in pixels to center the scattering angles aroung the direction of the direct beam:
+in pixels to center the scattering angles around the direction of the direct beam:
 
 .. code-block:: python
 
     >>> fit_obj = data.get_fit(axis=1)
     
-Moreover we would like to remove the first order polynomial term from the displacement
+Moreover, we would like to remove the first-order polynomial term from the displacement
 profile with the :func:`pyrost.AberrationsFit.remove_linear_term`, since it
-characterizes the beam's defocus and is of no interest to us. After that, you
+characterizes the beam defocus and is of no interest to us. After that, you
 can obtain the best fit to the displacement profile with :func:`pyrost.AberrationsFit.fit`
 and to the phase profile with :func:`pyrost.AberrationsFit.fit_phase`:
 

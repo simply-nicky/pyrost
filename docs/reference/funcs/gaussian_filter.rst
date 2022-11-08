@@ -1,4 +1,4 @@
 gaussian_filter
 ===============
 
-.. autofunction:: pyrost.bin.gaussian_filter
+.. autoapifunction:: pyrost.bin.gaussian_filter

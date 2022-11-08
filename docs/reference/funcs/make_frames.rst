@@ -1,4 +1,4 @@
 make_frames
 ===========
 
-.. autofunction:: pyrost.bin.make_frames
+.. autoapifunction:: pyrost.bin.make_frames

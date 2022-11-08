@@ -14,7 +14,7 @@ attribute (`data`, `whitefield`, etc.):
 * **load_paths** : List of paths inside a HDF5 file, where the given data attribute may be
   saved.
 * **kinds** : The attribute's kind, that specifies data dimensionality. This information
-  is required to know how load, save and process the data. The attribute may be one of
+  is required to know how to load, save and process the data. The attribute may be one of
   the four following kinds:
 
   * *scalar* : Data is either 0D, 1D, or 2D. The data is saved and loaded plainly
@@ -25,7 +25,7 @@ attribute (`data`, `whitefield`, etc.):
   * *frame* : Frame array. Data must be 2D, it may be transformed with any of
     :class:`pyrost.Transform` objects. The data shape is identical to the detector
     pixel grid.
-  * *stack* : A time sequnce of frame arrays. The data must be 3D. It's indexed in the
+  * *stack* : A time sequence of frame arrays. The data must be 3D. It's indexed in the
     same way as `sequence` attributes. Each frame array may be transformed with any of
     :class:`pyrost.Transform` objects.
 
@@ -108,8 +108,8 @@ is given by:
 CXI file handler class (:class:`pyrost.CXIStore`) accepts a set of paths to the files together with
 a protocol object. :class:`pyrost.CXIStore` searches the files for any data attributes defined by
 the protocol. It provides an interface to load the data of the given attribute from the files
-(see :func:`pyrost.CXIStore.load`) and save the data of the attribute to the first file in the set
-(see :func:`pyrost.CXIStore.save`). The files may be multiple or a single one.
+(see :func:`pyrost.CXIStore.load`) and to save the data of the attribute to the first file in the set
+(see :func:`pyrost.CXIStore.save`). One can parse several files or a single one.
 
 .. automodule:: pyrost.cxi_protocol
 

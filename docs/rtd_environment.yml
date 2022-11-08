@@ -3,18 +3,19 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - gcc_linux-64
   - cython
-  - python=3.7
-  - gsl
-  - llvm-openmp
   - fftw
+  - furo
+  - gcc_linux-64
+  - gsl
   - h5py
+  - llvm-openmp
+  - mock
   - numpy
+  - pillow
+  - python=3.7
   - scipy
   - sphinx
-  - furo
-  - sphinx-autodoc-typehints
-  - mock
-  - pillow
+  - sphinx-autoapi
+  - sphinx-toolbox
   - tqdm

@@ -3,7 +3,7 @@ Speckle tracking reconstruction of a 2d dataset
 
 Diatom dataset CXI file
 -----------------------
-First download the `diatom.cxi <https://www.cxidb.org/data/134/diatom.cxi>`_
+First, download the `diatom.cxi <https://www.cxidb.org/data/134/diatom.cxi>`_
 file from the `CXIDB <https://www.cxidb.org/>`_. The file has the following
 structure:
 
@@ -41,7 +41,7 @@ structure:
     /entry_1/sample_1/name   Dataset {SCALAR}
     /entry_1/start_time      Dataset {SCALAR}
 
-As we can see in :code:`entry_1/data_1/data` the file contains a two-dimensional 11x11 scan,
+As we can see in :code:`entry_1/data_1/data`, the file contains a two-dimensional 11x11 scan,
 where each frame is an image of 516x1556 pixels.
 
 Loading the data
@@ -52,7 +52,7 @@ CXI protocol
 
 Before loading the file, a CXI protocol for the file `diatom.cxi` must be created (see
 :class:`pyrost.CXIProtocol` for more information). The CXI protocol must be instantiated with
-the following information for all the data attributes (`data`, `whitefield`, etc) needed for
+the following information for all the data attributes (`data`, `whitefield`, etc.) needed for
 PXST data processing:
 
 * **datatypes** : Data type of the given data attribute.
@@ -74,7 +74,7 @@ CXI file handler
 
 :class:`pyrost.CXIStore` is a file handler object, it accepts a :class:`pyrost.CXIProtocol` protocol and
 paths to a single file or a set of files. It reads the files for all the data attributes specified in the
-procotol. The file handler provides two method to load and save the data for the specified data attrubute
+procotol. The file handler provides two methods to load and save the data for the specified data attribute
 (:func:`pyrost.CXIStore.load_attribute` and :func:`pyrost.CXIStore.save_attribute`).
 
 Read `diatom.cxi` file as follows:
@@ -96,7 +96,7 @@ Preprocessing of a PXST dataset
 Now one may load the data from `diatom.cxi` file and generate the quantities needed prior
 to the main speckle tracking update procedure with a :class:`pyrost.STData` data container.
 :class:`pyrost.STData` need a :class:`pyrost.CXIStore` file handler for an input file for
-the initialization. We pass also a file handler of the output file too (it's optional, the
+the initialization. We also pass a file handler of the output file too (it's optional, the
 output file handler can be updated with :func:`pyrost.STData.update_output_file`):
 
 .. code-block:: python
@@ -123,7 +123,7 @@ can be passed to the container:
 :class:`pyrost.STData` contains a set of data processing tools to work with the data. In
 particular, :func:`pyrost.STData.update_mask` generates a pixel mask that excludes bad and
 hot pixels of the dataset from the subsequent analysis, :func:`pyrost.STData.mask_frames`
-selects the good frames, that will be used in the speckle tracking reconstruction:
+selects the good frames that will be used in the speckle tracking reconstruction:
 
 .. code-block:: python
 
@@ -131,8 +131,8 @@ selects the good frames, that will be used in the speckle tracking reconstructio
     >>> data = data.mask_frames(good_frames=np.arange(1, 121))
 
 
-Now we need to estimate the defocus distance needed for the R-PXST update procedure. You
-can estimate it with :func:`pyrost.STData.defocus_sweep`. It generates referenc images for
+Now we need to estimate the defocus distance needed for the R-PXST update procedure. One
+can estimate it with :func:`pyrost.STData.defocus_sweep`. It generates reference images for
 a set of defocus distances and yields average values of the gradient magnitude squared
 (:math:`\left< R[i, j] \right>`, see :func:`pyrost.STData.defocus_sweep`), which serves a
 figure of merit of how sharp or blurry the reference image is (the higher is :math:`\left< R[i, j] \right>`
@@ -174,7 +174,7 @@ Creating a :class:`SpeckleTracking <pyrost.SpeckleTracking>` object
 
 Having formed an initial estimate for the defocus distance and the white-field (or a set of white-fields,
 if needed), a :class:`pyrost.SpeckleTracking` object with all data attributes necessary for the R-PXST
-update can be generated. The key attrivute that it contains are:
+update can be generated. The key attributes that it contains are:
 
 * `reference_image` : Unaberrated reference profile of the sample.
 * `pixel_map` : Discrete geometrical mapping function from the detector plane to the reference plane.
@@ -186,8 +186,8 @@ update can be generated. The key attrivute that it contains are:
 Iterative R-PXST reconstruction
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-SpeckleTracking provides an interface to iteratively refine the reference image and lens wavefront. It offers
-two methods to choose from:
+:class:`pyrost.SpeckleTracking` provides an interface to refine the reference image and lens wavefront iteratively.
+It offers two methods to choose from:
 
 * :func:`pyrost.SpeckleTracking.train` : performs the iterative reference image
   and pixel mapping updates with the constant kernel bandwidths for the reference image
@@ -195,37 +195,38 @@ two methods to choose from:
 
 * :func:`pyrost.SpeckleTracking.train_adapt` : does ditto, but updates the bandwidth
   value for the reference image estimator at each iteration by the help of the BFGS method
-  to attain the minimal error value.
+  to attain the minimum error value.
 
 .. note:: You should pay outmost attention to choosing the right kernel bandwidth of the
     reference image estimator (`h0` in :func:`pyrost.SpeckleTracking.update_reference`). Essentially it
     stands for the high frequency cut-off imposed during the reference profile update, so it helps to
-    supress the noise. If the value is too high you'll lose useful information in the reference
-    profile. If the value is too low and the data is noisy, you won't get an acurate reconstruction.
+    supress the noise. If the value is too high, you'll lose useful information in the reference
+    profile. If the value is too low and the data is noisy, you won't get an accurate reconstruction.
     An optimal kernel bandwidth can be estimated with :func:`pyrost.SpeckleTracking.find_hopt` method.
     
 .. note:: Next important parameter is `blur` in :func:`pyrost.SpeckleTracking.update_pixel_map`.
-    It helps to prevent the noise propagation to the next iteration by the means of kernel
+    It helps to prevent noise propagation to the next iteration by means of kernel
     smoothing of the updated pixel mapping.
 
-.. note:: Apart from pixel mapping update you may try to perform the sample shifts update if you've
-    got a low precision or credibilily of sample shifts measurements. You can do it by setting
+.. note:: Apart from pixel mapping update, one may try to perform the sample shifts update if you've
+    got a low precision or credibility of sample shifts measurements. It can be done by setting
     the `update_translations` parameter to True.
 
 Optimal kernel bandwidth
 ^^^^^^^^^^^^^^^^^^^^^^^^
 
-Kernel bandwidth is an important hyperparameter in the reference image update. The use of a small kernel
+Kernel bandwidth is an important hyperparameter in the reference image update. Using a small kernel
 bandwidth in a non-parametric estimator can introduce a small bias to the estimate. At the same time, less
 smoothing means that each estimate is obtained by averaging over (in effect) just a few observations,
-making the estimate noisier. So less smoothing increases the variance of the estimate. In our implementation
-the optimal bandwidth is estimated based on minimizing the cross-validation metric. :class:`pyrost.SpeckleTracking`
+making the estimate noisier. So less smoothing increases the variance of the estimate. Our implementation
+estimates the optimal bandwidth based on minimizing the cross-validation metric. :class:`pyrost.SpeckleTracking`
 divides the dataset into two subsets at the initialization stage. The splitting into two subsets can be updated
 with :func:`pyrost.SpeckleTracking.test_train_split`:
 
 .. code-block:: python
 
-    >>> data = data.test_train_split(test_ratio=0.2)
+    >>> st_obj = data.get_st(ds_x=1.0, ds_y=1.0)
+    >>> st_obj = st_obj.test_train_split(test_ratio=0.2)
 
 The CV method calculates the CV as follows: it generates a reference profile based on the former “training” subset
 and calculates the mean-squared-error for the latter “testing” subset. The CV can be calculated with
@@ -253,7 +254,6 @@ Fletcher, Goldfarb, and Shanno [BFGS]_:
 
 .. code-block:: python
 
-    >>> st_obj = data.get_st(ds_x=1.0, ds_y=1.0)
     >>> h0 = st_obj.find_hopt(verbose=True)
     >>> print(h0)
     0.7537624318448054
@@ -289,11 +289,11 @@ The results are saved to a `st_res` container:
 Phase reconstruction
 --------------------
 
-We got the pixel mapping between from the detector plane to the reference plane, which can
-be easily translated to the angular diplacement profile of the lens. Following the Hartmann sensor
+We got the pixel mapping from the detector plane to the reference plane, which can
+be easily translated to the angular displacement profile of the lens. Following the Hartmann sensor
 principle (look [ST]_ page 762 for more information), we reconstruct the lens' phase
-profile with :func:`pyrost.STData.import_st` method. Besides, you can fit the phase
-profile with polynomial function using :class:`pyrost.AberrationsFit` fitter object,
+profile with :func:`pyrost.STData.import_st` method. Besides, one can fit the phase
+profile with a polynomial function using :class:`pyrost.AberrationsFit` fitter object,
 which can be obtained with :func:`pyrost.STData.get_fit` method.
 
 .. code-block:: python
@@ -342,7 +342,7 @@ which can be obtained with :func:`pyrost.STData.get_fit` method.
 
 Saving the results
 ------------------
-In the end you can save the results to a CXI file. By default :func:`pyrost.STData.save` saves all
+In the end, one can save the results to a CXI file. By default :func:`pyrost.STData.save` saves all
 the data it contains. The method offers three modes:
 
 * 'overwrite' : Overwrite all the data stored already in the output file.
@@ -353,7 +353,7 @@ the data it contains. The method offers three modes:
 
     >>> data.save(mode='overwrite')
 
-To see al the attributes stored in the container, use :func:`pyrost.STData.contents`:
+To see all the attributes stored in the container, use :func:`pyrost.STData.contents`:
 
 .. code-block:: python
 
@@ -392,7 +392,7 @@ Here are all the results saved in the output file `diatom_proc.cxi`:
     /speckle_tracking/translations Dataset {120/Inf, 3}
     /speckle_tracking/whitefield Dataset {340, 390}
 
-As you can see all the results have been saved using the same CXI protocol.
+As one can see, all the results have been saved using the same CXI protocol.
 
 References
 ----------

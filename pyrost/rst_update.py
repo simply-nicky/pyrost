@@ -19,10 +19,11 @@ class SpeckleTracking(DataContainer):
     Provides an interface to perform the reference image and lens
     wavefront reconstruction.
 
-    Attributes:
-        attr_set : Set of attributes in the container which are necessary
-            to initialize in the constructor.
-        init_set : Set of optional data attributes.
+    Args:
+        parent : The Speckle tracking data container, from which the
+            object is derived.
+        kwargs : Dictionary of the attributes' data specified in `attr_set`
+            and `init_set`.
 
     Notes:
         **Necessary attributes**:
@@ -54,6 +55,10 @@ class SpeckleTracking(DataContainer):
         * n0 : The lower bounds of the vertical detector axis of
           the reference image at the reference frame in pixels.
         * reference_image : The unabberated reference image of the sample.
+
+    Raises:
+        ValueError : If an attribute specified in `attr_set` has not been
+            provided.
 
     See Also:
 
@@ -99,17 +104,6 @@ class SpeckleTracking(DataContainer):
     initial : Optional[SpeckleTracking]
 
     def __init__(self, parent: ReferenceType, **kwargs: Union[int, float, np.ndarray]) -> None:
-        """
-        Args:
-            parent : The Speckle tracking data container, from which the
-                object is derived.
-            kwargs : Dictionary of the attributes' data specified in `attr_set`
-                and `init_set`.
-
-        Raises:
-            ValueError : If an attribute specified in `attr_set` has not been
-                provided.
-        """
         super(SpeckleTracking, self).__init__(parent=parent, **kwargs)
         self._init_functions(test_mask=self._test_mask, train_mask=lambda: ~self.test_mask,
                              ref_orig=self._ref_orig, reference_image=self._reference_image,
@@ -248,7 +242,7 @@ class SpeckleTracking(DataContainer):
         Returns:
             An array of reference profile pixel indices.
         """
-        idxs = np.indices(self.reference_image.shape) 
+        idxs = np.indices(self.reference_image.shape)
         idxs[0] = idxs[0] * self.ds_y - self.ref_orig[0]
         idxs[1] = idxs[1] * self.ds_x - self.ref_orig[1]
         return idxs
@@ -393,7 +387,7 @@ class SpeckleTracking(DataContainer):
         pm[0] = (dpm[0] - uy_avg) + self.pixel_map[0]
         pm[1] = (dpm[1] - ux_avg) + self.pixel_map[1]
 
-        if integrate:
+        if integrate and self.reference_image.shape[0] > 1 and self.reference_image.shape[1] > 1:
             phi = ct_integrate(sy_arr=pm[0], sx_arr=pm[1], num_threads=self.num_threads)
             pm[0] = np.gradient(phi, axis=0)
             pm[1] = np.gradient(phi, axis=1)
@@ -535,7 +529,7 @@ class SpeckleTracking(DataContainer):
 
         raise ValueError('kind keyword is invalid')
 
-    def find_hopt(self, h0: float=1.0, method: str='KerReg',
+    def find_hopt(self, h0: float=1.0, method: str='KerReg', beta: float=0.9,
                   epsilon: float=1e-3, maxiter: int=10, gtol: float=1e-5,
                   verbose: bool=False) -> float:
         """Find the optimal kernel bandwidth by finding the bandwidth, that minimized
@@ -550,6 +544,7 @@ class SpeckleTracking(DataContainer):
                 * `KerReg` : Kernel regression algorithm.
                 * `LOWESS` : Local weighted linear regression.
 
+            beta : Exponential decay coefficient for inverse Hessian matrix.
             epsilon : The step size used in the estimation of the fitness gradient.
             maxiter : Maximum number of iterations in the minimization loop.
             gtol : Gradient norm must be less than `gtol` before successful
@@ -564,7 +559,7 @@ class SpeckleTracking(DataContainer):
                      Sci. 35, 7 (1999).
         """
         optimizer = BFGS(lambda hval: self.CV(hval, method), np.atleast_1d(h0),
-                         epsilon=epsilon)
+                         epsilon=epsilon, beta=beta)
         itor = tqdm(range(maxiter), disable=not verbose,
                     bar_format='{desc} {percentage:3.0f}% {bar} Iteration {n_fmt}'\
                                ' / {total_fmt} [{elapsed}<{remaining}, {rate_fmt}{postfix}]')
@@ -590,7 +585,7 @@ class SpeckleTracking(DataContainer):
         the pixel mapping between a stack of frames and the generated reference image
         (see :func:`SpeckleTracking.update_pixel_map`); (iv) updating the sample
         translation vectors (if needed, see :func:`SpeckleTracking.update_translations`);
-        and (v) calculating the mean Huber error (see :func:`SpeckleTracking.update_error`).
+        and (v) calculating the mean Huber error (see :func:`SpeckleTracking.update_errors`).
 
         Args:
             search_window : A tuple of three elements ('sw_y', 'sw_x', 'sw_s'). The elements
@@ -650,6 +645,8 @@ class SpeckleTracking(DataContainer):
 
             options : Extra options. Accepts the following keyword arguments:
 
+                * `beta` : Exponential decay coefficient for inverse Hessian matrix.
+                  The default value is 0.9.
                 * `epsilon` : Increment to `h0` to use for determining the
                   function gradient for `h0` update algorithm. The default
                   value is 1.4901161193847656e-08.
@@ -682,6 +679,7 @@ class SpeckleTracking(DataContainer):
         integrate = pm_args.get('integrate', False)
 
         epsilon = options.get('epsilon', 1e-3)
+        beta = options.get('beta', 0.9)
         maxiter = options.get('maxiter', 10)
         momentum = options.get('momentum', 0.0)
         update_translations = options.get('update_translations', False)
@@ -691,7 +689,7 @@ class SpeckleTracking(DataContainer):
         obj.update_errors.inplace_update()
 
         optimizer = BFGS(lambda hval: obj.CV(hval, ref_method),
-                         np.atleast_1d(h0), epsilon=epsilon)
+                         np.atleast_1d(h0), epsilon=epsilon, beta=beta)
 
         errors = [obj.error,]
         hvals = [h0,]
@@ -819,8 +817,7 @@ class SpeckleTracking(DataContainer):
                 * `return_extra` : Return errors at each iteration if True.
                   The default value is False.
 
-            verbose : bool, optional
-                Set verbosity of the computation process.
+            verbose : Set verbosity of the computation process.
 
         Returns:
             A tuple of two items (`st_obj`, `errors`). The elements of the tuple

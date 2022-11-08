@@ -1,4 +1,4 @@
 gaussian_gradient_magnitude
 ===========================
 
-.. autofunction:: pyrost.bin.gaussian_gradient_magnitude
+.. autoapifunction:: pyrost.bin.gaussian_gradient_magnitude

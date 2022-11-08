@@ -15,17 +15,12 @@ class hybridmethod:
     """Hybrid method descriptor supporting
     two distinct methodsbound to class and instance.
 
-    Attributes:
+    Args:
         fclass : Class bound method.
         finstance : Instance bound method.
-        doc : Method's dosctring.
+        doc : Method's docstring.
     """
     def __init__(self, fclass: Desc, finstance: Desc=None, doc: str=None) -> None:
-        """Args:
-            fclass : Class bound method.
-            finstance : Instance bound method.
-            doc : Method's docstring.
-        """
         self.fclass, self.finstance = fclass, finstance
         self.__doc__ = doc or fclass.__doc__
         self.__isabstractmethod__ = bool(getattr(fclass, '__isabstractmethod__', False))
@@ -63,11 +58,18 @@ class INIParser:
     """INI files parser class with the methods for importing and exporting
     ini files and Python dictionaries.
 
+    Args:
+        kwargs : Attributes specified in `attr_dict`.
+
     Attributes:
         err_txt : Error text.
         known_types : Look-up dictionary of supported types for formatting.
         attr_dict : Dictionary of provided attributes.
         fmt_dict : Dictionary of attributes' types used for formatting.
+
+    Raises:
+        AttributeError : If the attribute specified in `attr_dict`
+
     """
     err_txt = "Wrong format key '{0:s}' of option '{1:s}'"
     known_types = {'int': int, 'bool': bool, 'float': float, 'str': str}
@@ -77,13 +79,6 @@ class INIParser:
     FMT_LEN = 3
 
     def __init__(self, **kwargs: Any) -> None:
-        """Args:
-            kwargs : Attributes specified in `attr_dict`.
-
-        Raises:
-            AttributeError : If the attribute specified in `attr_dict`
-                has not been provided in keyword arguments ``**kwargs``.
-        """
         self.__dict__['_lookup'] = {}
         self.__dict__['ini_dict'] = {section: {} for section in self.attr_dict}
         for section in self.attr_dict:

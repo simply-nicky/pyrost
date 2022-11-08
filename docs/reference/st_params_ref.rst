@@ -11,7 +11,7 @@ Simulation parameters
 |
 
 Simulation parameters class(:class:`pyrost.simulation.STParams`) for the
-one-dimenional Speckle Tracking scan stores all the parameters and provides
+one-dimensional Speckle Tracking scan stores all the parameters and provides
 additional methods necessary to perform the simulation. 
 
 List of simulation parameters:
@@ -49,7 +49,7 @@ List of simulation parameters:
 * **Barcode sample parameters**:
 
   * `bar_size` : Average bar's size [um].
-  * `bar_sigma` : Bar bluriness width [um].
+  * `bar_sigma` : Bar blurriness width [um].
   * `bar_atn` : Bar's attenuation coefficient [0.0 - 1.0].
   * `bulk_atn` : Barcode's bulk attenuation coefficient [0.0 - 1.0].
   * `bar_rnd` : Bar's coordinates random deviation [0.0 - 1.0].

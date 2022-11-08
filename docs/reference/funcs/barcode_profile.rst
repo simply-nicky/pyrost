@@ -1,4 +1,4 @@
 barcode_profile
 ===============
 
-.. autofunction:: pyrost.bin.barcode_profile
+.. autoapifunction:: pyrost.bin.barcode_profile

@@ -36,14 +36,24 @@ class CXIProtocol(INIParser):
     the Speckle Tracking algorithm, corresponding attributes'
     data types, and floating point precision.
 
-    Attributes:
-        config : Protocol configuration.
+    Args:
         datatypes : Dictionary with attributes' datatypes. 'float', 'int', 'uint',
             or 'bool' are allowed.
-        is_data : Dictionary with the flags if the attribute is of data type.
-            Data type is 2- or 3-dimensional and has the same data shape
-            as `data`.
-        load_paths : Dictionary with attributes' CXI default file paths.
+        load_paths : Dictionary with attributes path in the CXI file.
+        kinds : The attribute's kind, that specifies data dimensionality. The following keywords
+            are allowed:
+
+            * `scalar` : Data is either 0D, 1D, or 2D. The data is saved and loaded plainly
+                without any transforms or indexing.
+            * `sequence` : A time sequence array. Data is either 1D, 2D, or 3D. The data is
+                indexed, so the first dimension of the data array must be a time dimension. The
+                data points for the given index are not transformed.
+            * `frame` : Frame array. Data must be 2D, it may be transformed with any of
+                :class:`pyrost.Transform` objects. The data shape is identical to the detector
+                pixel grid.
+            * `stack` : A time sequnce of frame arrays. The data must be 3D. It's indexed in the
+                same way as `sequence` attributes. Each frame array may be transformed with any of
+                :class:`pyrost.Transform` objects.
     """
     known_types = {'int': np.integer, 'bool': bool, 'float': np.floating, 'str': str,
                    'uint': np.unsignedinteger}
@@ -59,15 +69,6 @@ class CXIProtocol(INIParser):
 
     def __init__(self, datatypes: Dict[str, str], load_paths: Dict[str, Union[str, List[str]]],
                  kinds: Dict[str, str]) -> None:
-        """
-        Args:
-            datatypes : Dictionary with attributes' datatypes. 'float', 'int', 'uint',
-                or 'bool' are allowed.
-            load_paths : Dictionary with attributes path in the CXI file.
-            kinds : Dictionary with the flags if the attribute is of data type.
-                Data type is 2- or 3-dimensional and has the same data shape
-                as `data`.
-        """
         load_paths = {attr: self.str_to_list(val)
                       for attr, val in load_paths.items() if attr in datatypes}
         kinds = {attr: val for attr, val in kinds.items() if attr in datatypes}
@@ -85,9 +86,20 @@ class CXIProtocol(INIParser):
             datatypes : Dictionary with attributes' datatypes. 'float', 'int', 'uint',
                 or 'bool' are allowed.
             load_paths : Dictionary with attributes path in the CXI file.
-            kinds : Dictionary with the flags if the attribute is of data type.
-                Data type is 2- or 3-dimensional and has the same data shape
-                as `data`.
+            kinds : The attribute's kind, that specifies data dimensionality. The following keywords
+                are allowed:
+
+                * `scalar` : Data is either 0D, 1D, or 2D. The data is saved and loaded plainly
+                  without any transforms or indexing.
+                * `sequence` : A time sequence array. Data is either 1D, 2D, or 3D. The data is
+                  indexed, so the first dimension of the data array must be a time dimension. The
+                  data points for the given index are not transformed.
+                * `frame` : Frame array. Data must be 2D, it may be transformed with any of
+                  :class:`pyrost.Transform` objects. The data shape is identical to the detector
+                  pixel grid.
+                * `stack` : A time sequnce of frame arrays. The data must be 3D. It's indexed in the
+                  same way as `sequence` attributes. Each frame array may be transformed with any of
+                  :class:`pyrost.Transform` objects.
 
         Returns:
             A :class:`CXIProtocol` object with the default parameters.
@@ -107,9 +119,20 @@ class CXIProtocol(INIParser):
                 or 'bool' are allowed. Initialized with `ini_file` if None.
             load_paths : Dictionary with attributes path in the CXI file. Initialized
                 with `ini_file` if None.
-            kinds : Dictionary with the flags if the attribute is of data type.
-                Data type is 2- or 3-dimensional and has the same data shape
-                as `data`. Initialized with `ini_file` if None.
+            kinds : The attribute's kind, that specifies data dimensionality. The following keywords
+                are allowed:
+
+                * `scalar` : Data is either 0D, 1D, or 2D. The data is saved and loaded plainly
+                  without any transforms or indexing.
+                * `sequence` : A time sequence array. Data is either 1D, 2D, or 3D. The data is
+                  indexed, so the first dimension of the data array must be a time dimension. The
+                  data points for the given index are not transformed.
+                * `frame` : Frame array. Data must be 2D, it may be transformed with any of
+                  :class:`pyrost.Transform` objects. The data shape is identical to the detector
+                  pixel grid.
+                * `stack` : A time sequnce of frame arrays. The data must be 3D. It's indexed in the
+                  same way as `sequence` attributes. Each frame array may be transformed with any of
+                  :class:`pyrost.Transform` objects.
 
         Returns:
             A :class:`CXIProtocol` object with all the attributes imported
@@ -168,7 +191,7 @@ class CXIProtocol(INIParser):
         return attr in self.datatypes
 
     def get_load_paths(self, attr: str, value: Optional[List[str]]=None) -> List[str]:
-        """Return the atrribute's default path in the CXI file.
+        """Return the attribute's default path in the CXI file.
         Return `value` if `attr` is not found.
 
         Args:
@@ -214,7 +237,7 @@ class CXIProtocol(INIParser):
         return self.kinds.get(attr, value)
 
     def get_ndim(self, attr: str, value: int=0) -> Tuple[int, ...]:
-        """Return the acceptable number of dimenstions that the attribute's data
+        """Return the acceptable number of dimensions that the attribute's data
         may have.
 
         Args:
@@ -327,6 +350,11 @@ class CXIStore():
     save and load data attributes to a file. Support multiple files. The handler
     saves data to the first file.
 
+    Args:
+        names : Paths to the files.
+        mode : Mode in which to open file; one of ('w', 'r', 'r+', 'a', 'w-').
+        protocol : CXI protocol. Uses the default protocol if not provided.
+
     Attributes:
         file_dict : Dictionary of paths to the files and their file
             objects.
@@ -345,12 +373,6 @@ class CXIStore():
 
     def __init__(self, names: Union[str, List[str]], mode: str='r',
                  protocol: CXIProtocol=CXIProtocol.import_default()) -> None:
-        """
-        Args:
-            names : Paths to the files.
-            mode : Mode in which to open file; one of ('w', 'r', 'r+', 'a', 'w-').
-            protocol : CXI protocol. Uses the default protocol if not provided.
-        """
         if mode not in ['r', 'r+', 'w', 'w-', 'x', 'a']:
             raise ValueError(f'Wrong file mode: {mode}')
         names = protocol.str_to_list(names)

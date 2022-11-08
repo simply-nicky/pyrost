@@ -37,7 +37,7 @@ class LogProtocol(INIParser):
     """Log file protocol class. Contains log file keys to retrieve
     and the data types of the corresponding values.
 
-    Attributes:
+    Args:
         datatypes : Dictionary with attributes' datatypes. 'float', 'int',
             'bool', or 'str' are allowed.
         log_keys : Dictionary with attributes' log file keys.
@@ -55,14 +55,6 @@ class LogProtocol(INIParser):
 
     def __init__(self, datatypes: Dict[str, str], log_keys: Dict[str, List[str]],
                  part_keys: Dict[str, str]) -> None:
-        """
-        Args:
-            datatypes : Dictionary with attributes' datatypes. 'float', 'int',
-                'bool', or 'str' are allowed.
-            log_keys : Dictionary with attributes' log file keys.
-            part_keys : Dictionary with the part names inside the log file
-                where the attributes are stored.
-        """
         log_keys = {attr: val for attr, val in log_keys.items() if attr in datatypes}
         datatypes = {attr: val for attr, val in datatypes.items() if attr in log_keys}
         super(LogProtocol, self).__init__(datatypes=datatypes, log_keys=log_keys,
@@ -293,13 +285,13 @@ class KamzikConverter(DataContainer):
     """A converter class, that generates CXI datasets aceeptable by :class:`pyrost.STData`
     from Kamzik log files.
 
-    Attributes:
+    Args:
         protocol : Log file protocol.
         fs_vec : Fast (horizontal) scan detector axis.
         ss_vec : Slow (vertical) scan detector axis.
         idxs : Frame indices read from a log file.
-        log_attr : Dictionary of log attributes.
-        log_data : Dictionary of log datasets.
+        log_attr : Dictionary of log attributes read from a log file.
+        log_data : Dictionary of log datasets read from a log file.
     """
     attr_set = {'protocol', 'fs_vec', 'ss_vec'}
     init_set = {'idxs', 'log_attr', 'log_data'}
@@ -321,15 +313,6 @@ class KamzikConverter(DataContainer):
                  ss_vec: np.ndarray=np.array([0., -55e-6, 0.]),
                  idxs: Optional[np.ndarray]=None, log_attr: Optional[Dict[str, Any]]=None,
                  log_data: Optional[Dict[str, Any]]=None) -> None:
-        """
-        Args:
-            protocol : Log file protocol.
-            fs_vec : Fast (horizontal) scan detector axis.
-            ss_vec : Slow (vertical) scan detector axis.
-            idxs : Frame indices read from a log file.
-            log_attr : Dictionary of log attributes read from a log file.
-            log_data : Dictionary of log datasets read from a log file.
-        """
         super(KamzikConverter, self).__init__(protocol=protocol, fs_vec=fs_vec, ss_vec=ss_vec,
                                               idxs=idxs, log_attr=log_attr, log_data=log_data)
 

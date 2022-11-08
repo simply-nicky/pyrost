@@ -36,10 +36,11 @@ class STSim(DataContainer):
     wavefront, whereupon propagates the wavefront to the detector's
     plane.
 
-    Attributes:
-        attr_set : Set of attributes in the container which are necessary
-            to initialize in the constructor.
-        init_set : Set of optional data attributes.
+    Args:
+        params : Set of simulation parameters.
+        backend : Choose between numpy ('numpy') or FFTW ('fftw') library for the FFT
+            implementation.
+        kwargs : Any of the optional attributes specified in :class:`STSim` notes.
 
     Notes:
         **Necessary attributes**:
@@ -66,6 +67,9 @@ class STSim(DataContainer):
         * smp_profile : Barcode's transmission profile.
         * smp_wfx : Wavefront at the sample plane along the x axis.
         * smp_wfy : Wavefront at the sample plane along the y axis.
+
+    Raises:
+        ValueError : If the 'backend' keyword is invalid.
     """
     backends = {'numpy', 'fftw'}
     attr_set = {'backend', 'params'}
@@ -92,17 +96,6 @@ class STSim(DataContainer):
 
     def __init__(self, params: STParams, backend: str='numpy',
                  **kwargs: Union[int, np.ndarray]) -> None:
-        """
-        Args:
-            params : Set of simulation parameters.
-            backend : Choose between numpy ('numpy') or FFTW ('fftw') library for the FFT
-                implementation.
-            num_threads : Number of threads used in the calculations.
-            kwargs : Any of the optional attributes specified in :class:`STSim` notes.
-
-        Raises:
-            ValueError : If the 'backend' keyword is invalid.
-        """
         if not backend in self.backends:
             err_msg = f'backend must be one of the following: {str(self.backends):s}'
             raise ValueError(err_msg)
@@ -291,8 +284,12 @@ class STConverter(DataContainer):
     and automatically generates all the attributes necessary for the robust
     speckle tracking reconstruction (see :class:`pyrost.STData`).
 
-    Attributes:
+    Args:
         sim_obj : a :class:`STSim` instance.
+        data : Simulated stack of frames from `sim_obj`. The data may be
+            generated either by :func:`STSim.frames` or :func:`STSim.ptychograph`
+            method.
+        crd_rat : Coordinates ratio between the simulated and saved data.
 
     Notes:
         **Necessary attributes**:
@@ -332,14 +329,6 @@ class STConverter(DataContainer):
     y_pixel_size    : float
 
     def __init__(self, sim_obj: STSim, data: np.ndarray, crd_rat: float=1e-6) -> None:
-        """
-        Args:
-            sim_obj : a :class:`STSim` instance.
-            data : Simulated stack of frames from `sim_obj`. The data may be
-                generated either by :func:`STSim.frames` or :func:`STSim.ptychograph`
-                method.
-            crd_rat : Coordinates ratio between the simulated and saved data.
-        """
         super(STConverter, self).__init__(sim_obj=sim_obj, data=data, crd_rat=crd_rat)
 
         self._init_functions(defocus_x=lambda: self.crd_rat * self.sim_obj.params.defocus,

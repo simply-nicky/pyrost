@@ -1,4 +1,4 @@
 ct_integrate
 ============
 
-.. autofunction:: pyrost.bin.ct_integrate
+.. autoapifunction:: pyrost.bin.ct_integrate

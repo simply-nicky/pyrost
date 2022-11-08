@@ -1,7 +1,7 @@
 Generating a speckle tracking dataset
 =====================================
 
-You can simulate an one-dimensional speckle tracking scan either using
+You can simulate one-dimensional speckle tracking scan either using
 Python interface or Terminal.
 
 Python interface
@@ -31,9 +31,9 @@ Performing the simulation
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Now you're able to generate the simulated data. It takes time to calculate the
-wavefronts, :class:`pyrost.simulation.STSim` will post it's status during the process. You can
+wavefronts, :class:`pyrost.simulation.STSim` will post its status during the process. You can
 either generate a stack of frames or a ptychograph. :class:`pyrost.simulation.STConverter`
-generates all the data attributes necessary for the speckle tracking reconstruction. Also
+generates all the data attributes necessary for the speckle tracking reconstruction. Also,
 it provides an interface to save the generated attributes to a CXI file with
 :func:`pyrost.simulation.STConverter.save` method.
 
@@ -59,7 +59,7 @@ it provides an interface to save the generated attributes to a CXI file with
     :width: 100 %
     :alt: Ptychograph.
 
-Or you can save the simulated data and generate an :class:`pyrost.STData` data container with 
+Or you can save the simulated data and generate a :class:`pyrost.STData` data container with 
 :func:`pyrost.simulation.STConverter` method.
 
 .. note:: :func:`pyrost.simulation.STConverter` returns a :class:`pyrost.STData` container

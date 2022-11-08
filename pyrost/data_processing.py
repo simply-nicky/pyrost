@@ -39,7 +39,6 @@ class Transform():
     def __str__(self) -> str:
         return self.state_dict().__str__()
 
-
     def forward(self, inp: np.ndarray) -> np.ndarray:
         """Return a transformed image.
 
@@ -64,15 +63,10 @@ class Crop(Transform):
             x_min, x_max]`.
     """
     def __init__(self, roi: Iterable[int]) -> None:
-        """
-        Args:
-            roi : Region of interest. Comprised of four elements `[y_min, y_max,
-                x_min, x_max]`.
-        """
         self.roi = roi
 
     def index_array(self, ss_idxs: np.ndarray, fs_idxs: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        """Filter the indices of a frame `(ss_idxs, fs_idxs)` according to 
+        """Filter the indices of a frame `(ss_idxs, fs_idxs)` according to
         the cropping transform.
 
         Args:
@@ -108,10 +102,6 @@ class Downscale(Transform):
         scale : Downscaling integer ratio.
     """
     def __init__(self, scale: int) -> None:
-        """
-        Args:
-            scale : Downscaling integer ratio.
-        """
         self.scale = scale
 
     def index_array(self, ss_idxs: np.ndarray, fs_idxs: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
@@ -142,16 +132,12 @@ class Mirror(Transform):
         axis : Axis of reflection.
     """
     def __init__(self, axis: int) -> None:
-        """
-        Args:
-            axis : Axis of reflection.
-        """
         if axis not in [0, 1]:
             raise ValueError('Axis must equal to 0 or 1')
         self.axis = axis
 
     def index_array(self, ss_idxs: np.ndarray, fs_idxs: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        """Filter the indices of a frame `(ss_idxs, fs_idxs)` according to 
+        """Filter the indices of a frame `(ss_idxs, fs_idxs)` according to
         the mirroring transform.
 
         Args:
@@ -184,10 +170,6 @@ class ComposeTransforms(Transform):
     transforms : List[Transform]
 
     def __init__(self, transforms: List[Transform]) -> None:
-        """
-        Args:
-            transforms: List of transforms.
-        """
         self.transforms = []
         try:
             for transform in transforms:
@@ -207,7 +189,7 @@ class ComposeTransforms(Transform):
         return self.transforms[idx]
 
     def index_array(self, ss_idxs: np.ndarray, fs_idxs: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        """Filter the indices of a frame `(ss_idxs, fs_idxs)` according to 
+        """Filter the indices of a frame `(ss_idxs, fs_idxs)` according to
         the composed transform.
 
         Args:
@@ -236,9 +218,17 @@ class STData(DataContainer):
     from a file and save to a file any of the data attributes. The data frames can
     be tranformed using any of the :class:`pyrost.Transform` classes.
 
-    Attributes:
-        input_file : HDF5 or CXI file handler.
+    Args:
+        input_file : HDF5 or CXI file handler of input files.
+        output_file : Output file handler.
         transform : Frames transform object.
+        kwargs : Dictionary of the necessary and optional data attributes specified
+            in :class:`pyrost.STData` notes. All the necessary attributes must be
+            provided
+
+    Raises:
+        ValueError : If any of the necessary attributes specified in :class:`pyrost.STData`
+            notes have not been provided.
 
     Notes:
         **Necessary attributes**:
@@ -309,20 +299,7 @@ class STData(DataContainer):
 
     def __init__(self, input_file: CXIStore, output_file: Optional[CXIStore]=None,
                  transform: Optional[Transform]=None, **kwargs: Union[int, float, np.ndarray]) -> None:
-        """
-        Args:
-            input_file : HDF5 or CXI file handler of input files.
-            output_file : Output file handler.
-            transform : Frames transform object.
-            kwargs : Dictionary of the necessary and optional data attributes specified
-                in :class:`pyrost.STData` notes. All the necessary attributes must be
-                provided
-
-        Raises:
-            ValueError : If any of the necessary attributes specified in :class:`pyrost.STData`
-                notes have not been provided.
-        """
-        super(STData, self).__init__(input_file=input_file, output_file=output_file, 
+        super(STData, self).__init__(input_file=input_file, output_file=output_file,
                                      transform=transform, **kwargs)
 
         self._init_functions(num_threads=lambda: np.clip(1, 64, cpu_count()))
@@ -330,7 +307,7 @@ class STData(DataContainer):
             self._init_functions(good_frames=lambda: np.arange(self.shape[0]))
         if self._isdata:
             self._init_functions(mask=lambda: np.ones(self.shape, dtype=bool))
-            func = lambda: median(data=self.data[self.good_frames], axis=0,
+            func = lambda: median(inp=self.data[self.good_frames], axis=0,
                                   mask=self.mask[self.good_frames],
                                   num_threads=self.num_threads)
             self._init_functions(whitefield=func)
@@ -716,8 +693,8 @@ class STData(DataContainer):
         mag_x = np.abs((self.distance + self.defocus_x) / self.defocus_x)
 
         # Calculate the distance between the reference and the detector plane
-        dist_y = self.distance * (1 - mag_y**-1)
-        dist_x = self.distance * (1 - mag_x**-1)
+        dist_y = self.distance * (mag_y - 1.0) / mag_y
+        dist_x = self.distance * (mag_x - 1.0) / mag_x
 
         # dTheta = delta_pix / distance / magnification * du
         # Phase = 2 * pi / wavelength * Integrate[dTheta, delta_pix]

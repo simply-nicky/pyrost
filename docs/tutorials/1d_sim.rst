@@ -1,12 +1,12 @@
 Speckle tracking reconstruction of a simulated dataset
 ======================================================
 
-Speckle Tracking update procedure of one-dimensional scan doesn't differ much
-from the case of two-dimensional scan. See :doc:`diatom` for an example.
+The speckle tracking update procedure of a one-dimensional scan doesn't differ much
+from the case of a two-dimensional scan. See :doc:`diatom` for an example.
 
 1D scan CXI file
 ----------------
-In order to obtain the file generate it using :doc:`st_sim`. The file has
+To obtain the file generate it using :doc:`st_sim`. The file has
 the following structure:
 
 .. code-block:: console
@@ -32,7 +32,7 @@ the following structure:
     /speckle_tracking/translations Dataset {200/Inf, 3}
     /speckle_tracking/whitefield Dataset {1, 985}
 
-The file contains a ptychograph (set of frames summed over one of detector axes)
+The file contains a ptychograph (set of frames summed over one of the detector axes)
 of 200 frames.
 
 Loading the file
@@ -41,7 +41,7 @@ The procedure for loading the data from a file is the same as in :doc:`diatom`:
 
 * Create a :class:`pyrost.CXIProtocol` protocol.
 * Open the input file with :class:`pyrost.CXIStore` file handler. Create an output
-  file. In this case the output file is the same as the input one.
+  file. In this case, the output file is the same as the input one.
 * Create a :class:`pyrost.STData` R-PXST data container.
 * Load all the data from the file with :func:`pyrost.STData.load`.
 
@@ -105,19 +105,19 @@ method.
 
 Phase reconstruction
 --------------------
-In the end we want to look at a angular displacement profile of the X-ray beam and
+In the end, we want to look at an angular displacement profile of the X-ray beam and
 find the fit to the profile with a polynomial. All of it could be done with 
 :class:`pyrost.AberrationsFit` fitter object, which can be obtained with
 :func:`pyrost.STData.get_fit` method. We may parse the direct beam coordinate
-in pixels to center the scattering angles aroung the direction of the direct beam:
+in pixels to center the scattering angles around the direction of the direct beam:
 
 .. code-block:: python
 
     >>> fit_obj = data.get_fit(axis=1, center=20)
     
-Moreover we would like to remove the first order polynomial term from the displacement
+Moreover, we would like to remove the first-order polynomial term from the displacement
 profile with the :func:`pyrost.AberrationsFit.remove_linear_term`, since it
-characterizes the beam's defocus and is of no interest to us. After that, you
+characterizes the beam defocus and is of no interest to us. After that, you
 can obtain the best fit to the displacement profile with :func:`pyrost.AberrationsFit.fit`
 and to the phase profile with :func:`pyrost.AberrationsFit.fit_phase`:
 
@@ -149,7 +149,7 @@ and to the phase profile with :func:`pyrost.AberrationsFit.fit_phase`:
 
 Saving the results
 ------------------
-In the end you can save the results to a CXI file. By default :func:`pyrost.STData.save` saves all
+In the end, one can save the results to a CXI file. By default :func:`pyrost.STData.save` saves all
 the data it contains. The method offers three modes:
 
 * 'overwrite' : Overwrite all the data stored already in the output file.

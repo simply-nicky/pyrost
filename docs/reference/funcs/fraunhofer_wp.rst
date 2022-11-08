@@ -1,4 +1,4 @@
 fraunhofer_wp
 =============
 
-.. autofunction:: pyrost.bin.fraunhofer_wp
+.. autoapifunction:: pyrost.bin.fraunhofer_wp

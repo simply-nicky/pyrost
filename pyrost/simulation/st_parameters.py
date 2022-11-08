@@ -18,15 +18,60 @@ from typing import Dict, Iterable, Iterator, Tuple, Union, Optional
 from multiprocessing import cpu_count
 import numpy as np
 from ..ini_parser import INIParser, ROOT_PATH
-from ..bin import bar_positions, barcode_profile, gaussian_kernel, gaussian_filter
+from ..bin import bar_positions, barcode_profile, gaussian_kernel
 
 ST_PARAMETERS = os.path.join(ROOT_PATH, 'config/st_parameters.ini')
 
 class STParams(INIParser):
     """Container with the simulation parameters for the wavefront propagation.
 
-    Attributes:
-        kwargs : Experimental parameters enlisted in :ref:`st-parameters`.
+    Args:
+        barcode : A dictionary of barcode sample parameters. The following elements
+            are accepted:
+
+            * `bar_size` : Average bar's size [um].
+            * `bar_sigma` : Bar bluriness width [um].
+            * `bar_atn` : Bar's attenuation coefficient [0.0 - 1.0].
+            * `bulk_atn` : Barcode's bulk attenuation coefficient [0.0 - 1.0].
+            * `bar_rnd` : Bar's coordinates random deviation [0.0 - 1.0].
+            * `offset` : Barcode's offset at the beginning and at the end
+                of the scan from the detector's bounds [um].
+
+        detector : A dictionary of detector parameters. The following elements are 
+            accepted:
+
+            * `detx_size` : Detector's size along the horizontal axis in pixels.
+            * `dety_size` : Detector's size along the vertical axis in pixels.
+            * `pix_size` : Detector's pixel size [um].
+
+        exp_geom : A dictionary of experimental geometry parameters. The following elements
+            are accepted:
+
+            * `defocus` : Lens' defocus distance [um].
+            * `det_dist` : Distance between the barcode and the detector [um].
+            * `step_size` : Scan step size [um].
+            * `n_frames` : Number of frames.
+
+        lens : A dictionary of lens parameters. The following elements are accepted:
+
+            * `ap_x` : Lens' aperture size along the x axis [um].
+            * `ap_y` : Lens' aperture size along the y axis [um].
+            * `focus` : Focal distance [um].
+            * `alpha` : Third order aberrations coefficient [rad / mrad^3].
+            * `ab_cnt` : Lens' aberrations center point [0.0 - 1.0].
+
+        source : A dictionary of X-ray source parameters. The following elements are
+            accepted:
+
+            * `p0` : Source beam flux [cnt / s].
+            * `wl` : Source beam's wavelength [um].
+            * `th_s` : Source rocking curve width [rad].
+
+        system : A dictionary of calculation parameters. The following elements are
+            accepted:
+
+            * `seed` : Seed used in all the pseudo-random number generations.
+            * `num_threads` : Number of threads used in the calculations.
 
     See Also:
         :ref:`st-parameters` : Full list of experimental parameters.
@@ -84,55 +129,6 @@ class STParams(INIParser):
     def __init__(self, barcode: Dict[str, float], detector: Dict[str, Union[int, float]],
                  exp_geom: Dict[str, Union[int, float]], lens: Dict[str, float],
                  source: Dict[str, float], system: Dict[str, int]) -> None:
-        """
-        Args:
-            barcode : A dictionary of barcode sample parameters. The following elements
-                are accepted:
-
-                * `bar_size` : Average bar's size [um].
-                * `bar_sigma` : Bar bluriness width [um].
-                * `bar_atn` : Bar's attenuation coefficient [0.0 - 1.0].
-                * `bulk_atn` : Barcode's bulk attenuation coefficient [0.0 - 1.0].
-                * `bar_rnd` : Bar's coordinates random deviation [0.0 - 1.0].
-                * `offset` : Barcode's offset at the beginning and at the end
-                  of the scan from the detector's bounds [um].
-
-            detector : A dictionary of detector parameters. The following elements are 
-                accepted:
-
-                * `detx_size` : Detector's size along the horizontal axis in pixels.
-                * `dety_size` : Detector's size along the vertical axis in pixels.
-                * `pix_size` : Detector's pixel size [um].
-
-            exp_geom : A dictionary of experimental geometry parameters. The following elements
-                are accepted:
-
-                * `defocus` : Lens' defocus distance [um].
-                * `det_dist` : Distance between the barcode and the detector [um].
-                * `step_size` : Scan step size [um].
-                * `n_frames` : Number of frames.
-
-            lens : A dictionary of lens parameters. The following elements are accepted:
-
-                * `ap_x` : Lens' aperture size along the x axis [um].
-                * `ap_y` : Lens' aperture size along the y axis [um].
-                * `focus` : Focal distance [um].
-                * `alpha` : Third order aberrations coefficient [rad / mrad^3].
-                * `ab_cnt` : Lens' aberrations center point [0.0 - 1.0].
-
-            source : A dictionary of X-ray source parameters. The following elements are
-                accepted:
-
-                * `p0` : Source beam flux [cnt / s].
-                * `wl` : Source beam's wavelength [um].
-                * `th_s` : Source rocking curve width [rad].
-
-            system : A dictionary of calculation parameters. The following elements are
-                accepted:
-
-                * `seed` : Seed used in all the pseudo-random number generations.
-                * `num_threads` : Number of threads used in the calculations.
-        """
         super(STParams, self).__init__(barcode=barcode, detector=detector,
                                        exp_geom=exp_geom, lens=lens, source=source,
                                        system=system)

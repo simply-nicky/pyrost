@@ -86,23 +86,22 @@ class return_obj_method:
 class DataContainer:
     """Abstract data container class.
 
+    Args:
+        kwargs : Values of the attributes specified in `attr_set` and
+            `init_set`.
+
     Attributes:
         attr_set : Set of attributes in the container which are necessary
             to initialize in the constructor.
         init_set : Set of optional data attributes.
+
+    Raises:
+        ValueError : If an attribute specified in `attr_set` has not been
+            provided.
     """
     attr_set, init_set = set(), set()
 
     def __init__(self, **kwargs: Any) -> None:
-        """
-        Args:
-            kwargs : Values of the attributes specified in `attr_set` and
-                `init_set`.
-
-        Raises:
-            ValueError : If an attribute specified in `attr_set` has not been
-                provided.
-        """
         for attr in self.attr_set:
             if kwargs.get(attr, None) is None:
                 raise ValueError(f'Attribute {attr} has not been provided')

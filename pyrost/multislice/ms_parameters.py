@@ -34,7 +34,7 @@ ELEMENTS = ('None', 'H', 'He', 'Li', 'Be', 'B', 'C', 'N', 'O', 'F', 'Ne',
 class BasicElement:
     """Bacis chemical element class.
 
-    Attributes:
+    Args:
         name : Name of the element.
         mass : Atomic mass of the element.
         density : Atomic density of the element.
@@ -43,12 +43,6 @@ class BasicElement:
     ref_cf = 2.7008646837561236e-6 # Avogadro * r_el / 2 / pi [A]
 
     def __init__(self, name: str, mass: float, density: float) -> None:
-        """
-        Args:
-            name : Name of the element.
-            mass : Atomic mass of the element.
-            density : Atomic density of the element.
-        """
         self.name, self.mass, self.density = name, mass, density
 
     def __repr__(self) -> str:
@@ -133,6 +127,16 @@ class Element(BasicElement):
     """This class serves for accessing the scattering factors f1 and f2
     and atomic scattering factor of a chemical element `elem`.
 
+    Args:
+        elem : The element can be specified by its name (case sensitive) or its
+            atomic number.
+        dbase : Database of the tabulated scattering factors of each element. The
+            following keywords are allowed:
+
+            * `Henke` : (10 eV < E < 30 keV) [Henke]_.
+            * `Chantler` : (11 eV < E < 405 keV) [Chantler]_.
+            * `BrCo` : (30 eV < E < 509 keV) [BrCo]_.
+
     Attributes:
         name : Name of the chemical element `elem`.
         atom_num : Atomic number of `elem`.
@@ -142,6 +146,24 @@ class Element(BasicElement):
         mass : Atomic mass [u].
         radius : Atomic radius [Angstrom].
         density : Density [g / cm^3].
+
+    References:
+        .. [Henke] http://henke.lbl.gov/optical_constants/asf.html
+                   B.L. Henke, E.M. Gullikson, and J.C. Davis, *X-ray interactions:
+                   photoabsorption, scattering, transmission, and reflection at
+                   E=50-30000 eV, Z=1-92*, Atomic Data and Nuclear Data Tables
+                   **54** (no.2) (1993) 181-342.
+        .. [Chantler] http://physics.nist.gov/PhysRefData/FFast/Text/cover.html
+                      http://physics.nist.gov/PhysRefData/FFast/html/form.html
+                      C. T. Chantler, *Theoretical Form Factor, Attenuation, and
+                      Scattering Tabulation for Z = 1 - 92 from E = 1 - 10 eV to E = 0.4 -
+                      1.0 MeV*, J. Phys. Chem. Ref. Data **24** (1995) 71-643.
+        .. [BrCo] http://www.bmsc.washington.edu/scatter/periodic-table.html
+                  ftp://ftpa.aps.anl.gov/pub/cross-section_codes/
+                  S. Brennan and P.L. Cowan, *A suite of programs for calculating
+                  x-ray absorption, reflection and diffraction performance for a
+                  variety of materials at arbitrary wavelengths*, Rev. Sci. Instrum.
+                  **63** (1992) 850-853.
     """
     dbase_lookup = {'Henke': 'data/henke_f1f2.npz', 'Chantler': 'data/chantler_f1f2.npz',
                     'BrCo': 'data/brco_f1f2.npz'}
@@ -149,35 +171,6 @@ class Element(BasicElement):
     atom_dbase = 'data/atom_data.npz'
 
     def __init__(self, elem: Union[str, int], dbase: str='Chantler') -> None:
-        """
-        Args:
-            elem : The element can be specified by its name (case sensitive) or its
-                atomic number.
-            dbase : Database of the tabulated scattering factors of each element. The
-                following keywords are allowed:
-
-                * `Henke` : (10 eV < E < 30 keV) [Henke]_.
-                * `Chantler` : (11 eV < E < 405 keV) [Chantler]_.
-                * `BrCo` : (30 eV < E < 509 keV) [BrCo]_.
-
-        References:
-            .. [Henke] http://henke.lbl.gov/optical_constants/asf.html
-                       B.L. Henke, E.M. Gullikson, and J.C. Davis, *X-ray interactions:
-                       photoabsorption, scattering, transmission, and reflection at
-                       E=50-30000 eV, Z=1-92*, Atomic Data and Nuclear Data Tables
-                       **54** (no.2) (1993) 181-342.
-            .. [Chantler] http://physics.nist.gov/PhysRefData/FFast/Text/cover.html
-                          http://physics.nist.gov/PhysRefData/FFast/html/form.html
-                          C. T. Chantler, *Theoretical Form Factor, Attenuation, and
-                          Scattering Tabulation for Z = 1 - 92 from E = 1 - 10 eV to E = 0.4 -
-                          1.0 MeV*, J. Phys. Chem. Ref. Data **24** (1995) 71-643.
-            .. [BrCo] http://www.bmsc.washington.edu/scatter/periodic-table.html
-                      ftp://ftpa.aps.anl.gov/pub/cross-section_codes/
-                      S. Brennan and P.L. Cowan, *A suite of programs for calculating
-                      x-ray absorption, reflection and diffraction performance for a
-                      variety of materials at arbitrary wavelengths*, Rev. Sci. Instrum.
-                      **63** (1992) 850-853.
-        """
         if isinstance(elem, str):
             name = elem
             self.atom_num = ELEMENTS.index(elem)
@@ -242,12 +235,40 @@ class Material(BasicElement):
     :class:`Material` serves for getting refractive index and absorption
     coefficient of a material specified by its chemical formula and density.
 
+    Args:
+        formula : The string representation of a chemical compound.
+        density : Atomic density of the compound.
+        dbase : Database of the tabulated scattering factors of each element. The
+            following keywords are allowed:
+
+            * `Henke` : (10 eV < E < 30 keV) [Henke]_.
+            * `Chantler` : (11 eV < E < 405 keV) [Chantler]_.
+            * `BrCo` : (30 eV < E < 509 keV) [BrCo]_.
+
     Attributes:
         name : Name of the compound.
         elements : List of elements in the chemical formula.
         quantities : Coefficients in the chemical formula.
         mass : Molar mass [u].
         density : Atomic density of the element.
+
+    References:
+        .. [Henke] http://henke.lbl.gov/optical_constants/asf.html
+                   B.L. Henke, E.M. Gullikson, and J.C. Davis, *X-ray interactions:
+                   photoabsorption, scattering, transmission, and reflection at
+                   E=50-30000 eV, Z=1-92*, Atomic Data and Nuclear Data Tables
+                   **54** (no.2) (1993) 181-342.
+        .. [Chantler] http://physics.nist.gov/PhysRefData/FFast/Text/cover.html
+                      http://physics.nist.gov/PhysRefData/FFast/html/form.html
+                      C. T. Chantler, *Theoretical Form Factor, Attenuation, and
+                      Scattering Tabulation for Z = 1 - 92 from E = 1 - 10 eV to E = 0.4 -
+                      1.0 MeV*, J. Phys. Chem. Ref. Data **24** (1995) 71-643.
+        .. [BrCo] http://www.bmsc.washington.edu/scatter/periodic-table.html
+                  ftp://ftpa.aps.anl.gov/pub/cross-section_codes/
+                  S. Brennan and P.L. Cowan, *A suite of programs for calculating
+                  x-ray absorption, reflection and diffraction performance for a
+                  variety of materials at arbitrary wavelengths*, Rev. Sci. Instrum.
+                  **63** (1992) 850-853.
     """
     FORMULA_MATCHER = '(' + '|'.join(ELEMENTS[1:]) + ')'
     NUM_MATCHER = r'\d+'
@@ -256,36 +277,6 @@ class Material(BasicElement):
     quantities  : List[int]
 
     def __init__(self, formula: str, density: float, dbase: str='Chantler') -> None:
-        """
-        Args:
-            elem : The element can be specified by its name (case sensitive) or its
-                atomic number.
-            density : Atomic density of the compound.
-            dbase : Database of the tabulated scattering factors of each element. The
-                following keywords are allowed:
-
-                * `Henke` : (10 eV < E < 30 keV) [Henke]_.
-                * `Chantler` : (11 eV < E < 405 keV) [Chantler]_.
-                * `BrCo` : (30 eV < E < 509 keV) [BrCo]_.
-
-        References:
-            .. [Henke] http://henke.lbl.gov/optical_constants/asf.html
-                       B.L. Henke, E.M. Gullikson, and J.C. Davis, *X-ray interactions:
-                       photoabsorption, scattering, transmission, and reflection at
-                       E=50-30000 eV, Z=1-92*, Atomic Data and Nuclear Data Tables
-                       **54** (no.2) (1993) 181-342.
-            .. [Chantler] http://physics.nist.gov/PhysRefData/FFast/Text/cover.html
-                          http://physics.nist.gov/PhysRefData/FFast/html/form.html
-                          C. T. Chantler, *Theoretical Form Factor, Attenuation, and
-                          Scattering Tabulation for Z = 1 - 92 from E = 1 - 10 eV to E = 0.4 -
-                          1.0 MeV*, J. Phys. Chem. Ref. Data **24** (1995) 71-643.
-            .. [BrCo] http://www.bmsc.washington.edu/scatter/periodic-table.html
-                      ftp://ftpa.aps.anl.gov/pub/cross-section_codes/
-                      S. Brennan and P.L. Cowan, *A suite of programs for calculating
-                      x-ray absorption, reflection and diffraction performance for a
-                      variety of materials at arbitrary wavelengths*, Rev. Sci. Instrum.
-                      **63** (1992) 850-853.
-        """
         self.elements = []
         self.quantities = []
         mass = 0
@@ -317,6 +308,36 @@ class MSParams(INIParser):
     """Container with the experimental parameters of
     one-dimensional multislice beam propagation simulation.
     All the experimental parameters are enlisted in :ref:`ms-parameters`.
+
+    Args:
+        multislice : A dictionary of multislice simulation parameters. The following
+            elements are accepted:
+
+            * `x_min`, `x_max` : Wavefront span along the x axis [um].
+            * `x_step` : Beam sampling interval along the x axis [um].
+            * `z_step` : Distance between the slices [um].
+            * `wl` : Beam's wavelength [um].
+
+        mll_mat1 : A dictionary of the first MLL material. The following elements
+            are accepted:
+
+            * `formula` : Chemical formula of the material.
+            * `density` : Atomic density of the material [g / cm^3].
+
+        mll_mat2 : A dictionary of the second MLL material. The following elements
+            are accepted:
+
+            * `formula` : Chemical formula of the material.
+            * `density` : Atomic density of the material [g / cm^3].
+
+        mll : A dictionary of multilayer Laue lens parameters. The following elements
+            are accepted:
+
+            * `n_min`, `n_max` : zone number of the first and the last layer.
+            * `focus` : MLL's focal distance [um].
+            * `mll_sigma` : Bilayer's interdiffusion length [um].
+            * `mll_depth` : MLL's thickness [um].
+            * `mll_wl` : Wavelength of the MLL [um].
 
     Attributes:
         x_min : Wavefront lower bound along the x axis [um].
@@ -362,37 +383,6 @@ class MSParams(INIParser):
 
     def __init__(self, multislice: Dict[str, float], mll_mat1: Material,
                  mll_mat2: Material, mll: Dict[str, Union[int, float]]) -> None:
-        """
-        Args:
-            multislice : A dictionary of multislice simulation parameters. The following
-                elements are accepted:
-
-                * `x_min`, `x_max` : Wavefront span along the x axis [um].
-                * `x_step` : Beam sampling interval along the x axis [um].
-                * `z_step` : Distance between the slices [um].
-                * `wl` : Beam's wavelength [um].
-
-            mll_mat1 : A dictionary of the first MLL material. The following elements
-                are accepted:
-
-                * `formula` : Chemical formula of the material.
-                * `density` : Atomic density of the material [g / cm^3].
-
-            mll_mat2 : A dictionary of the second MLL material. The following elements
-                are accepted:
-
-                * `formula` : Chemical formula of the material.
-                * `density` : Atomic density of the material [g / cm^3].
-
-            mll : A dictionary of multilayer Laue lens parameters. The following elements
-                are accepted:
-
-                * `n_min`, `n_max` : zone number of the first and the last layer.
-                * `focus` : MLL's focal distance [um].
-                * `mll_sigma` : Bilayer's interdiffusion length [um].
-                * `mll_depth` : MLL's thickness [um].
-                * `mll_wl` : Wavelength of the MLL [um].
-        """
         super(MSParams, self).__init__(multislice=multislice, mll=mll,
                                        material1=mll_mat1.export_dict(),
                                        material2=mll_mat2.export_dict())

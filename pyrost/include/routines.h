@@ -11,10 +11,4 @@ int ml_profile(double complex *out, double *inp, size_t isize, double *layers, s
 int frames(double *out, double *pfx, double *pfy, double dx, double dy, size_t *idims, size_t *odims,
     long seed, unsigned threads);
 
-void dot_double(void *out, line line1, line line2);
-void dot_long(void *out, line line1, line line2);
-
-int dot(void *out, void *inp1, int ndim1, size_t *dims1, int axis1, void *inp2, int ndim2, size_t *dims2,
-    int axis2, size_t item_size, void (*dot_func)(void*, line, line), unsigned threads);
-
 #endif

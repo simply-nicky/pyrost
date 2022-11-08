@@ -63,19 +63,21 @@ cdef extern from "routines.h":
     int frames(double *out, double *pfx, double *pfy, double dx, double dy, unsigned long *ishape,
                unsigned long *oshape, long seed, unsigned threads) nogil
 
-cdef extern from "median.h":
+cdef extern from "array.h":
     int compare_double(void *a, void *b) nogil
     int compare_float(void *a, void *b) nogil
     int compare_int(void *a, void *b) nogil
     int compare_uint(void *a, void *b) nogil
     int compare_ulong(void *a, void *b) nogil
 
+cdef extern from "median.h":
     int median_c "median" (void *out, void *data, unsigned char *mask, int ndim, unsigned long *dims,
                  unsigned long item_size, int axis, int (*compar)(void*, void*), unsigned threads) nogil
 
-    int median_filter_c "median_filter" (void *out, void *data, unsigned char *mask, int ndim,
-                        unsigned long *dims, unsigned long item_size, unsigned long *fsize, int mode,
-                        void *cval, int (*compar)(void*, void*), unsigned threads) nogil
+    int median_filter_c "median_filter" (void *out, void *data, unsigned char *mask, unsigned char *imask,
+                        int ndim, unsigned long *dims, unsigned long item_size, unsigned long *fsize,
+                        unsigned char *fmask, int mode, void *cval, int (*compar)(void*, void*),
+                        unsigned threads) nogil
 
 cdef extern from "fftw3.h":
     void fftw_init_threads() nogil
@@ -88,9 +90,57 @@ cdef enum:
     EXTEND_REFLECT = 3
     EXTEND_WRAP = 4
 
-cdef int extend_mode_to_code(str mode) except -1
-cdef np.ndarray check_array(np.ndarray array, int type_num)
-cdef np.ndarray number_to_array(object num, np.npy_intp rank, int type_num)
-cdef np.ndarray normalize_sequence(object inp, np.npy_intp rank, int type_num)
-cdef np.ndarray ml_profile_wrapper(np.ndarray x_arr, np.ndarray layers, complex t0,
-                                   complex t1, double sigma, unsigned num_threads)
+cdef inline int mode_to_code(str mode) except -1:
+    if mode == 'constant':
+        return EXTEND_CONSTANT
+    elif mode == 'nearest':
+        return EXTEND_NEAREST
+    elif mode == 'mirror':
+        return EXTEND_MIRROR
+    elif mode == 'reflect':
+        return EXTEND_REFLECT
+    elif mode == 'wrap':
+        return EXTEND_WRAP
+    else:
+        raise RuntimeError(f'Invalid boundary mode: {mode}')
+
+cdef inline np.ndarray check_array(np.ndarray array, int type_num):
+    cdef np.ndarray out
+    cdef int tn = np.PyArray_TYPE(array)
+    if not np.PyArray_IS_C_CONTIGUOUS(array):
+        array = np.PyArray_GETCONTIGUOUS(array)
+
+    if tn != type_num:
+        out = np.PyArray_SimpleNew(array.ndim, <np.npy_intp *>array.shape, type_num)
+        np.PyArray_CastTo(out, array)
+    else:
+        out = array
+
+    return out
+
+cdef inline np.ndarray number_to_array(object num, np.npy_intp rank, int type_num):
+    cdef np.npy_intp *dims = [rank,]
+    cdef np.ndarray arr = <np.ndarray>np.PyArray_SimpleNew(1, dims, type_num)
+    cdef int i
+    for i in range(rank):
+        arr[i] = num
+    return arr
+
+cdef inline np.ndarray normalize_sequence(object inp, np.npy_intp rank, int type_num):
+    # If input is a scalar, create a sequence of length equal to the
+    # rank by duplicating the input. If input is a sequence,
+    # check if its length is equal to the length of array.
+    cdef np.ndarray arr
+    cdef int tn
+    if np.PyArray_IsAnyScalar(inp):
+        arr = number_to_array(inp, rank, type_num)
+    elif np.PyArray_Check(inp):
+        arr = check_array(<np.ndarray>inp, type_num)
+    elif isinstance(inp, (list, tuple)):
+        arr = <np.ndarray>np.PyArray_FROM_OTF(inp, type_num, np.NPY_ARRAY_C_CONTIGUOUS)
+    else:
+        raise ValueError("Wrong sequence argument type")
+    cdef np.npy_intp size = np.PyArray_SIZE(arr)
+    if size != rank:
+        raise ValueError("Sequence argument must have length equal to input rank")
+    return arr

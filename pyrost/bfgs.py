@@ -12,31 +12,31 @@ import numpy as np
 class BFGS():
     """Minimize a function of one parameter using the the Broyden-Fletcher-
     Goldfarb-Shanno (BFGS) algorithm.
+
+    Args:
+        loss : Objective function to be minimized.
+        x0 : Initial guess.
+        grad : Gradient of the objective function.
+        epsilon : If `grad` is approximated, use this value for the step
+            size.
+        c1 : Parameter for Armijo condition rule.
+        c2 : Parameter for curvature condition rule.
+        xtol : Relative tolerance for an acceptable step in the line search
+            algorithm.
+        beta : Exponential decay coefficient for inverse Hessian matrix.
+        line_search: Choose the implementation of the line search algorithm 
+            to enforce strong Wolfe conditions. The following keyword values
+            are allowed:
+
+            * `minpack` : MINPACK line search algorithm.
+            * `scipy` : SciPy line search algorithm.
     """
     params: Dict[str, Union[int, float, np.ndarray]]
 
     def __init__(self, loss: Callable[[np.ndarray], float], x0: np.ndarray,
                  grad: Optional[Callable[[np.ndarray], float]]=None,
                  epsilon=1e-4, c1: float=1e-4, c2: float=0.9, xtol=1e-14,
-                 line_search: str='minpack'):
-        """
-        Args:
-            loss : Objective function to be minimized.
-            x0 : Initial guess.
-            grad : Gradient of the objective function.
-            epsilon : If `grad` is approximated, use this value for the step
-                size.
-            c1 : Parameter for Armijo condition rule.
-            c2 : Parameter for curvature condition rule.
-            xtol : Relative tolerance for an acceptable step in the line search
-                algorithm.
-            line_search: Choose the implementation of the line search algorithm 
-                to enforce strong Wolfe conditions. The following keyword values
-                are allowed:
-
-                * `minpack` : MINPACK line search algorithm.
-                * `scipy` : SciPy line search algorithm.
-        """
+                 beta: float=0.9, line_search: str='minpack'):
         if line_search == 'minpack':
             self.line_search = self._line_search_minpack
         elif line_search == 'scipy':
@@ -44,7 +44,7 @@ class BFGS():
         else:
             raise ValueError('Invalid line_search keyword argument')
 
-        self._p = {'fcount': 0, 'gcount': 0, 'xk': x0,
+        self._p = {'fcount': 0, 'gcount': 0, 'xk': x0, 'beta': beta,
                    'c1': c1, 'c2': c2, 'xtol': xtol, 'epsilon': epsilon}
 
         self.update_loss(loss, grad)
@@ -109,7 +109,8 @@ class BFGS():
         return np.dot(self._p['gfkp1'], self._p['pk'])
 
     @staticmethod
-    def _cubicmin(a: float, fa: float, fpa: float, b: float, fb: float, c: float, fc: float) -> Union[float, None]:
+    def _cubicmin(a: float, fa: float, fpa: float, b: float, fb: float,
+                  c: float, fc: float) -> Union[float, None]:
         with np.errstate(divide='raise', over='raise', invalid='raise'):
             try:
                 db = b - a
@@ -329,8 +330,8 @@ class BFGS():
         new_Hk = np.dot(A1, np.dot(self._p['Hk'], A2)) + \
                         (rhok * sk[:, np.newaxis] * sk[np.newaxis, :])
 
-        if np.trace(self._p['Hk']) > 0.0:
-            self._p['Hk'] = new_Hk
+        if np.trace(abs(new_Hk - self._p['Hk'])) < np.trace(self._p['Hk']) / (1.0 - self._p['beta']):
+            self._p['Hk'] = self._p['beta'] * self._p['Hk'] + (1.0 - self._p['beta']) * new_Hk
 
     def state_dict(self):
         """Returns the state of the optimizer as a dict.
@@ -348,9 +349,7 @@ class BFGS():
             * `gfk` : Gradient value of the current point.
             * `gnorm` : Gradient norm value of the current point.
             * `Hk` : The current guess of the Hessian matrix.
-            * `epsilon` : If `grad` is approximated, use this value for the
-                step size.
-            * `xtol` :  Relative tolerance for an acceptable step in the line
-                search algorithm.
+            * `epsilon` : If `grad` is approximated, use this value for the step size.
+            * `xtol` :  Relative tolerance for an acceptable step in the line search algorithm.
         """
         return deepcopy(self._p)
