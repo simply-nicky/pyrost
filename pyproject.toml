@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "pyrost"
+version = "0.7.6"
+description = "Python Robust Speckle Tracking (pyrost) is a library for wavefront metrology and sample imaging based on ptychographic speckle tracking algorithm."
+authors = ["Nikolay Ivanov <nikolay.ivanov@desy.de>"]
+license = "GPL-3.0-or-later"
+readme = "README.md"
+build = 'build.py'
+
+[tool.poetry.dependencies]
+python = ">=3.6"
+h5py = ">=2.10.0"
+numpy = ">=1.19.0"
+scipy = ">=1.5.2"
+tqdm = ">=4.56.0"
+
+
+[build-system]
+requires = ["poetry-core", "setuptools", "numpy", "cython"]
+build-backend = "poetry.core.masonry.api"
