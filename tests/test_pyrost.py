@@ -8,16 +8,16 @@ import pyrost as rst
 from pyrost import simulation as st_sim
 
 @pytest.fixture(params=[{'detx_size': 300, 'dety_size': 300, 'n_frames': 50, 'p0': 1e6,
-                         'pix_size': 300, 'bar_size': 0.3, 'bar_rnd': 0.5, 'alpha': 0.05,
+                         'pix_size': 300.0, 'bar_size': 0.3, 'bar_rnd': 0.5, 'alpha': 0.05,
                          'num_threads': 4},
                         {'detx_size': 300, 'dety_size': 300, 'n_frames': 50, 'p0': 1e6,
-                         'pix_size': 300, 'bar_size': 0.3, 'bar_rnd': 0.5, 'alpha': 0.03,
+                         'pix_size': 300.0, 'bar_size': 0.3, 'bar_rnd': 0.5, 'alpha': 0.03,
                          'num_threads': 4}],
                 scope='session')
 def st_params(request) -> st_sim.STParams:
     """Return a default instance of simulation parameters.
     """
-    return st_sim.STParams.import_default(**request.param)
+    return st_sim.STParams.import_default().replace(**request.param)
 
 @pytest.fixture(scope='session')
 def st_converter(st_params: st_sim.STParams) -> st_sim.STConverter:
@@ -65,11 +65,9 @@ def good_frames_list(good_frames: Tuple[int, int]) -> np.ndarray:
 @pytest.mark.st_sim
 def test_st_params(st_params: st_sim.STParams, ini_path: str):
     assert not os.path.isfile(ini_path)
-    ini_parser = st_params.export_ini()
-    with open(ini_path, 'w') as ini_file:
-        ini_parser.write(ini_file)
+    st_params.to_ini(ini_path)
     new_params = st_sim.STParams.import_ini(ini_path)
-    assert new_params.export_dict() == st_params.export_dict()
+    assert new_params.ini_dict() == st_params.ini_dict()
 
 @pytest.mark.st_sim
 def test_save_and_load_sim(st_converter: st_sim.STConverter, temp_dir: str):

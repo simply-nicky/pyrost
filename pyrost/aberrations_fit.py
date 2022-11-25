@@ -19,11 +19,11 @@ Examples:
         'r_sq': 0.9923840802879347}
 """
 from __future__ import annotations
-from weakref import ReferenceType
-from typing import Any, Dict, Iterable, Optional, Tuple, Union
+from dataclasses import dataclass
+from typing import Dict, Iterable, Optional, Tuple, Union
 import numpy as np
 from scipy.optimize import least_squares
-from .data_container import DataContainer, dict_to_object
+from .data_container import DataContainer, ReferenceType
 
 class LeastSquares:
     """Basic nonlinear least-squares fit class. Based on
@@ -113,6 +113,7 @@ class LeastSquares:
             err = 0
         return fit.x, err, r_sq
 
+@dataclass
 class AberrationsFit(DataContainer):
     """Least squares optimizer for the lens aberrations' profiles.
     :class:`AberrationsFit` is capable of fitting lens' pixel
@@ -149,12 +150,6 @@ class AberrationsFit(DataContainer):
         :func:`scipy.optimize.least_squares` : Full nonlinear least-squares
         algorithm description.
     """
-    attr_set = {'defocus', 'distance', 'parent', 'pixels', 'pixel_aberrations',
-                'pixel_size', 'wavelength'}
-    init_set = {'det_ap', 'phase', 'ref_ap', 'roi', 'thetas', 'theta_ab'}
-    x_lookup = {'defocus': 'defocus_x', 'pixel_size': 'x_pixel_size'}
-    y_lookup = {'defocus': 'defocus_y', 'pixel_size': 'y_pixel_size'}
-
     # Necessary attributes
     parent              : ReferenceType
     defocus             : float
@@ -165,31 +160,36 @@ class AberrationsFit(DataContainer):
     wavelength          : float
 
     # Automatically generated attributes
-    det_ap              : float
-    phase               : np.ndarray
-    ref_ap              : float
-    roi                 : np.ndarray
-    thetas              : np.ndarray
-    theta_ab            : np.ndarray
+    phase               : Optional[np.ndarray] = None
+    roi                 : Optional[np.ndarray] = None
 
-    def __init__(self, parent: ReferenceType, **kwargs: Union[float, np.ndarray]) -> None:
-        super(AberrationsFit, self).__init__(parent=parent, **kwargs)
+    def __post_init__(self):
+        if self.roi is None:
+            self.roi = np.array([0, self.pixels.size])
+        if self.phase is None:
+            self.phase = self.wnumber * np.cumsum(self.theta_ab * self.pixel_size)
+            self.phase -= self.phase.mean()
 
-        self._init_functions(det_ap=lambda: self.pixel_size / self.distance,
-                             ref_ap=lambda: np.abs(self.det_ap * self.defocus / self.distance),
-                             roi=lambda: np.array([0, self.pixels.size]),
-                             thetas=lambda: self.pixels * self.det_ap,
-                             theta_ab=lambda: self.pixel_aberrations * self.ref_ap,
-                             phase=lambda: self.wnumber * np.cumsum(self.theta_ab * self.pixel_size))
+    @property
+    def det_ap(self) -> float:
+        return self.pixel_size / self.distance
 
-        self._init_attributes()
-        self.phase -= self.phase.mean()
+    @property
+    def ref_ap(self) -> float:
+        return np.abs(self.det_ap * self.defocus / self.distance)
+
+    @property
+    def thetas(self) -> np.ndarray:
+        return self.pixels * self.det_ap
+
+    @property
+    def theta_ab(self) -> np.ndarray:
+        return self.pixel_aberrations * self.ref_ap
 
     @property
     def wnumber(self) -> float:
         return 2.0 * np.pi / self.wavelength
 
-    @dict_to_object
     def crop_data(self, roi: Iterable) -> AberrationsFit:
         """Return a new :class:`AberrationsFit` object with the updated `roi`.
 
@@ -199,9 +199,8 @@ class AberrationsFit(DataContainer):
         Returns:
             New :class:`AberrationsFit` object with the updated `roi`.
         """
-        return {'roi': np.asarray(roi, dtype=int)}
+        return self.replace(roi=np.asarray(roi, dtype=int))
 
-    @dict_to_object
     def remove_linear_term(self, fit: Optional[np.ndarray]=None, xtol: float=1e-14,
                            ftol: float=1e-14, loss: str='cauchy') -> AberrationsFit:
         """Return a new :class:`AberrationsFit` object with the linear term
@@ -238,9 +237,8 @@ class AberrationsFit(DataContainer):
                                    roi=self.roi, max_order=1, xtol=xtol,
                                    ftol=ftol, loss=loss)[0]
         pixel_aberrations = self.pixel_aberrations - self.model(fit)
-        return {'pixel_aberrations': pixel_aberrations, 'theta_ab': None, 'phase': None}
+        return self.replace(pixel_aberrations=pixel_aberrations, phase=None)
 
-    @dict_to_object
     def update_center(self, center: float) -> AberrationsFit:
         """Return a new :class:`AberrationsFit` object with the pixels
         centered around `center`.
@@ -259,40 +257,18 @@ class AberrationsFit(DataContainer):
         elif center >= self.pixels[-1]:
             pixels = center - self.pixels
             idxs = np.argsort(self.pixels)
-            return {'pixels': pixels[idxs], 'thetas': None,
-                    'pixel_aberrations': -self.pixel_aberrations[idxs], 'theta_ab': None}
+            return self.replace(pixels=pixels[idxs], phase=None,
+                                pixel_aberrations=-self.pixel_aberrations[idxs])
         else:
             raise ValueError('Origin must be outside of the region of interest')
 
-    @dict_to_object
     def update_phase(self) -> AberrationsFit:
         """Return a new :class:`AberrationsFit` object with the updated `phase`.
 
         Returns:
             New :class:`AberrationsFit` object with the updated `phase`.
         """
-        return {'theta_ab': None, 'phase': None}
-
-    def get(self, attr: str, value: Optional[Any]=None) -> Any:
-        """Return a dataset with `mask` and `roi` applied. Return `value`
-        if the attribute is not found.
-
-        Args:
-            attr : Attribute to fetch.
-            value : Return if `attr` is not found.
-
-        Returns:
-            `attr` dataset with `mask` and `roi` applied. `value` if
-            `attr` is not found.
-        """
-        if attr in self:
-            val = super(AberrationsFit, self).get(attr)
-            if not val is None:
-                if attr in ['phase', 'pixels', 'pixel_aberrations', 'theta_ab']:
-                    val = val[self.roi[0]:self.roi[1]]
-            return val
-
-        return value
+        return self.replace(phase=None)
 
     def model(self, fit: np.ndarray) -> np.ndarray:
         """Return the polynomial function values of lens' deviation angles fit.

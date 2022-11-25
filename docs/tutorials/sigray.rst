@@ -103,7 +103,8 @@ dataset consists of (see :ref:`diatom-preprocessing` for more info):
 .. code-block::
 
     >>> crop = rst.Crop([270, 300, 200, 1240])
-    >>> transform = rst.ComposeTransforms([crop, rst.Mirror(axis=1)])
+    >>> mirror = rst.Mirror(axis=1, shape=(crop.roi[1] - crop.roi[0], crop.roi[3] - crop.roi[2]))
+    >>> transform = rst.ComposeTransforms([crop, mirror])
     >>> data = data.update_transform(transform=transform)
     >>> data = data.update_mask(vmax=100000)
 

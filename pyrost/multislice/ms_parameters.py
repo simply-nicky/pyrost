@@ -13,11 +13,13 @@ Examples:
      'density': 2.8}, 'mll': {'focus': 1500.0, 'n_max': 8000, 'n_min': 100, '...': '...'}}
 """
 from __future__ import annotations
+from dataclasses import dataclass
 import os
 import re
 from typing import Dict, List, Optional, Union
 import numpy as np
-from ..ini_parser import INIParser, ROOT_PATH
+from ..data_container import INIContainer
+from ..cxi_protocol import ROOT_PATH
 from ..bin import next_fast_len
 
 MS_PARAMETERS = os.path.join(ROOT_PATH, 'config/ms_parameters.ini')
@@ -304,7 +306,8 @@ class Material(BasicElement):
         return np.sum([elem.get_sf(energy) * quant
                        for elem, quant in zip(self.elements, self.quantities)], axis=0)
 
-class MSParams(INIParser):
+@dataclass
+class MSParams(INIContainer):
     """Container with the experimental parameters of
     one-dimensional multislice beam propagation simulation.
     All the experimental parameters are enlisted in :ref:`ms-parameters`.
@@ -339,32 +342,12 @@ class MSParams(INIParser):
             * `mll_depth` : MLL's thickness [um].
             * `mll_wl` : Wavelength of the MLL [um].
 
-    Attributes:
-        x_min : Wavefront lower bound along the x axis [um].
-        x_max : Wavefront upper bound along the x axis [um].
-        x_step : Beam sample interval along the x axis [um].
-        z_step : Distance between the slices [um].
-        wl : Beam's wavelength [um].
-        focus : MLL's focal distance [um].
-        n_min : Zone number of the first layer in the MLL.
-        n_max : Zone number of the last layer in the MLL.
-        mll_sigma : MLL's bilayer interdiffusion length [um].
-        mll_depth : MLL's thickness [um].
-        mll_wl : Wavelength oh the MLL [um].
-        mll_mat1 : The first MLL material.
-        mll_mat2 : The second MLL material.
-
     See Also:
         :ref:`ms-parameters` : Full list of experimental parameters.
     """
-    attr_dict = {'multislice':  ('x_max', 'x_min', 'x_step', 'z_step', 'wl'),
-                 'material1':   ('formula', 'density'),
-                 'material2':   ('formula', 'density'),
-                 'mll':         ('focus', 'n_max', 'n_min', 'mll_sigma', 'mll_depth', 'mll_wl')}
-
-    fmt_dict = {'multislice': 'float', 'material1/formula': 'str', 'material1/density': 'float',
-                'material2/formula': 'str', 'material2/density': 'float', 'mll/n_min': 'int',
-                'mll/n_max': 'int', 'mll': 'float'}
+    __ini_fields__ = {'multislice': ('x_max', 'x_min', 'x_step', 'z_step', 'wl'),
+                      'material1': ('formula1', 'density1'), 'material2': ('formula2', 'density2'),
+                      'mll': ('focus', 'n_max', 'n_min', 'mll_sigma', 'mll_depth', 'mll_wl')}
 
     # multislice attributes
     x_min       : float
@@ -372,6 +355,12 @@ class MSParams(INIParser):
     x_step      : float
     z_step      : float
     wl          : float
+
+    # material attributes
+    formula1    : str
+    density1    : float
+    formula2    : str
+    density2    : float
 
     # mll attributes
     n_min       : int
@@ -381,72 +370,24 @@ class MSParams(INIParser):
     mll_depth   : float
     mll_wl      : float
 
-    def __init__(self, multislice: Dict[str, float], mll_mat1: Material,
-                 mll_mat2: Material, mll: Dict[str, Union[int, float]]) -> None:
-        super(MSParams, self).__init__(multislice=multislice, mll=mll,
-                                       material1=mll_mat1.export_dict(),
-                                       material2=mll_mat2.export_dict())
-        self.mll_mat1, self.mll_mat2 = mll_mat1, mll_mat2
+    # Automatically generated attributes
+    mll_mat1    : Optional[Material] = None
+    mll_mat2    : Optional[Material] = None
+
+    def __post_init__(self):
+        if self.mll_mat1 is None:
+            self.mll_mat1 = Material(self.formula1, self.density1)
+        if self.mll_mat2 is None:
+            self.mll_mat2 = Material(self.formula2, self.density2)
 
     @classmethod
-    def _lookup_dict(cls) -> Dict[str, str]:
-        lookup = {}
-        for section in ('multislice', 'mll'):
-            for option in cls.attr_dict[section]:
-                lookup[option] = section
-        return lookup
-
-    @classmethod
-    def import_default(cls, mll_mat1: Optional[Material]=None, mll_mat2: Optional[Material]=None,
-                       **kwargs: Union[int, float]) -> MSParams:
-        """Return the default :class:`MSParams`. Extra arguments override
-        the default values if provided.
-
-        Args:
-            mll_mat1 : The first MLL material.
-            mll_mat2 : The second MLL material.
-            kwargs : Experimental parameters enlisted in :ref:`ms-parameters`.
+    def import_default(cls) -> MSParams:
+        """Return the default :class:`MSParams`.
 
         Returns:
             A :class:`MSParams` object with the default parameters.
-
-        See Also:
-            :ref:`ms-parameters` : Full list of experimental parameters.
         """
-        return cls.import_ini(MS_PARAMETERS, mll_mat1, mll_mat2, **kwargs)
-
-    @classmethod
-    def import_ini(cls, ini_file: str, mll_mat1: Optional[Material]=None,
-                   mll_mat2: Optional[Material]=None, **kwargs: Union[int, float]) -> MSParams:
-        """Initialize a :class:`MSParams` object class with an ini file.
-
-        Args:
-            ini_file : Path to the ini file. Load the default parameters if
-                None.
-            mll_mat1 : The first MLL material. Initialized with `ini_file`
-                if None.
-            mll_mat2 : The second MLL material. Initialized with `ini_file`
-                if None.
-            kwargs : Experimental parameters enlisted in :ref:`ms-parameters`.
-                Initialized with `ini_file` if not provided.
-
-        Returns:
-            A :class:`MSParams` object with all the attributes imported
-            from the ini file.
-
-        See Also:
-            :ref:`ms-parameters` : Full list of experimental parameters.
-        """
-        attr_dict = cls._import_ini(ini_file)
-        if mll_mat1 is None:
-            mll_mat1 = Material(**attr_dict['material1'])
-        if mll_mat2 is None:
-            mll_mat2 = Material(**attr_dict['material2'])
-        for option, section in cls._lookup_dict().items():
-            if option in kwargs:
-                attr_dict[section][option] = kwargs[option]
-        return cls(multislice=attr_dict['multislice'], mll_mat1=mll_mat1,
-                   mll_mat2=mll_mat2, mll=attr_dict['mll'])
+        return cls.import_ini(MS_PARAMETERS)
 
     def get_mat1_r(self, energy: float) -> complex:
         """Return the Fresnel transmission coefficient of the first

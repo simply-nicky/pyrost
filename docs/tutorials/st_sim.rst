@@ -22,10 +22,11 @@ with :func:`pyrost.simulation.STParams.import_default`.
 .. doctest::
 
     >>> import pyrost.simulation as st_sim
-    >>> params = st_sim.STParams.import_default(bar_size=0.7, bar_sigma=0.12, bar_atn=0.18,
-    >>>                                         bulk_atn=0.2, p0=5e4, th_s=8e-5, n_frames=100,
-    >>>                                         offset=2.0, step_size=0.1, defocus=150, alpha=0.05,
-    >>>                                         ab_cnt=0.7, bar_rnd=0.8)
+    >>> params = st_sim.STParams.import_default()
+    >>> params = params.replace(bar_size=0.7, bar_sigma=0.12, bar_atn=0.18,
+    >>>                         bulk_atn=0.2, p0=5e4, th_s=8e-5, n_frames=100,
+    >>>                         offset=2.0, step_size=0.1, defocus=150, alpha=0.05,
+    >>>                         ab_cnt=0.7, bar_rnd=0.8)
 
 Performing the simulation
 ^^^^^^^^^^^^^^^^^^^^^^^^^

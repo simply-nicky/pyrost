@@ -16,9 +16,10 @@ accessed with :func:`pyrost.multislice.MSParams.import_default`.
 .. doctest::
 
     >>> import pyrost.multislice as ms_sim
-    >>> params = ms_sim.MSParams.import_default(x_step=5e-5, z_step=5e-3, n_min=100, n_max=5000,
-    >>>                                         focus=1.5e3, mll_sigma=5e-5, mll_wl=6.2e-5, wl=6.2e-5,
-    >>>                                         x_max=30.0, mll_depth=5.0)
+    >>> params = ms_sim.MSParams.import_default()
+    >>> params = params.replace(x_step=5e-5, z_step=5e-3, n_min=100, n_max=5000,
+    >>>                         focus=1.5e3, mll_sigma=5e-5, mll_wl=6.2e-5, wl=6.2e-5,
+    >>>                         x_max=30.0, mll_depth=5.0)
 
 Multilayer Laue lens
 --------------------

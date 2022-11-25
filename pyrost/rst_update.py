@@ -4,16 +4,17 @@ image and lens wavefront reconstruction and offers two methods
 to perform the iterative R-PXST update until the error metric converges to a minimum.
 """
 from __future__ import annotations
-from typing import Dict, List, Optional, Tuple, Union
-from weakref import ReferenceType
+from dataclasses import dataclass
+from typing import ClassVar, Dict, List, Optional, Tuple, Union
 from tqdm.auto import tqdm
 import numpy as np
-from .data_container import DataContainer, dict_to_object
+from .data_container import DataContainer, ReferenceType
 from .bfgs import BFGS
 from .bin import (gaussian_filter, KR_reference, LOWESS_reference, pm_gsearch,
                   pm_rsearch, pm_devolution, tr_gsearch, pm_errors, pm_total_error,
                   ref_errors, ct_integrate)
 
+@dataclass
 class SpeckleTracking(DataContainer):
     """Wrapper class for the  Robust Speckle Tracking algorithm.
     Provides an interface to perform the reference image and lens
@@ -70,63 +71,55 @@ class SpeckleTracking(DataContainer):
           update.
 
     """
-    attr_set = {'data', 'dj_pix', 'di_pix', 'ds_y', 'ds_x', 'num_threads', 'pixel_map',
-                'parent', 'whitefield'}
-    init_set = {'error', 'hval', 'initial', 'ref_orig', 'reference_image',
-                'scale_map', 'test_mask', 'train_mask'}
-
-    dtypes_32 = {'data': np.uint32, 'dij_pix': np.float32, 'pixel_map': np.float32,
-                 'scale_map': np.float32, 'whitefield': np.float32}
-    dtypes_64 = {'data': np.uint64, 'dij_pix': np.float64, 'pixel_map': np.float64,
-                 'scale_map': np.float64, 'whitefield': np.float64}
-
     # Necessary attributes
-    data : np.ndarray
-    dj_pix : np.ndarray
-    di_pix : np.ndarray
-    ds_x : float
-    ds_y : float
+    data        : np.ndarray
+    dj_pix      : np.ndarray
+    di_pix      : np.ndarray
+    ds_x        : float
+    ds_y        : float
     num_threads : int
-    parent : ReferenceType
-    pixel_map : np.ndarray
-    whitefield : np.ndarray
+    parent      : ReferenceType
+    pixel_map   : np.ndarray
+    test_ratio  : float
+    whitefield  : np.ndarray
 
     # Automatically generated attributes
-    reference_image : np.ndarray
-    ref_orig : np.ndarray
-    scale_map : np.ndarray
-    test_mask : np.ndarray
-    train_mask : np.ndarray
+    reference_image : Optional[np.ndarray] = None
+    ref_orig        : Optional[np.ndarray] = None
+    scale_map       : Optional[np.ndarray] = None
+    test_mask       : Optional[np.ndarray] = None
+    train_mask      : Optional[np.ndarray] = None
 
     # Optional attributes
-    hval : Optional[float]
-    error : Optional[float]
-    initial : Optional[SpeckleTracking]
+    hval            : Optional[float] = None
+    error           : Optional[float] = None
+    initial         : Optional[SpeckleTracking] = None
 
-    def __init__(self, parent: ReferenceType, **kwargs: Union[int, float, np.ndarray]) -> None:
-        super(SpeckleTracking, self).__init__(parent=parent, **kwargs)
-        self._init_functions(test_mask=self._test_mask, train_mask=lambda: ~self.test_mask,
-                             ref_orig=self._ref_orig, reference_image=self._reference_image,
-                             scale_map=lambda: np.sqrt(self.whitefield))
-        self._init_attributes()
+    dtypes_32 : ClassVar[Dict[str, np.dtype]] = {'data': np.uint32, 'dij_pix': np.float32,
+                                                 'pixel_map': np.float32, 'scale_map': np.float32,
+                                                 'whitefield': np.float32}
+    dtypes_64 : ClassVar[Dict[str, np.dtype]] = {'data': np.uint64, 'dij_pix': np.float64,
+                                                 'pixel_map': np.float64, 'scale_map': np.float64,
+                                                 'whitefield': np.float64}
 
-    def _ref_orig(self) -> np.ndarray:
-        y_orig = self.di_pix.max() - self.pixel_map[0].min()
-        x_orig = self.dj_pix.max() - self.pixel_map[1].min()
-        return np.array([y_orig, x_orig]).astype(int)
-
-    def _reference_image(self) -> np.ndarray:
-        shape = self.pixel_map.max(axis=(1, 2)) - np.array([self.di_pix.min(), self.dj_pix.min()])
-        shape = ((shape + self.ref_orig) / np.array([self.ds_y, self.ds_x]))
-        return np.ones(shape.astype(int) + 1, dtype=self.whitefield.dtype)
-
-    def _test_mask(self, test_ratio: float=0.2) -> np.ndarray:
-        idxs = np.random.choice(self.whitefield.size, size=int(self.whitefield.size * test_ratio),
-                                replace=False)
-        idxs = np.unravel_index(idxs, self.whitefield.shape)
-        test_mask = np.zeros(self.whitefield.shape, dtype=bool)
-        test_mask[idxs] = True
-        return test_mask
+    def __post_init__(self):
+        if self.test_mask is None or self.train_mask is None:
+            idxs = np.random.choice(self.whitefield.size, size=int(self.whitefield.size * self.test_ratio),
+                                    replace=False)
+            idxs = np.unravel_index(idxs, self.whitefield.shape)
+            self.test_mask = np.zeros(self.whitefield.shape, dtype=bool)
+            self.test_mask[idxs] = True
+            self.train_mask = ~self.test_mask
+        if self.ref_orig is None:
+            y_orig = self.di_pix.max() - self.pixel_map[0].min()
+            x_orig = self.dj_pix.max() - self.pixel_map[1].min()
+            self.ref_orig = np.array([y_orig, x_orig]).astype(int)
+        if self.reference_image is None:
+            shape = self.pixel_map.max(axis=(1, 2)) - np.array([self.di_pix.min(), self.dj_pix.min()])
+            shape = ((shape + self.ref_orig) / np.array([self.ds_y, self.ds_x]))
+            self.reference_image = np.ones(shape.astype(int) + 1, dtype=self.whitefield.dtype)
+        if self.scale_map is None:
+            self.scale_map = np.sqrt(self.whitefield)
 
     def __repr__(self) -> str:
         with np.printoptions(threshold=6, edgeitems=2, suppress=True, precision=3):
@@ -138,7 +131,6 @@ class SpeckleTracking(DataContainer):
             return {key: val.ravel() if isinstance(val, np.ndarray) else val
                     for key, val in self.items()}.__str__()
 
-    @dict_to_object
     def create_initial(self) -> SpeckleTracking:
         """Create a :class:`SpeckleTracking` object with preliminary approximation of
         the pixel mapping and reference profile. The object is saved into `initial`
@@ -149,9 +141,8 @@ class SpeckleTracking(DataContainer):
             :class:`SpeckleTracking` object saved in the `initial` attribute.
         """
         initial = self.parent().get_st(ds_x=self.ds_x, ds_y=self.ds_y).update_errors()
-        return {'initial': initial}
+        return self.replace(initial=initial)
 
-    @dict_to_object
     def test_train_split(self, test_ratio: float=0.1) -> SpeckleTracking:
         """Update test / train subsets split. Required to calculate the Cross-validation
         error metric.
@@ -166,10 +157,8 @@ class SpeckleTracking(DataContainer):
             :func:`SpeckleTracking.CV` : Full details on the Cross-validation error
             metric.
         """
-        test_mask = self._test_mask(test_ratio)
-        return {'test_mask': test_mask, 'train_mask': ~test_mask}
+        return self.replace(test_ratio=test_ratio, test_mask=None, train_mask=None)
 
-    @dict_to_object
     def update_reference(self, hval: float, method: str='KerReg') -> SpeckleTracking:
         r"""Return a new :class:`SpeckleTracking` object with the updated
         `reference_image`. The reference profile is estimated either by
@@ -234,7 +223,7 @@ class SpeckleTracking(DataContainer):
                                           ds_x=self.ds_x, hval=hval, num_threads=self.num_threads)
         else:
             raise ValueError('Method keyword is invalid')
-        return {'hval': hval, 'ref_orig': np.array([n0, m0]), 'reference_image': I0}
+        return self.replace(hval=hval, ref_orig=np.array([n0, m0]), reference_image=I0)
 
     def ref_indices(self) -> np.ndarray:
         """Return an array of reference profile pixel indices.
@@ -247,7 +236,6 @@ class SpeckleTracking(DataContainer):
         idxs[1] = idxs[1] * self.ds_x - self.ref_orig[1]
         return idxs
 
-    @dict_to_object
     def update_pixel_map(self, search_window: Tuple[float, float, float], blur: float=0.0,
                          integrate: bool=False, method: str='gsearch',
                          extra_args: Dict[str, Union[int, float]]={}) -> SpeckleTracking:
@@ -392,9 +380,8 @@ class SpeckleTracking(DataContainer):
             pm[0] = np.gradient(phi, axis=0)
             pm[1] = np.gradient(phi, axis=1)
 
-        return {'pixel_map': pm, 'scale_map': scale}
+        return self.replace(pixel_map=pm, scale_map=scale)
 
-    @dict_to_object
     def update_errors(self) -> SpeckleTracking:
         """Return a new :class:`SpeckleTracking` object with
         the updated mean Huber error metric `error`.
@@ -418,11 +405,11 @@ class SpeckleTracking(DataContainer):
                                di=self.di_pix - self.ref_orig[0], ds_y=self.ds_y,
                                dj=self.dj_pix - self.ref_orig[1], ds_x=self.ds_x,
                                sigma=self.scale_map, num_threads=self.num_threads)
-        if self.initial is None:
-            return {'error': error}
-        return {'error': error / self.initial.error}
+        if self.initial:
+            error = error / self.initial.error
 
-    @dict_to_object
+        return self.replace(error=error)
+
     def update_translations(self, sw_x: float, sw_y: float=0.0, blur=0.0) -> SpeckleTracking:
         """Return a new :class:`SpeckleTracking` object with the updated sample
         pixel translations (`di_pix`, `dj_pix`). The update is performed with the
@@ -463,7 +450,7 @@ class SpeckleTracking(DataContainer):
             dj_pix = gaussian_filter(dj_pix - self.dj_pix, blur, mode='nearest',
                                       num_threads=self.num_threads) + self.dj_pix
 
-        return {'di_pix': di_pix, 'dj_pix': dj_pix}
+        return self.replace(di_pix=di_pix, dj_pix=dj_pix)
 
     def error_profile(self, kind: str='pixel_map') -> np.ndarray:
         """Return a error metrics for the reference profile and pixel mapping
@@ -686,7 +673,7 @@ class SpeckleTracking(DataContainer):
         return_extra = options.get('return_extra', False)
 
         obj = self.update_reference(hval=h0, method=ref_method)
-        obj.update_errors.inplace_update()
+        obj = obj.update_errors()
 
         optimizer = BFGS(lambda hval: obj.CV(hval, ref_method),
                          np.atleast_1d(h0), epsilon=epsilon, beta=beta)
@@ -708,9 +695,9 @@ class SpeckleTracking(DataContainer):
 
             # Update di_pix, dj_pix
             if update_translations:
-                new_obj.update_translations.inplace_update(sw_y=search_window[0],
-                                                           sw_x=search_window[1],
-                                                           blur=blur)
+                new_obj = new_obj.update_translations(sw_y=search_window[0],
+                                                      sw_x=search_window[1],
+                                                      blur=blur)
 
             # Update hval and step
             optimizer.update_loss(lambda hval: new_obj.CV(hval, ref_method))
@@ -719,9 +706,9 @@ class SpeckleTracking(DataContainer):
             hvals.append(h0)
 
             # Update reference_image
-            new_obj.update_reference.inplace_update(hval=h0, method=ref_method)
+            new_obj = new_obj.update_reference(hval=h0, method=ref_method)
 
-            new_obj.update_errors.inplace_update()
+            new_obj = new_obj.update_errors()
             errors.append((1.0 - momentum) * new_obj.error + momentum * errors[-1])
             if verbose:
                 itor.set_description(f"Error = {errors[-1]:.6f}, hval = {hvals[-1]:.2f}")
@@ -838,7 +825,7 @@ class SpeckleTracking(DataContainer):
         return_extra = options.get('return_extra', False)
 
         obj = self.update_reference(hval=h0, method=ref_method)
-        obj.update_errors.inplace_update()
+        obj = obj.update_errors()
         errors = [obj.error]
 
         itor = tqdm(range(1, n_iter + 1), disable=not verbose,
@@ -857,13 +844,13 @@ class SpeckleTracking(DataContainer):
 
             # Update di_pix, dj_pix
             if update_translations:
-                new_obj.update_translations.inplace_update(sw_y=search_window[0],
-                                                           sw_x=search_window[1],
-                                                           blur=blur)
+                new_obj = new_obj.update_translations(sw_y=search_window[0],
+                                                      sw_x=search_window[1],
+                                                      blur=blur)
 
             # Update reference_image
-            new_obj.update_reference.inplace_update(hval=h0, method=ref_method)
-            new_obj.update_errors.inplace_update()
+            new_obj = new_obj.update_reference(hval=h0, method=ref_method)
+            new_obj = new_obj.update_errors()
 
             # Calculate errors
             errors.append((1.0 - momentum) * new_obj.error + momentum * errors[-1])

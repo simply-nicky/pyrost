@@ -12,3 +12,4 @@ Core classes and functions in pyrost module:
     rst_ref
     ab_fit_ref
     rst_c_ref
+    misc_types

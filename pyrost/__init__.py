@@ -13,7 +13,8 @@ from __future__ import absolute_import
 
 from .cxi_protocol import CXIProtocol, CXIStore
 from .log_protocol import LogProtocol, KamzikConverter
-from .data_processing import Transform, Crop, Downscale, Mirror, ComposeTransforms, STData
+from .data_container import Transform, Crop, Downscale, Mirror, ComposeTransforms
+from .data_processing import STData
 from .rst_update import SpeckleTracking
 from .bfgs import BFGS
 from .aberrations_fit import AberrationsFit

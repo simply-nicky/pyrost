@@ -31,7 +31,7 @@ attribute (`data`, `whitefield`, etc.):
 
 .. note::
 
-    You can save protocol to an INI file with :func:`pyrost.CXIProtocol.export_ini`
+    You can save protocol to an INI file with :func:`pyrost.CXIProtocol.to_ini`
     and import protocol from INI file with :func:`pyrost.CXIProtocol.import_ini`.
 
 The default protocol can be accessed with :func:`pyrost.CXIProtocol.import_default`. The protocol
@@ -68,12 +68,12 @@ is given by:
     distance = [/entry/instrument/detector/distance, /entry_1/instrument_1/detector_1/distance]
     good_frames = [/speckle_tracking/good_frames, /frame_selector/good_frames, /process_3/good_frames]
     mask = [/speckle_tracking/mask, /mask_maker/mask, /entry_1/instrument_1/detector_1/mask, /entry/instrument/detector/mask]
-    phase = /speckle_tracking/phase
-    pixel_aberrations = /speckle_tracking/pixel_aberrations
-    pixel_map = /speckle_tracking/pixel_map
-    pixel_translations = /speckle_tracking/pixel_translations
-    reference_image = /speckle_tracking/reference_image
-    scale_map = /speckle_tracking/scale_map
+    phase = [/speckle_tracking/phase,]
+    pixel_aberrations = [/speckle_tracking/pixel_aberrations,]
+    pixel_map = [/speckle_tracking/pixel_map,]
+    pixel_translations = [/speckle_tracking/pixel_translations,]
+    reference_image = [/speckle_tracking/reference_image,]
+    scale_map = [/speckle_tracking/scale_map,]
     translations = [/speckle_tracking/translations, /entry_1/sample_1/geometry/translations, /entry/sample/geometry/translations, /entry_1/sample_1/geometry/translation, /pos_refine/translation, /entry_1/sample_3/geometry/translation]
     wavelength = [/entry/instrument/source/wavelength, /entry_1/instrument_1/source_1/wavelength]
     whitefield = [/speckle_tracking/whitefield, /process_1/whitefield, /make_whitefield/whitefield, /process_2/whitefield, /process_3/whitefield]
@@ -108,8 +108,8 @@ is given by:
 CXI file handler class (:class:`pyrost.CXIStore`) accepts a set of paths to the files together with
 a protocol object. :class:`pyrost.CXIStore` searches the files for any data attributes defined by
 the protocol. It provides an interface to load the data of the given attribute from the files
-(see :func:`pyrost.CXIStore.load`) and to save the data of the attribute to the first file in the set
-(see :func:`pyrost.CXIStore.save`). One can parse several files or a single one.
+(see :func:`pyrost.CXIStore.load_attribute`) and to save the data of the attribute to the first file in the set
+(see :func:`pyrost.CXIStore.save_attribute`). One can parse several files or a single one.
 
 .. automodule:: pyrost.cxi_protocol
 
