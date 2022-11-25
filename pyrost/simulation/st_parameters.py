@@ -13,16 +13,19 @@ Examples:
      'source': {'p0': 200000.0, 'th_s': 0.0002, 'wl': 7.29e-05}, '...': '...'}
 """
 from __future__ import annotations
+from dataclasses import dataclass
 import os
-from typing import Dict, Iterable, Iterator, Tuple, Union, Optional
+from typing import Tuple, Optional
 from multiprocessing import cpu_count
 import numpy as np
-from ..ini_parser import INIParser, ROOT_PATH
+from ..data_container import INIContainer
+from ..cxi_protocol import ROOT_PATH
 from ..bin import bar_positions, barcode_profile, gaussian_kernel
 
 ST_PARAMETERS = os.path.join(ROOT_PATH, 'config/st_parameters.ini')
 
-class STParams(INIParser):
+@dataclass
+class STParams(INIContainer):
     """Container with the simulation parameters for the wavefront propagation.
 
     Args:
@@ -76,19 +79,13 @@ class STParams(INIParser):
     See Also:
         :ref:`st-parameters` : Full list of experimental parameters.
     """
-    attr_dict = {'exp_geom': ('defocus', 'det_dist', 'n_frames',
-                              'step_size', 'step_rnd'),
-                 'detector': ('detx_size', 'dety_size', 'pix_size'),
-                 'source':   ('p0', 'th_s', 'wl'),
-                 'lens':     ('alpha', 'ap_x', 'ap_y', 'focus', 'ab_cnt'),
-                 'barcode':  ('bar_atn', 'bar_rnd', 'bar_sigma', 'bar_size',
-                              'bulk_atn', 'offset'),
-                 'system':   ('num_threads', 'seed')}
-
-    fmt_dict = {'exp_geom': 'float', 'exp_geom/n_frames': 'int',
-                'detector': 'int', 'detector/pix_size': 'float',
-                'source': 'float', 'lens': 'float', 'barcode': 'float',
-                'system': 'int'}
+    __ini_fields__ = {'exp_geom': ('defocus', 'det_dist', 'n_frames', 'step_size', 'step_rnd'),
+                      'detector': ('detx_size', 'dety_size', 'pix_size'),
+                      'source': ('p0', 'th_s', 'wl'),
+                      'lens': ('alpha', 'ap_x', 'ap_y', 'focus', 'ab_cnt'),
+                      'barcode': ('bar_atn', 'bar_rnd', 'bar_sigma', 'bar_size', 'bulk_atn',
+                                  'offset'),
+                      'system': ('num_threads', 'seed')}
 
     # exp_geom attributes
     defocus     : float
@@ -123,77 +120,26 @@ class STParams(INIParser):
     offset      : float
 
     # system attributes
-    num_threads : int
-    seed        : int
+    num_threads : int = 0
+    seed        : int = 0
 
-    def __init__(self, barcode: Dict[str, float], detector: Dict[str, Union[int, float]],
-                 exp_geom: Dict[str, Union[int, float]], lens: Dict[str, float],
-                 source: Dict[str, float], system: Dict[str, int]) -> None:
-        super(STParams, self).__init__(barcode=barcode, detector=detector,
-                                       exp_geom=exp_geom, lens=lens, source=source,
-                                       system=system)
-        if self.seed <= 0:
-            self.update_seed()
+    def __post_init__(self):
         if self.num_threads <= 0:
             self.update_threads()
+        if self.seed <= 0:
+            self.update_seed()
 
     @classmethod
-    def _lookup_dict(cls) -> Dict[str, str]:
-        lookup = {}
-        for section in cls.attr_dict:
-            for option in cls.attr_dict[section]:
-                lookup[option] = section
-        return lookup
-
-    def __iter__(self) -> Iterator[str]:
-        return self._lookup.__iter__()
-
-    def __contains__(self, attr: str) -> bool:
-        return attr in self._lookup
-
-    def __repr__(self) -> str:
-        return self._format(self.export_dict()).__repr__()
-
-    def __str__(self) -> str:
-        return self._format(self.export_dict()).__str__()
-
-    def keys(self) -> Iterable[str]:
-        return list(self)
-
-    @classmethod
-    def import_default(cls, **kwargs: Union[int, float]) -> STParams:
-        """Return the default :class:`STParams`. Extra arguments
-        override the default values if provided.
-
-        Args:
-            kwargs : Simulation parameters enlisted in :ref:`st-parameters`.
+    def import_default(cls) -> STParams:
+        """Return the default :class:`STParams`. Extra arguments override the default values
+        if provided.
 
         Returns:
             An :class:`STParams` object with the default parameters.
         """
-        return cls.import_ini(ST_PARAMETERS, **kwargs)
+        return cls.import_ini(ST_PARAMETERS)
 
-    @classmethod
-    def import_ini(cls, ini_file: str, **kwargs: Union[int, float]) -> STParams:
-        """Initialize a :class:`STParams` object with an
-        ini file.
-
-        Args:
-            ini_file : Path to the ini file.
-            kwargs : Experimental parameters enlisted in :ref:`st-parameters`.
-                Override the parameters imported from the `ini_file`.
-
-        Returns:
-            A :class:`STParams` object with all the attributes imported
-            from the ini file.
-        """
-        attr_dict = cls._import_ini(ini_file)
-        for option, section in cls._lookup_dict().items():
-            if option in kwargs:
-                attr_dict[section][option] = kwargs[option]
-        return cls(**attr_dict)
-
-    def update_seed(self, seed: Optional[int]=None) -> None:
+    def update_seed(self, seed: Optional[int]=None):
         """Update seed used in pseudo-random number generation.
 
         Args:
@@ -203,7 +149,7 @@ class STParams(INIParser):
             seed = np.random.default_rng().integers(0, np.iinfo(np.int_).max, endpoint=False)
         self.seed = seed
 
-    def update_threads(self, num_threads: Optional[int]=None) -> None:
+    def update_threads(self, num_threads: Optional[int]=None):
         """Update number of threads used in calculcations.
 
         Args:

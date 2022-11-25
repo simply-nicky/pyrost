@@ -63,7 +63,7 @@ List of simulation parameters:
 
 .. note::
 
-    You can save parameters to an INI file with :func:`pyrost.simulation.STParams.export_ini`
+    You can save parameters to an INI file with :func:`pyrost.simulation.STParams.to_ini`
     and import parameters from an INI file with :func:`pyrost.simulation.STParams.import_ini`.
 
 The default parameters are accessed with :func:`pyrost.simulation.STParams.import_default`.

@@ -24,91 +24,55 @@ Examples:
     'exposure': 'Type: Method', '...': '...'}}, 'ss_vec': array([ 0.0e+00, -5.5e-05,  0.0e+00])}
 """
 from __future__ import annotations
+from dataclasses import dataclass, field
 import os
 import re
-from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
+from typing import Any, ClassVar, Dict, Iterable, List, Optional, Tuple, TypeVar, Union
 import numpy as np
-from .data_container import DataContainer, dict_to_object
-from .ini_parser import ROOT_PATH, INIParser
+from .data_container import DataContainer, INIContainer
 
-LOG_PROTOCOL = os.path.join(ROOT_PATH, 'config/log_protocol.ini')
+LOG_PROTOCOL = os.path.join(os.path.dirname(__file__), 'config/log_protocol.ini')
+K = TypeVar('K', bound='KamzikConverter')
 
-class LogProtocol(INIParser):
+@dataclass
+class LogProtocol(INIContainer):
     """Log file protocol class. Contains log file keys to retrieve
     and the data types of the corresponding values.
 
     Args:
-        datatypes : Dictionary with attributes' datatypes. 'float', 'int',
-            'bool', or 'str' are allowed.
+        datatypes : Dictionary with attributes' datatypes. 'float', 'int', 'bool', or 'str' are
+            allowed.
         log_keys : Dictionary with attributes' log file keys.
-        part_keys : Dictionary with the part names inside the log file
-            where the attributes are stored.
+        part_keys : Dictionary with the part names inside the log file where the attributes are
+            stored.
     """
-    attr_dict   = {'datatypes': ('ALL',), 'log_keys': ('ALL',), 'part_keys': ('ALL',)}
-    fmt_dict    = {'datatypes': 'str', 'log_keys': 'str', 'part_keys': 'str'}
-    unit_dict   = {'percent': 1e-2, 'mm,mdeg': 1e-3, 'µm,um,udeg,µdeg': 1e-6,
-                   'nm,ndeg': 1e-9, 'pm,pdeg': 1e-12}
+    __ini_fields__ = {'datatypes': 'datatypes', 'log_keys': 'log_keys', 'part_keys': 'part_keys'}
 
-    datatypes   : Dict[str, str]
-    log_keys    : Dict[str, List[str]]
-    part_keys   : Dict[str, str]
+    datatypes : Dict[str, str]
+    log_keys : Dict[str, List[str]]
+    part_keys : Dict[str, str]
 
-    def __init__(self, datatypes: Dict[str, str], log_keys: Dict[str, List[str]],
-                 part_keys: Dict[str, str]) -> None:
-        log_keys = {attr: val for attr, val in log_keys.items() if attr in datatypes}
-        datatypes = {attr: val for attr, val in datatypes.items() if attr in log_keys}
-        super(LogProtocol, self).__init__(datatypes=datatypes, log_keys=log_keys,
-                                          part_keys=part_keys)
+    known_types: ClassVar[Dict[str, Any]] = {'int': int, 'bool': bool, 'float': float, 'str': str}
+    unit_dict: ClassVar[Dict[str, float]] = {'mm': 1e-3, 'mdeg': 1.7453292519943296e-05,
+                                             'µm,um': 1e-6, 'udeg,µdeg': 1.7453292519943296e-08,
+                                             'nm': 1e-9, 'ndeg': 1.7453292519943296e-11,
+                                             'pm': 1e-12, 'pdeg': 1.7453292519943296e-14,
+                                             'percent': 1e-2}
+
+    def __post_init__(self):
+        self.log_keys = {attr: self.str_to_list(val)
+                         for attr, val in self.log_keys.items() if attr in self.datatypes}
+        self.part_keys = {attr: val for attr, val in self.part_keys.items()
+                          if attr in self.datatypes}
 
     @classmethod
-    def import_default(cls, datatypes: Optional[Dict[str, str]]=None,
-                       log_keys: Optional[Dict[str, List[str]]]=None,
-                       part_keys: Optional[Dict[str, str]]=None) -> LogProtocol:
-        """Return the default :class:`LogProtocol` object. Extra arguments
-        override the default values if provided.
-
-        Args:
-            datatypes : Dictionary with attributes' datatypes. 'float', 'int',
-                or 'bool' are allowed.
-            log_keys : Dictionary with attributes' log file keys.
-            part_keys : Dictionary with the part names inside the log file
-                where the attributes are stored.
+    def import_default(cls) -> LogProtocol:
+        """Return the default :class:`LogProtocol` object.
 
         Returns:
             A :class:`LogProtocol` object with the default parameters.
         """
-        return cls.import_ini(LOG_PROTOCOL, datatypes, log_keys, part_keys)
-
-    @classmethod
-    def import_ini(cls, ini_file: str, datatypes: Optional[Dict[str, str]]=None,
-                   log_keys: Optional[Dict[str, List[str]]]=None,
-                   part_keys: Optional[Dict[str, str]]=None) -> LogProtocol:
-        """Initialize a :class:`LogProtocol` object class with an
-        ini file.
-
-        Args:
-            ini_file : Path to the ini file. Load the default log protocol if None.
-            datatypes : Dictionary with attributes' datatypes. 'float', 'int',
-                or 'bool' are allowed. Initialized with `ini_file` if None.
-            log_keys : Dictionary with attributes' log file keys. Initialized with
-                `ini_file` if None.
-            part_keys : Dictionary with the part names inside the log file
-                where the attributes are stored. Initialized with `ini_file`
-                if None.
-
-        Returns:
-            A :class:`LogProtocol` object with all the attributes imported
-            from the ini file.
-        """
-        kwargs = cls._import_ini(ini_file)
-        if not datatypes is None:
-            kwargs['datatypes'].update(**datatypes)
-        if not log_keys is None:
-            kwargs['log_keys'].update(**log_keys)
-        if not part_keys is None:
-            kwargs['part_keys'].update(**part_keys)
-        return cls(datatypes=kwargs['datatypes'], log_keys=kwargs['log_keys'],
-                   part_keys=kwargs['part_keys'])
+        return cls.import_ini(LOG_PROTOCOL)
 
     @classmethod
     def _get_unit(cls, key: str) -> float:
@@ -128,16 +92,14 @@ class LogProtocol(INIParser):
                 has_unit |= (unit in key)
         return has_unit
 
-    def load_attributes(self, path: str) -> Dict[str, Any]:
-        """Return attributes' values from a log file at
-        the given `path`.
+    def load_attributes(self, path: str) -> Dict[str, Dict[str, Any]]:
+        """Return attributes' values from a log file at the given `path`.
 
         Args:
             path : Path to the log file.
 
         Returns:
-            Dictionary with the attributes retrieved from
-            the log file.
+            Dictionary with the attributes retrieved from the log file.
         """
         if not isinstance(path, str):
             raise ValueError('path must be a string')
@@ -198,13 +160,15 @@ class LogProtocol(INIParser):
 
         Args:
             path : Path to the log file.
-            idxs : Array of data indices to load. Loads info for all
-                the frames if None.
-            return_idxs : Return a set of indices loaded from the log file.
+            idxs : Array of data indices to load. Loads info for all the frames by default.
+            return_idxs : Return an array of indices of the scan steps read from the log file
+                if True.
 
         Returns:
-            Dictionary with data fields and their names retrieved from the
-            log file.
+            A tuple of two elements:
+
+            * Dictionary with data fields and their names retrieved from the log file.
+            * An array of indices of the scan steps read from the log file.
         """
         if idxs is not None:
             idxs = np.asarray(idxs)
@@ -281,6 +245,7 @@ class LogProtocol(INIParser):
             return txt_dict, idxs
         return txt_dict
 
+@dataclass
 class KamzikConverter(DataContainer):
     """A converter class, that generates CXI datasets aceeptable by :class:`pyrost.STData`
     from Kamzik log files.
@@ -293,28 +258,15 @@ class KamzikConverter(DataContainer):
         log_attr : Dictionary of log attributes read from a log file.
         log_data : Dictionary of log datasets read from a log file.
     """
-    attr_set = {'protocol', 'fs_vec', 'ss_vec'}
-    init_set = {'idxs', 'log_attr', 'log_data'}
+    protocol    : LogProtocol = field(default_factory=LogProtocol.import_default)
+    fs_vec      : np.ndarray = np.array([-55e-6, 0.0, 0.0])
+    ss_vec      : np.ndarray = np.array([0.0, -55e-6, 0.0])
 
-    cxi_attrs = {'basis_vectors': 'basis_vectors', 'dist_down': 'distance', 'dist_up': 'distance',
-                 'sim_translations': 'translations', 'log_translations': 'translations',
-                 'x_pixel_size': 'x_pixel_size', 'y_pixel_size': 'y_pixel_size'}
+    idxs        : Optional[np.ndarray] = None
+    log_attr    : Optional[Dict[str, Any]] = field(default_factory=dict)
+    log_data    : Optional[Dict[str, Any]] = field(default_factory=dict)
 
-    protocol:   LogProtocol
-    fs_vec:     np.ndarray
-    ss_vec:     np.ndarray
-
-    idxs:       Optional[np.ndarray]
-    log_attr:   Optional[Dict[str, Any]]
-    log_data:   Optional[Dict[str, Any]]
-
-    def __init__(self, protocol: LogProtocol=LogProtocol.import_default(),
-                 fs_vec: np.ndarray=np.array([-55e-6, 0., 0.]),
-                 ss_vec: np.ndarray=np.array([0., -55e-6, 0.]),
-                 idxs: Optional[np.ndarray]=None, log_attr: Optional[Dict[str, Any]]=None,
-                 log_data: Optional[Dict[str, Any]]=None) -> None:
-        super(KamzikConverter, self).__init__(protocol=protocol, fs_vec=fs_vec, ss_vec=ss_vec,
-                                              idxs=idxs, log_attr=log_attr, log_data=log_data)
+    _no_data_exc    : ClassVar[ValueError] = ValueError('No log data in the container')
 
     @property
     def n_frames(self):
@@ -328,22 +280,21 @@ class KamzikConverter(DataContainer):
     def y_pixel_size(self):
         return np.sqrt((self.ss_vec * self.ss_vec).sum())
 
-    @dict_to_object
-    def read_logs(self, log_path: str, idxs: Optional[Iterable[int]]=None) -> KamzikConverter:
-        """Read a log file under the path `log_path`. Read out only the frame indices
-        defined by `idxs`. If `idxs` is None, read the whole log file.
+
+    def read_logs(self: K, log_path: str, idxs: Optional[Iterable[int]]=None) -> K:
+        """Read a log file under the path `log_path`. Read out only the frame indices defined by
+        ``idxs``. If ``idxs`` is None, read the whole log file.
 
         Args:
             log_path : Path to the log file.
             idxs : List of indices to read. Read the whole log file if None.
 
         Returns:
-            A new :class:`KamzikConverter` object with `log_attr`, `log_data`, and `idxs`
-            updated.
+            A new log container with ``log_attr``, ``log_data``, and ``idxs`` updated.
         """
         log_attr = self.protocol.load_attributes(log_path)
         log_data, idxs = self.protocol.load_data(log_path, idxs=idxs, return_idxs=True)
-        return {'log_attr': log_attr, 'log_data': log_data, 'idxs': idxs}
+        return KamzikConverterFull(**dict(self, log_attr=log_attr, log_data=log_data, idxs=idxs))
 
     def find_log_part_key(self, attr: str) -> Optional[str]:
         """Find a name of the log dictionary corresponding to an attribute
@@ -400,6 +351,50 @@ class KamzikConverter(DataContainer):
                     return log_dset
         return None
 
+    def cxi_keys(self) -> List[str]:
+        """Return a list of available CXI attributes.
+
+        Returns:
+            List of available CXI attributes.
+        """
+        raise self._no_data_exc
+
+    def cxi_get(self, attrs: Union[str, List[str]]) -> Dict[str, Any]:
+        """Convert Kamzik log files data into CXI attributes, that are accepted by
+        :class:`pyrost.STData` container. To see full list of available CXI
+        attributes, use :func:`KamzikConverter.cxi_keys`.
+
+        Args:
+            attrs: List of CXI attributes to generate. The method will raise an error
+                if any of the attributes is unavailable.
+
+        Raises:
+            ValueError : If any of attributes in `attrs` in unavailable.
+
+        Returns:
+            A dictionary of CXI attributes, that are accepted by :class:`pyrost.STData`
+            container.
+        """
+        raise self._no_data_exc
+
+@dataclass
+class KamzikConverterFull(KamzikConverter):
+    protocol    : LogProtocol
+    fs_vec      : np.ndarray
+    ss_vec      : np.ndarray
+
+    idxs        : Optional[np.ndarray] = None
+    log_attr    : Optional[Dict[str, Any]] = field(default_factory=dict)
+    log_data    : Optional[Dict[str, Any]] = field(default_factory=dict)
+
+    cxi_attrs   : ClassVar[Dict[str, str]]= {'basis_vectors': 'basis_vectors',
+                                             'dist_down': 'distance',
+                                             'dist_up': 'distance',
+                                             'sim_translations': 'translations',
+                                             'log_translations': 'translations',
+                                             'x_pixel_size': 'x_pixel_size',
+                                             'y_pixel_size': 'y_pixel_size'}
+
     def _is_basis_vectors(self) -> bool:
         return self.n_frames is not None
 
@@ -426,11 +421,6 @@ class KamzikConverter(DataContainer):
                  self.find_log_part_key('z_sample') is not None))
 
     def cxi_keys(self) -> List[str]:
-        """Return a list of available CXI attributes.
-
-        Returns:
-            List of available CXI attributes.
-        """
         cxi_dict = {'basis_vectors': self._is_basis_vectors,
                     'dist_down': self._is_dist_down,
                     'dist_up': self._is_dist_up,
@@ -481,21 +471,6 @@ class KamzikConverter(DataContainer):
         return translations
 
     def cxi_get(self, attrs: Union[str, List[str]]) -> Dict[str, Any]:
-        """Convert Kamzik log files data into CXI attributes, that are accepted by
-        :class:`pyrost.STData` container. To see full list of available CXI
-        attributes, use :func:`KamzikConverter.cxi_keys`.
-
-        Args:
-            attrs: List of CXI attributes to generate. The method will raise an error
-                if any of the attributes is unavailable.
-
-        Raises:
-            ValueError : If any of attributes in `attrs` in unavailable.
-
-        Returns:
-            A dictionary of CXI attributes, that are accepted by :class:`pyrost.STData`
-            container.
-        """
         cxi_dict = {'basis_vectors': self._get_basis_vectors,
                     'dist_down': self._get_dist_down,
                     'dist_up': self._get_dist_up,

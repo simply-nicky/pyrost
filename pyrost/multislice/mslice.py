@@ -24,14 +24,16 @@ Examples:
     `ms_prgt.smp_profile` attributes.
 """
 from __future__ import annotations
+from dataclasses import dataclass, field
 from multiprocessing import cpu_count
-from typing import Iterable, Optional, Tuple
+from typing import ClassVar, Iterable, Optional, Tuple
 from tqdm.auto import tqdm
 import numpy as np
 from .ms_parameters import MSParams
-from ..data_container import DataContainer, dict_to_object
+from ..data_container import DataContainer
 from ..bin import mll_profile, FFTW, empty_aligned, rsc_wp
 
+@dataclass
 class MLL(DataContainer):
     """
     Multilayer Laue lens class.
@@ -48,18 +50,12 @@ class MLL(DataContainer):
         sigma : Bilayer's interdiffusion length [um].
         layers : MLL's bilayers x coordinates [um].
     """
-    attr_set = {'layers', 'mat1_r', 'mat2_r', 'sigma'}
-    en_to_wl = 1.239841929761768 # h * c / e [eV * um]
+    layers      : np.ndarray
+    mat1_r      : complex
+    mat2_r      : complex
+    sigma       : float
 
-    layers  : np.ndarray
-    mat1_r  : complex
-    mat2_r  : complex
-    sigma   : float
-
-    def __init__(self, mat1_r: complex, mat2_r: complex, sigma: float,
-                 layers: np.ndarray) -> None:
-        super(MLL, self).__init__(mat1_r=mat1_r, mat2_r=mat2_r, sigma=sigma,
-                                  layers=layers)
+    en_to_wl    : ClassVar[float] = 1.239841929761768 # h * c / e [eV * um]
 
     @classmethod
     def import_params(cls, params: MSParams) -> MLL:
@@ -89,7 +85,6 @@ class MLL(DataContainer):
         "Total number of slices"
         return self.layers.shape[0]
 
-    @dict_to_object
     def update_interdiffusion(self, sigma: float) -> MLL:
         """Return a new :class:`MLL` object with the updated `sigma`.
 
@@ -99,9 +94,8 @@ class MLL(DataContainer):
         Returns:
             New :class:`MLL` object with the updated `sigma`.
         """
-        return {'sigma': sigma}
+        return self.replace(sigma=sigma)
 
-    @dict_to_object
     def update_materials(self, mat1_r: complex, mat2_r: complex) -> MLL:
         """Return a new :class:`MLL` object with the updated materials `mat1_r`
         and `mat2_r`.
@@ -115,7 +109,7 @@ class MLL(DataContainer):
         Returns:
             New :class:`MLL` object with the updated `mat1_r` and `mat2_r`.
         """
-        return {'mat1_r': mat1_r, 'mat2_r': mat2_r}
+        return self.replace(mat1_r=mat1_r, mat2_r=mat2_r)
 
     def get_span(self) -> Tuple[float, float]:
         """Return the pair of bounds (x_min, x_max) of the MLL
@@ -145,6 +139,7 @@ class MLL(DataContainer):
                                          num_threads=num_threads)
             yield output[idx]
 
+@dataclass
 class MSPropagator(DataContainer):
     """One-dimensional Multislice beam propagation class.
     Generates beam profile, that propagates through the sample
@@ -174,51 +169,42 @@ class MSPropagator(DataContainer):
         * wf_inc : Wavefront at the entry surface.
         * z_arr : Coordinates array along the propagation axis [um].
     """
-    attr_set = {'params', 'sample'}
-    init_set = {'beam_profile', 'fx_arr', 'kernel', 'num_threads', 'smp_profile', 'x_arr',
-                'wf_inc', 'z_arr'}
 
     # Necessary attributes
     params          : MSParams
     sample          : MLL
 
     # Automatically generated attributes
-    num_threads     : int
-    fx_arr          : np.ndarray
-    kernel          : np.ndarray
-    wf_inc          : np.ndarray
-    x_arr           : np.ndarray
-    z_arr           : np.ndarray
+    num_threads     : int = field(default=np.clip(1, 64, cpu_count()))
+    fx_arr          : Optional[np.ndarray] = None
+    kernel          : Optional[np.ndarray] = None
+    wf_inc          : Optional[np.ndarray] = None
+    x_arr           : Optional[np.ndarray] = None
+    z_arr           : Optional[np.ndarray] = None
 
     # Optional attributes
-    beam_profile    : Optional[np.ndarray]
-    smp_profile     : Optional[np.ndarray]
+    beam_profile    : Optional[np.ndarray] = None
+    smp_profile     : Optional[np.ndarray] = None
 
-    def __init__(self, params: MSParams, sample: MLL, num_threads: Optional[int]=None,
-                 **kwargs: np.ndarray) -> None:
-        super(MSPropagator, self).__init__(params=params, sample=sample,
-                                           num_threads=num_threads, **kwargs)
-
-        self._init_functions(num_threads=lambda: np.clip(1, 64, cpu_count()),
-                             x_arr=self.params.get_xcoords, z_arr=self.params.get_zcoords,
-                             fx_arr=lambda: np.fft.fftfreq(self.size, self.params.x_step),
-                             kernel=lambda: self.params.get_kernel(self.fx_arr) / self.fx_arr.size,
-                             wf_inc=self._inc_wavefront)
-
-        self._init_attributes()
-
-    def _inc_wavefront(self):
-        wf_inc = np.ones(self.x_arr.shape, dtype=np.complex128)
-        x_min, x_max = self.sample.get_span()
-        wf_inc[(self.x_arr < x_min) | (self.x_arr > x_max)] = 0.0
-        return wf_inc
+    def __post_init__(self):
+        if self.x_arr is None:
+            self.x_arr = self.params.get_xcoords()
+        if self.z_arr is None:
+            self.z_arr = self.params.get_zcoords()
+        if self.fx_arr is None:
+            self.fx_arr = np.fft.fftfreq(self.size, self.params.x_step)
+        if self.kernel is None:
+            self.kernel = self.params.get_kernel(self.fx_arr) / self.fx_arr.size
+        if self.wf_inc is None:
+            self.wf_inc = np.ones(self.x_arr.shape, dtype=np.complex128)
+            x_min, x_max = self.sample.get_span()
+            self.wf_inc[(self.x_arr < x_min) | (self.x_arr > x_max)] = 0.0
 
     @property
     def size(self) -> int:
         "Number of points in a single slice."
         return self.x_arr.size
 
-    @dict_to_object
     def update_inc_wavefront(self, wf_inc: np.ndarray) -> MSPropagator:
         """Return a new :class:`MSPropagator` object with the updated `wf_inc`.
 
@@ -232,7 +218,7 @@ class MSPropagator(DataContainer):
             raise ValueError(f'Wavefront shape must be equal to {self.x_arr.shape:s}')
         if wf_inc.dtype != np.complex128:
             raise ValueError("Wavefront datatype must be 'complex128'")
-        return {'beam_profile': None, 'wf_inc': wf_inc}
+        return self.replace(beam_profile=None, wf_inc=wf_inc)
 
     def generate_sample(self, verbose: bool=True) -> None:
         """Generate the transmission profile of the sample. The results are
@@ -249,7 +235,7 @@ class MSPropagator(DataContainer):
         if verbose:
             itor = tqdm(enumerate(itor), total=self.sample.n_slices,
                         bar_format='{desc} {percentage:3.0f}% {bar} Slice {n_fmt} / {total_fmt} '\
-                                '[{elapsed}<{remaining}, {rate_fmt}{postfix}]')
+                                   '[{elapsed}<{remaining}, {rate_fmt}{postfix}]')
         for idx, _ in itor:
             if verbose:
                 itor.set_description(f"z = {self.z_arr[idx]:.2f} um")

@@ -44,7 +44,7 @@ profile are as follows:
 
 .. note::
 
-    You can save parameters to an INI file with :func:`pyrost.multislice.MSParams.export_ini`
+    You can save parameters to an INI file with :func:`pyrost.multislice.MSParams.to_ini`
     and import parameters from an INI file with :func:`pyrost.multislice.MSParams.import_ini`.
 
 The default parameters are accessed with :func:`pyrost.multislice.MSParams.import_default`.

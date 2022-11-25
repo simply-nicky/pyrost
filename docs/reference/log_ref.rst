@@ -21,7 +21,7 @@ header part of a log file and their corresponding data types:
 
 .. note::
 
-    You can save protocol to an INI file with :func:`pyrost.LogProtocol.export_ini`
+    You can save protocol to an INI file with :func:`pyrost.LogProtocol.to_ini`
     and import protocol from INI file with :func:`pyrost.LogProtocol.import_ini`.
 
 The default protocol can be accessed with :func:`pyrost.LogProtocol.import_default`.
