@@ -136,8 +136,9 @@ def LOWESS_reference(I_n: np.ndarray, W: np.ndarray, u: np.ndarray, di: np.ndarr
     ...
 
 def pm_gsearch(I_n: np.ndarray, W: np.ndarray, I0: np.ndarray, sigma: np.ndarray, u0: np.ndarray,
-               di: np.ndarray, dj: np.ndarray, search_window: Sequence[float], grid_size: Sequence[int],
-               ds_y: float, ds_x: float, num_threads: int=1) -> Tuple[np.ndarray, np.ndarray]:
+               di: np.ndarray, dj: np.ndarray, search_window: Sequence[float], strides: Sequence[int],
+               grid_size: Sequence[int], ds_y: float, ds_x: float, alpha: float=0.0,
+               num_threads: int=1) -> Tuple[np.ndarray, np.ndarray]:
     r"""Update the pixel mapping by minimizing mean-squared-error
     (MSE). Perform a grid search within the search window of `sw_y`,
     `sw_x` size along the vertical and fast axes accordingly in order to
@@ -156,12 +157,15 @@ def pm_gsearch(I_n: np.ndarray, W: np.ndarray, I0: np.ndarray, sigma: np.ndarray
             detector axis in pixels.
         search_window : Search window size in pixels along the vertical detector
             axis.
+        strides : The size of the rectangular area subject to the update
+            in pixels.
         grid_size :  Grid size along one of the detector axes. The grid
             shape is then (grid_size, grid_size).
         ds_y : Sampling interval of reference image in pixels along the
             vertical axis.
         ds_x : Sampling interval of reference image in pixels along the
             horizontal axis.
+        alpha : L2 regularisation factor.
         num_threads : Number of threads.
 
     Returns:
@@ -187,8 +191,8 @@ def pm_gsearch(I_n: np.ndarray, W: np.ndarray, I0: np.ndarray, sigma: np.ndarray
 
 def pm_rsearch(I_n: np.ndarray, W: np.ndarray, sigma: np.ndarray, I0: np.ndarray,
                u0: np.ndarray, di: np.ndarray, dj: np.ndarray, search_window: Sequence[float],
-               n_trials: int, seed: int, ds_y: float, ds_x: float,
-               num_threads: int=1) -> Tuple[np.ndarray, np.ndarray]:
+               strides: Sequence[int], n_trials: int, seed: int, ds_y: float, ds_x: float,
+               alpha: float=0.0, num_threads: int=1) -> Tuple[np.ndarray, np.ndarray]:
     r"""Update the pixel mapping by minimizing mean-squared-error (MSE).
     Perform a random search within the search window of `sw_y`, `sw_x` size
     along the vertical and fast axes accordingly in order to minimize the MSE
@@ -203,12 +207,15 @@ def pm_rsearch(I_n: np.ndarray, W: np.ndarray, sigma: np.ndarray, I0: np.ndarray
         di : Initial sample's translations along the vertical detector axis in pixels.
         dj : Initial sample's translations along the horizontal detector axis in pixels.
         search_window : Search window size in pixels along the vertical detector axis.
+        strides : The size of the rectangular area subject to the update
+            in pixels.
         n_trials : Number of points generated at each pixel of the detector grid.
         seed : Specify seed for the random number generation.
         ds_y : Sampling interval of reference image in pixels along the
             vertical axis.
         ds_x : Sampling interval of reference image in pixels along the
             horizontal axis.
+        alpha : L2 regularisation factor.
         num_threads : Number of threads.
 
     Returns:
@@ -234,8 +241,9 @@ def pm_rsearch(I_n: np.ndarray, W: np.ndarray, sigma: np.ndarray, I0: np.ndarray
 
 def pm_devolution(I_n: np.ndarray, W: np.ndarray, sigma: np.ndarray, I0: np.ndarray,
                   u0: np.ndarray, di: np.ndarray, dj: np.ndarray, search_window: Sequence[float],
-                  pop_size: int, n_iter: int, seed: int, ds_y: float, ds_x: float,
-                  F: float=0.75, CR: float=0.7, num_threads: int=1) -> Tuple[np.ndarray, np.ndarray]:
+                  strides: Sequence[int], pop_size: int, n_iter: int, seed: int, ds_y: float,
+                  ds_x: float, F: float=0.75, CR: float=0.7, alpha: float=0.0,
+                  num_threads: int=1) -> Tuple[np.ndarray, np.ndarray]:
     r"""Update the pixel mapping by minimizing mean-squared-error (MSE). Perform
     a differential evolution within the search window of `sw_y`, `sw_x` size along
     the vertical and fast axes accordingly in order to minimize the MSE at each
@@ -250,6 +258,8 @@ def pm_devolution(I_n: np.ndarray, W: np.ndarray, sigma: np.ndarray, I0: np.ndar
         di : Initial sample's translations along the vertical detector axis in pixels.
         dj : Initial sample's translations along the horizontal detector axis in pixels.
         search_window : Search window size in pixels along the vertical detector axis.
+        strides : The size of the rectangular area subject to the update
+            in pixels.
         pop_size : The total population size. Must be greater or equal to 4.
         n_iter : The maximum number of generations over which the entire population is evolved.
         seed : Specify seed for the random number generation.
@@ -260,6 +270,7 @@ def pm_devolution(I_n: np.ndarray, W: np.ndarray, sigma: np.ndarray, I0: np.ndar
             range [0, 2].
         CR : The recombination constant, should be in the range [0, 1]. In
             the literature this is also known as the crossover probability.
+        alpha : L2 regularisation factor.
         num_threads : Number of threads.
 
     Returns:

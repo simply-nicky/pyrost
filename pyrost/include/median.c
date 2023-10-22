@@ -64,16 +64,15 @@ void update_footprint(footprint fpt, int *coord, array arr, array mask, EXTEND_M
 
         if (extend)
         {
-            fpt->counter += extend_point(fpt->data + fpt->counter * fpt->item_size,
-                fpt->coordinates + i * fpt->ndim, arr, mask, mode, cval);
+            fpt->counter += extend_point(GETP(fpt, 1, fpt->counter), fpt->coordinates + i * fpt->ndim,
+                                         arr, mask, mode, cval);
         }
         else
         {
             RAVEL_INDEX(fpt->coordinates + i * fpt->ndim, &index, arr);
-            if (*(unsigned char *)(mask->data + index * mask->item_size))
+            if (GET(mask, unsigned char, index))
             {
-                memcpy(fpt->data + fpt->counter * fpt->item_size, arr->data + index * arr->item_size,
-                    arr->item_size);
+                memcpy(GETP(fpt, 1, fpt->counter), GETP(arr, 1, index), arr->item_size);
                 fpt->counter++;
             }
         }
@@ -90,9 +89,9 @@ int median(void *out, void *inp, unsigned char *mask, int ndim, const size_t *di
     if (threads == 0) {ERROR("median: threads must be positive."); return -1;}
 
     array iarr = new_array(ndim, dims, item_size, inp);
-    array marr = new_array(ndim, dims, 1, mask);
 
-    if (!iarr->size) {free_array(iarr); free_array(marr); return 0;}
+    if (!iarr->size) {free_array(iarr); return 0;}
+    array marr = new_array(ndim, dims, 1, mask);
 
     int repeats = iarr->size / iarr->dims[axis];
     threads = (threads > (unsigned)repeats) ? (unsigned)repeats : threads;
@@ -114,9 +113,11 @@ int median(void *out, void *inp, unsigned char *mask, int ndim, const size_t *di
             int len = 0;
             for (int n = 0; n < (int)iline->npts; n++)
             {
-                if (((unsigned char *)mline->data)[n * mline->stride])
-                {memcpy(buffer + len++ * iline->item_size,
-                        iline->data + n * iline->stride * iline->item_size, iline->item_size);}
+                if (GET(mline, unsigned char, n * mline->stride))
+                {
+                    memcpy(buffer + len++ * iline->item_size, GETP(iline, iline->stride, n),
+                           iline->item_size);
+                }
             }
 
             if (len) 
@@ -141,15 +142,16 @@ int median_filter(void *out, void *inp, unsigned char *mask, unsigned char *imas
     unsigned threads)
 {
     /* check parameters */
-    if (!out || !inp || !fsize || !cval || !compar)
+    if (!out || !inp || !mask || !dims || !fsize || !fmask || !cval || !compar)
     {ERROR("median_filter: one of the arguments is NULL."); return -1;}
     if (ndim <= 0) {ERROR("median_filter: ndim must be positive."); return -1;}
     if (threads == 0) {ERROR("median_filter: threads must be positive."); return -1;}
 
     array iarr = new_array(ndim, dims, item_size, inp);
-    array imarr = new_array(ndim, dims, 1, imask);
 
-    if (!iarr->size) {free_array(iarr); free_array(imarr); return 0;}
+    if (!iarr->size) {free_array(iarr); return 0;}
+    if (!imask) imask = mask;
+    array imarr = new_array(ndim, dims, 1, imask);
 
     threads = (threads > iarr->size) ? iarr->size : threads;
 
@@ -181,7 +183,89 @@ int median_filter(void *out, void *inp, unsigned char *mask, unsigned char *imas
         free_footprint(fpt); DEALLOC(coord);
     }
 
-    free_array(iarr); DEALLOC(imarr);
+    free_array(iarr); free_array(imarr);
+
+    return 0;
+}
+
+int robust_mean(double *out, void *inp, int ndim, const size_t *dims, size_t item_size, int axis,
+                int (*compar)(const void*, const void*), double (*getter)(const void*),
+                double r0, double r1, int n_iter, double lm, unsigned threads)
+{
+    /* check parameters */
+    if (!out || !inp || !dims || !compar)
+    {ERROR("robust_mean: one of the arguments is NULL."); return -1;}
+    if (ndim <= 0) {ERROR("robust_mean: ndim must be positive."); return -1;}
+    if (threads == 0) {ERROR("robust_mean: threads must be positive."); return -1;}
+
+    array iarr = new_array(ndim, dims, item_size, inp);
+
+    if (iarr->size == 0) {free_array(iarr); return 0;}
+
+    int repeats = iarr->size / iarr->dims[axis];
+    threads = (threads > (unsigned)repeats) ? (unsigned)repeats : threads;
+
+    void *theta = malloc(repeats * iarr->item_size);
+    void *mask = (unsigned char *)malloc(iarr->size); memset(mask, 1, iarr->size);
+    median(theta, inp, mask, ndim, dims, item_size, axis, compar, threads);
+    DEALLOC(mask);
+
+    #pragma omp parallel num_threads(threads)
+    {
+        int n, j, j0 = (int)(r0 * dims[axis]), j1 = (int)(r1 * dims[axis]);
+        double mean, cumsum;
+
+        line iline = init_line(iarr, axis);
+        double *err = MALLOC(double, iline->npts);
+        size_t *idxs = MALLOC(size_t, iline->npts);
+
+        #pragma omp for
+        for (int i = 0; i < repeats; i++)
+        {
+            UPDATE_LINE(iline, i);
+
+            mean = getter(theta + i * iline->item_size);
+
+            for (n = 0; n < n_iter; n++)
+            {
+                for (j = 0; j < (int)iline->npts; j++)
+                {
+                    err[j] = fabs(getter(GETP(iline, iline->stride, j)) - mean);
+                }
+
+                for (j = 0; j < (int)iline->npts; j++) idxs[j] = j;
+                POSIX_QSORT_R(idxs, iline->npts, sizeof(size_t), indirect_compare_double, (void *)err);
+
+                mean = 0.0f;
+                for (j = j0; j < j1; j++) mean += getter(GETP(iline, iline->stride, idxs[j]));
+                mean = mean / (j1 - j0);
+            }
+
+            for (j = 0; j < (int)iline->npts; j++)
+            {
+                err[j] = SQ(getter(GETP(iline, iline->stride, j)) - mean);
+            }
+
+            for (j = 0; j < (int)iline->npts; j++) idxs[j] = j;
+            POSIX_QSORT_R(idxs, iline->npts, sizeof(size_t), indirect_compare_double, (void *)err);
+
+            for (j = n = 0, out[i] = cumsum = 0.0f; j < (int)iline->npts; j++)
+            {
+                if (lm * cumsum > j * err[idxs[j]])
+                {
+                    out[i] += getter(GETP(iline, iline->stride, idxs[j]));
+                    n++;
+                }
+
+                cumsum += err[idxs[j]];
+            }
+            if (n) out[i] = out[i] / n;
+        }
+
+        DEALLOC(iline); DEALLOC(err); DEALLOC(idxs);
+    }
+
+    free_array(iarr); DEALLOC(theta);
 
     return 0;
 }

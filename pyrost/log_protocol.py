@@ -220,12 +220,12 @@ class LogProtocol(INIContainer):
                     dtypes['formats'].append(np.dtype(int))
             elif 'Array' in key:
                 dtypes['formats'].append(np.ndarray)
-                func = lambda part, unit=unit: unit * float(part)
-                conv = lambda item, func=func: np.asarray(list(map(func, item.strip(b' []').split(b','))))
+                conv = lambda item, unit=unit: unit * np.fromstring(item.decode('utf-8').strip(' []'),
+                                                                    dtype=float, sep=',')
                 converters[idx] = conv
             else:
                 dtypes['formats'].append('<S' + str(len(val)))
-                converters[idx] = lambda item: item.strip(b' []')
+                converters[idx] = lambda item: item.decode('utf-8').strip(' []')
 
         txt_dict = {}
         txt_tuple = np.loadtxt(path, delimiter=';', converters=converters,
@@ -259,8 +259,8 @@ class KamzikConverter(DataContainer):
         log_data : Dictionary of log datasets read from a log file.
     """
     protocol    : LogProtocol = field(default_factory=LogProtocol.import_default)
-    fs_vec      : np.ndarray = np.array([-55e-6, 0.0, 0.0])
-    ss_vec      : np.ndarray = np.array([0.0, -55e-6, 0.0])
+    fs_vec      : np.ndarray = field(default=np.array([-55e-6, 0.0, 0.0]))
+    ss_vec      : np.ndarray = field(default=np.array([0.0, -55e-6, 0.0]))
 
     idxs        : Optional[np.ndarray] = None
     log_attr    : Optional[Dict[str, Any]] = field(default_factory=dict)

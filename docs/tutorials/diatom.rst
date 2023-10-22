@@ -74,7 +74,7 @@ CXI file handler
 
 :class:`pyrost.CXIStore` is a file handler object, it accepts a :class:`pyrost.CXIProtocol` protocol and
 paths to a single file or a set of files. It reads the files for all the data attributes specified in the
-procotol. The file handler provides two methods to load and save the data for the specified data attribute
+protocol. The file handler provides two methods to load and save the data for the specified data attribute
 (:func:`pyrost.CXIStore.load_attribute` and :func:`pyrost.CXIStore.save_attribute`).
 
 Read `diatom.cxi` file as follows:
@@ -200,7 +200,7 @@ It offers two methods to choose from:
 .. note:: You should pay outmost attention to choosing the right kernel bandwidth of the
     reference image estimator (`h0` in :func:`pyrost.SpeckleTracking.update_reference`). Essentially it
     stands for the high frequency cut-off imposed during the reference profile update, so it helps to
-    supress the noise. If the value is too high, you'll lose useful information in the reference
+    suppress the noise. If the value is too high, you'll lose useful information in the reference
     profile. If the value is too low and the data is noisy, you won't get an accurate reconstruction.
     An optimal kernel bandwidth can be estimated with :func:`pyrost.SpeckleTracking.find_hopt` method.
     

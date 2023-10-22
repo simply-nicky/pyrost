@@ -124,7 +124,7 @@ void extend_line(void *out, size_t osize, line inp, EXTEND_MODE mode, const void
         case EXTEND_MIRROR:
 
             dst = out + (size_before - 1) * inp->item_size;
-            src = inp->data + inp->stride * inp->item_size;
+            src = GETP(inp, inp->stride, 1);
 
             while (size_before-- && src < last)
             {
@@ -149,7 +149,7 @@ void extend_line(void *out, size_t osize, line inp, EXTEND_MODE mode, const void
                 dst += inp->item_size;
                 src -= inp->item_size * inp->stride;
             }
-            src = inp->data + inp->stride * inp->item_size;
+            src = GETP(inp, inp->stride, 1);
             while (size_after-- >= 0 && src < last)
             {
                 memcpy(dst, src, inp->item_size);
@@ -342,9 +342,9 @@ int extend_point(void *out, int *coord, array arr, array mask, EXTEND_MODE mode,
     RAVEL_INDEX(close, &index, arr);
     DEALLOC(close);
 
-    if (*(unsigned char *)(mask->data + index * mask->item_size))
+    if (*(unsigned char *)GETP(mask, 1, index))
     {
-        memcpy(out, arr->data + index * arr->item_size, arr->item_size);
+        memcpy(out, GETP(arr, 1, index), arr->item_size);
         return 1;
     }
     else return 0;

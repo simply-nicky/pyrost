@@ -328,7 +328,7 @@ class BFGS():
         A1 = self._p['I'] - sk[:, np.newaxis] * yk[np.newaxis, :] * rhok
         A2 = self._p['I'] - yk[:, np.newaxis] * sk[np.newaxis, :] * rhok
         new_Hk = np.dot(A1, np.dot(self._p['Hk'], A2)) + \
-                        (rhok * sk[:, np.newaxis] * sk[np.newaxis, :])
+                 (rhok * sk[:, np.newaxis] * sk[np.newaxis, :])
 
         if np.trace(abs(new_Hk - self._p['Hk'])) < np.trace(self._p['Hk']) / (1.0 - self._p['beta']):
             self._p['Hk'] = self._p['beta'] * self._p['Hk'] + (1.0 - self._p['beta']) * new_Hk

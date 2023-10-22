@@ -26,7 +26,7 @@ from .aberrations_fit import AberrationsFit
 from .data_container import DataContainer, Transform
 from .cxi_protocol import CXIStore, Indices
 from .rst_update import SpeckleTracking
-from .bin import median, median_filter, fft_convolve, ct_integrate
+from .bin import median, robust_mean, median_filter, fft_convolve, ct_integrate
 
 S = TypeVar('S', bound='STData')
 
@@ -397,6 +397,9 @@ class STData(DataContainer):
             * `eig_vals` : Corresponding eigen values for each of the eigen
               flat-fields.
 
+        Raises:
+            ValueError : If there is no ``whitefield`` inside the container.
+
         References:
             .. [PCA] Vincent Van Nieuwenhove, Jan De Beenhouwer, Francesco De Carlo,
                     Lucia Mancini, Federica Marone, and Jan Sijbers, "Dynamic intensity
@@ -451,41 +454,74 @@ class STData(DataContainer):
         """
         raise self._no_data_exc
 
-    def update_mask(self: S, method: str='perc-bad', pmin: float=0., pmax: float=99.99,
-                    vmin: int=0, vmax: int=65535, update: str='reset') -> S:
+    def reset_mask(self: S) -> S:
+        """Reset bad pixel mask. Every pixel is assumed to be good by default.
+
+        Raises:
+            ValueError : If there is no ``data`` inside the container.
+
+        Returns:
+            New :class:`STData` object with the default ``mask``.
+        """
+        raise self._no_data_exc
+
+    def update_mask(self: S, method: str='no-bad', vmin: int=0, vmax: int=65535,
+                    snr_max: float=3.0, roi: Optional[Indices]=None) -> S:
         """Return a new :class:`STData` object with the updated bad pixels mask.
 
         Args:
             method : Bad pixels masking methods. The following keyword values are
                 allowed:
 
+                * 'all-bad' : Mask out all pixels.
                 * 'no-bad' (default) : No bad pixels.
-                * 'range-bad' : Mask the pixels which values lie outside of (`vmin`,
+                * 'range' : Mask the pixels which values lie outside of (`vmin`,
                   `vmax`) range.
-                * 'perc-bad' : Mask the pixels which values lie outside of the (`pmin`,
-                  `pmax`) percentiles.
+                * 'snr' : Mask the pixels which SNR values lie exceed the SNR
+                  threshold `snr_max`. The snr is given by
+                  :code:`abs(data - whitefield) / sqrt(whitefield)`.
 
             vmin : Lower intensity bound of 'range-bad' masking method.
             vmax : Upper intensity bound of 'range-bad' masking method.
-            pmin : Lower percentage bound of 'perc-bad' masking method.
-            pmax : Upper percentage bound of 'perc-bad' masking method.
-            update : Multiply the new mask and the old one if 'multiply', use the new
-                one if 'reset'.
+            snr_max : SNR threshold.
 
         Raises:
             ValueError : If there is no ``data`` inside the container.
+            ValueError : If there is no ``whitefield`` inside the container.
             ValueError : If ``method`` keyword is invalid.
-            ValueError : If ``update`` keyword is invalid.
             ValueError : If ``vmin`` is larger than ``vmax``.
-            ValueError : If ``pmin`` is larger than ``pmax``.
 
         Returns:
             New :class:`STData` object with the updated ``mask``.
         """
         raise self._no_data_exc
 
-    def update_whitefield(self) -> STData:
+    def update_whitefield(self, method: str='median', frames: Optional[Indices]=None,
+                          r0: float=0.0, r1: float=0.5, n_iter: int=12,
+                          lm: float=9.0) -> STData:
         """Return a new :class:`STData` object with the updated `whitefield`.
+
+        Args:
+            method : Choose method for white-field generation. The following keyword
+                values are allowed:
+
+                * 'median' : Taking a median through the stack of frames.
+                * 'robust-mean' : Finding a robust mean through the stack of frames.
+
+            frames : List of frames to use for the white-field estimation.
+            r0 : A lower bound guess of ratio of inliers. We'd like to make a sample
+                out of worst inliers from data points that are between `r0` and `r1`
+                of sorted residuals.
+            r1 : An upper bound guess of ratio of inliers. Choose the `r0` to be as
+                high as you are sure the ratio of data is inlier.
+            n_iter : Number of iterations of fitting a gaussian with the FLkOS
+                algorithm.
+            lm : How far (normalized by STD of the Gaussian) from the mean of the
+                Gaussian, data is considered inlier.
+
+        Raises:
+            ValueError : If there is no ``whitefield`` inside the container.
+            ValueError : If ``method`` keyword is invalid.
 
         Returns:
             New :class:`STData` object with the updated `whitefield`.
@@ -515,8 +551,7 @@ class STData(DataContainer):
 
         Raises:
             ValueError : If the `method` keyword is invalid.
-            AttributeError : If the `whitefield` is absent in the :class:`STData`
-                container when using the 'pca' generation method.
+            ValueError : If there is no ``whitefield`` inside the container.
             ValueError : If `effs` were not provided when using the 'pca' generation
                 method.
 
@@ -526,32 +561,7 @@ class STData(DataContainer):
         See Also:
             :func:`pyrost.STData.get_pca` : Method to generate eigen flatfields.
         """
-        if self._isdata:
-
-            if method == 'median':
-                offsets = np.abs(self.data - self.whitefield)
-                outliers = offsets < 3 * np.sqrt(self.whitefield)
-                whitefields = median_filter(self.data, size=(size, 1, 1), mask=outliers,
-                                            num_threads=self.num_threads)
-            elif method == 'pca':
-                if cor_data is None:
-                    dtype = np.promote_types(self.whitefield.dtype, int)
-                    cor_data = np.zeros(self.shape, dtype=dtype)
-                    np.subtract(self.data, self.whitefield, dtype=dtype,
-                                where=self.mask, out=cor_data)
-                if effs is None:
-                    raise ValueError('No eigen flat fields were provided')
-
-                weights = np.tensordot(cor_data, effs, axes=((1, 2), (1, 2)))
-                weights /= np.sum(effs * effs, axis=(1, 2))
-                whitefields = np.tensordot(weights, effs, axes=((1,), (0,)))
-                whitefields += self.whitefield
-            else:
-                raise ValueError('Invalid method argument')
-
-            return {'whitefields': whitefields}
-
-        raise ValueError('Data has not been loaded')
+        raise self._no_data_exc
 
     def fit_phase(self, center: int=0, axis: int=1, max_order: int=2, xtol: float=1e-14,
                   ftol: float=1e-14, loss: str='cauchy') -> Dict[str, Union[float, np.ndarray]]:
@@ -690,10 +700,6 @@ class STDataPart(STData):
             self.good_frames = np.arange(self.shape[0])
         if self.mask is None:
             self.mask = np.ones(self.shape, dtype=bool)
-        if self.whitefield is None:
-            self.whitefield = median(inp=self.data[self.good_frames], axis=0,
-                                     mask=self.mask[self.good_frames],
-                                     num_threads=self.num_threads)
 
     def defocus_sweep(self, defoci_x: np.ndarray, defoci_y: Optional[np.ndarray]=None, size: int=51,
                       hval: Optional[float]=None, extra_args: Dict[str, Union[float, bool, str]]={},
@@ -746,6 +752,9 @@ class STDataPart(STData):
         return r_vals
 
     def get_pca(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        if self.whitefield is None:
+            raise ValueError('No whitefield in the container')
+
         dtype = np.promote_types(self.whitefield.dtype, int)
         cor_data = np.zeros(self.shape, dtype=dtype)[self.good_frames]
         np.subtract(self.data[self.good_frames], self.whitefield, dtype=dtype,
@@ -770,55 +779,70 @@ class STDataPart(STData):
     def mask_frames(self: S, frames: Optional[Indices]=None) -> S:
         if frames is None:
             frames = np.where(self.data.sum(axis=(1, 2)) > 0)[0]
-        return self.replace(good_frames=np.asarray(frames), whitefield=None)
-
+        return self.replace(good_frames=np.asarray(frames))
 
     def update_defocus(self, defocus_x: float, defocus_y: Optional[float]=None) -> STDataFull:
         if defocus_y is None:
             defocus_y = defocus_x
         return self.replace(defocus_y=defocus_y, defocus_x=defocus_x, pixel_translations=None)
 
-    def update_mask(self: S, method: str='perc-bad', pmin: float=0., pmax: float=99.99,
-                    vmin: int=0, vmax: int=65535, update: str='reset') -> S:
+    def update_mask(self: S, method: str='no-bad', vmin: int=0, vmax: int=65535,
+                    snr_max: float=3.0, roi: Optional[Indices]=None) -> S:
         if vmin >= vmax:
             raise ValueError('vmin must be less than vmax')
-        if pmin >= pmax:
-            raise ValueError('pmin must be less than pmax')
+        if roi is None:
+            roi = (0, self.shape[1], 0, self.shape[2])
 
-        if update == 'reset':
-            data = self.data
-        elif update == 'multiply':
-            data = self.data * self.mask
-        else:
-            raise ValueError(f'Invalid update keyword: {update:s}')
+        data = (self.data * self.mask)[:, roi[0]:roi[1], roi[2]:roi[3]]
 
-        if method == 'no-bad':
+        if method == 'all-bad':
+            mask = np.zeros(data.shape, dtype=bool)
+        elif method == 'no-bad':
             mask = np.ones(self.shape, dtype=bool)
-        elif method == 'range-bad':
+        elif method == 'range':
             mask = (data >= vmin) & (data < vmax)
-        elif method == 'perc-bad':
-            average = median_filter(data, (1, 3, 3), num_threads=self.num_threads)
-            offsets = (data.astype(np.int32) - average.astype(np.int32))
-            mask = (offsets >= np.percentile(offsets, pmin)) & \
-                   (offsets <= np.percentile(offsets, pmax))
+        elif method == 'snr':
+            if self.whitefield is None:
+                raise ValueError('No whitefield in the container')
+
+            wf = np.asarray(self.whitefield[roi[0]:roi[1], roi[2]:roi[3]], dtype=float)
+            snr = np.abs(data - wf) / np.sqrt(wf)
+            mask = np.all(snr < snr_max, axis=0)
         else:
-            ValueError('invalid method argument')
+            raise ValueError('Invalid method argument')
 
-        if update == 'reset':
-            return self.replace(mask=mask, whitefield=None)
-        if update == 'multiply':
-            return self.replace(mask=mask * self.mask, whitefield=None)
-        raise ValueError(f'Invalid update keyword: {update:s}')
+        new_mask = np.copy(self.mask)
+        new_mask[:, roi[0]:roi[1], roi[2]:roi[3]] &= mask
+        return self.replace(mask=new_mask)
 
-    def update_whitefield(self: S) -> S:
-        return self.replace(whitefield=None)
+    def update_whitefield(self, method: str='median', frames: Optional[Indices]=None,
+                          r0: float=0.0, r1: float=0.5, n_iter: int=12,
+                          lm: float=9.0) -> STData:
+        if frames is None:
+            frames = self.good_frames
+
+        if method == 'median':
+            whitefield = median(inp=self.data[frames], axis=0,
+                                mask=self.mask[frames],
+                                num_threads=self.num_threads)
+        elif method == 'robust-mean':
+            whitefield = robust_mean(inp=self.data[frames] * self.mask[frames],
+                                     axis=0, r0=r0, r1=r1, n_iter=n_iter, lm=lm,
+                                     num_threads=self.num_threads)
+        else:
+            raise ValueError('Invalid method argument')
+
+        return self.replace(whitefield=whitefield)
 
     def update_whitefields(self: S, method: str='median', size: int=11,
                            cor_data: Optional[np.ndarray]=None,
                            effs: Optional[np.ndarray]=None) -> S:
+        if self.whitefield is None:
+            raise ValueError('No whitefield in the container')
+
         if method == 'median':
             offsets = np.abs(self.data - self.whitefield)
-            outliers = offsets < 3 * np.sqrt(self.whitefield)
+            outliers = offsets < 3.0 * np.sqrt(self.whitefield)
             whitefields = median_filter(self.data, size=(size, 1, 1), mask=outliers,
                                         num_threads=self.num_threads)
         elif method == 'pca':

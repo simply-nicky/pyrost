@@ -1,3 +1,16 @@
+cimport numpy as np
+from libc.math cimport sqrt, exp, pi, floor, ceil, fabs
+from libc.stdlib cimport malloc, free
+from libc.string cimport memset
+
+ctypedef fused float_t:
+    np.float64_t
+    np.float32_t
+
+ctypedef fused uint_t:
+    np.uint64_t
+    np.uint32_t
+
 cdef extern from "gsl/gsl_rng.h":
 
     ctypedef struct gsl_rng_type

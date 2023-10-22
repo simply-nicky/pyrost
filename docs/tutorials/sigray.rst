@@ -32,7 +32,7 @@ to read log files with :func:`pyrost.KamzikConverter.read_logs`:
     >>> converter = converter.read_logs(log_path)
 
 After the data is obtained from the log files, it's written to `converter.log_attr` and
-`converter.log_data` attributes. As next, one can get a list of datasets available in log
+`converter.log_data` attributes. Next, one can get a list of datasets available in log
 data with :func:`pyrost.KamzikConverter.cxi_keys` method:
 
 .. code-block:: python

@@ -31,7 +31,7 @@ profile of the MLL following the zone plate condition.
 .. note:: MLL is a volume diffractive element for the efficient
     focusing of X-rays. This diffractive optical element consists of
     alternating layers of two materials, with the thicknesses of each
-    layer being set to fulfill the zone plate condition:
+    layer being set to fulfil the zone plate condition:
 
     .. math::
         x_n = \sqrt{n f \lambda + n^2 \frac{\lambda^2}{4}} \left(1 - \frac{z}{2 f}\right)

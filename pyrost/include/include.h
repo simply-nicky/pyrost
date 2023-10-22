@@ -1,6 +1,8 @@
 #ifndef INCLUDE_H
 #define INCLUDE_H
 
+#define _GNU_SOURCE 1
+
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -8,10 +10,7 @@
 #include <fftw3.h>
 #include <gsl/gsl_rng.h>
 #include <gsl/gsl_randist.h>
-#include <omp.h>
-
-// BLAS dot implementation
-double ddot_(const int *N, const double *a, const int *inca, const double *b, const int *incb); 
+#include <omp.h> 
 
 #ifdef __GNUC__
 #define NOINLINE __attribute__((noinline))

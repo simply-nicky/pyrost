@@ -1,38 +1,26 @@
-cimport numpy as np
 import numpy as np
-from libc.math cimport sqrt, exp, pi, floor, ceil, fabs
-from cython.parallel import prange, parallel
-from libc.stdlib cimport malloc, free
-from libc.string cimport memset
 cimport openmp
+from cython.parallel import prange, parallel
 from . cimport pyfftw
 from . import pyfftw
-from . cimport simulation as sim
+from . cimport img_proc as img
 
 # Numpy must be initialized. When using numpy from C or Cython you must
 # *ALWAYS* do that, or you will have segfaults
 np.import_array()
 
-ctypedef fused float_t:
-    np.float64_t
-    np.float32_t
-
-ctypedef fused uint_t:
-    np.uint64_t
-    np.uint32_t
-
 DEF FLOAT_MAX = 1.7976931348623157e+308
 DEF M_1_SQRT2PI = 0.3989422804014327
 DEF CUTOFF = 3.0
 
-cdef double Huber_loss(double a) nogil:
+cdef double Huber_loss(double a) noexcept nogil:
     cdef double aa = fabs(a)
     if aa < 1.345:
         return a * a
     else:
         return 2.69 * (aa - 0.6725)
 
-cdef float_t min_float(float_t* array, int a) nogil:
+cdef float_t min_float(float_t* array, int a) noexcept nogil:
     cdef:
         int i
         float_t mv = array[0]
@@ -41,7 +29,7 @@ cdef float_t min_float(float_t* array, int a) nogil:
             mv = array[i]
     return mv
 
-cdef float_t max_float(float_t* array, int a) nogil:
+cdef float_t max_float(float_t* array, int a) noexcept nogil:
     cdef:
         int i
         float_t mv = array[0]
@@ -50,15 +38,18 @@ cdef float_t max_float(float_t* array, int a) nogil:
             mv = array[i]
     return mv
 
-cdef double rbf(double dsq, double h) nogil:
+cdef double rbf(double dsq, double h) noexcept nogil:
     return exp(-0.5 * dsq / (h * h)) * M_1_SQRT2PI
 
 cdef void KR_frame_1d(float_t[:, ::1] I0, float_t[:, ::1] w0, uint_t[:, ::1] I_n,
                       float_t[:, ::1] W, float_t[:, :, ::1] u, float_t dj,
-                      double ds_x, double h) nogil:
+                      double ds_x, double h) noexcept nogil:
     cdef int X = I_n.shape[1], X0 = I0.shape[1], k, kk, k0, kk0, kk1
     cdef int dn = <int>ceil((CUTOFF * h) / ds_x)
     cdef double x, r
+
+    cdef double u_lb = u[1, 0, 0] - dj
+    cdef double u_ub = u[1, 0, X - 1] - dj
 
     for k in range(X):
         x = u[1, 0, k] - dj
@@ -74,7 +65,7 @@ cdef void KR_frame_1d(float_t[:, ::1] I0, float_t[:, ::1] w0, uint_t[:, ::1] I_n
 
 cdef void KR_frame_2d(float_t[:, ::1] I0, float_t[:, ::1] w0, uint_t[:, ::1] I_n,
                       float_t[:, ::1] W, float_t[:, :, ::1] u, float_t di, float_t dj,
-                      double ds_y, double ds_x, double h) nogil:
+                      double ds_y, double ds_x, double h) noexcept nogil:
     cdef int Y = I_n.shape[0], X = I_n.shape[1], Y0 = I0.shape[0], X0 = I0.shape[1]
     cdef int j, k, jj, kk, j0, k0, jj0, jj1, kk0, kk1
     cdef int dn_y = <int>ceil((CUTOFF * h) / ds_y), dn_x = <int>ceil((CUTOFF * h) / ds_x)
@@ -112,11 +103,10 @@ def KR_reference(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None, flo
     cdef float_t m0 = -min_float(&u[1, 0, 0], Y * X) + max_float(&dj[0], N)
     cdef int Y0 = <int>((max_float(&u[0, 0, 0], Y * X) - min_float(&di[0], N) + n0) / ds_y) + 1
     cdef int X0 = <int>((max_float(&u[1, 0, 0], Y * X) - min_float(&dj[0], N) + m0) / ds_x) + 1
-        
-    cdef np.npy_intp *shape = [num_threads, Y0, X0]
-    cdef float_t[:, :, ::1] I0_buf = np.PyArray_ZEROS(3, shape, type_num, 0)
-    cdef float_t[:, :, ::1] W0_buf = np.PyArray_ZEROS(3, shape, type_num, 0)
-    cdef np.ndarray I0 = np.PyArray_SimpleNew(2, shape + 1, type_num)
+
+    cdef float_t[:, :, ::1] I0_buf = np.PyArray_ZEROS(3, [num_threads, Y0, X0], type_num, 0)
+    cdef float_t[:, :, ::1] W0_buf = np.PyArray_ZEROS(3, [num_threads, Y0, X0], type_num, 0)
+    cdef np.ndarray I0 = np.PyArray_SimpleNew(2, [Y0, X0], type_num)
 
     if Y0 > 1:
         for i in prange(N, schedule='guided', num_threads=num_threads, nogil=True):
@@ -145,7 +135,7 @@ def KR_reference(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None, flo
 
 cdef void LOWESS_frame_1d(float_t[:, ::1] W_sum, float_t[:, :, ::1] M_mat, float_t[:, :, ::1] I0_mat,
                           float_t[:, :, ::1] W0_mat, uint_t[:, ::1] I_n, float_t[:, ::1] W,
-                          float_t[:, :, ::1] u, float_t dj, double ds_x, double h) nogil:
+                          float_t[:, :, ::1] u, float_t dj, double ds_x, double h) noexcept nogil:
     cdef int X = I_n.shape[1], X0 = W_sum.shape[1]
     cdef int k, kk, j0, k0, kk0, kk1
     cdef int dn = <int>ceil((CUTOFF * h) / ds_x)
@@ -173,8 +163,8 @@ cdef void LOWESS_frame_1d(float_t[:, ::1] W_sum, float_t[:, :, ::1] M_mat, float
             W0_mat[0, kk, 2] += w * (W[0, k] * W[0, k] * x - W0_mat[0, kk, 2])
 
 cdef void LOWESS_frame_2d(float_t[:, ::1] W_sum, float_t[:, :, ::1] M_mat, float_t[:, :, ::1] I0_mat,
-                          float_t[:, :, ::1] W0_mat, uint_t[:, ::1] I_n, float_t[:, ::1] W,
-                          float_t[:, :, ::1] u, float_t di, float_t dj, double ds_y, double ds_x, double h) nogil:
+                          float_t[:, :, ::1] W0_mat, uint_t[:, ::1] I_n, float_t[:, ::1] W, float_t[:, :, ::1] u,
+                          float_t di, float_t dj, double ds_y, double ds_x, double h) noexcept nogil:
     cdef int Y = I_n.shape[0], X = I_n.shape[1], Y0 = W_sum.shape[0], X0 = W_sum.shape[1]
     cdef int j, k, jj, kk, j0, k0, jj0, jj1, kk0, kk1
     cdef int dn_y = <int>ceil((CUTOFF * h) / ds_y), dn_x = <int>ceil((CUTOFF * h) / ds_x)
@@ -184,6 +174,7 @@ cdef void LOWESS_frame_2d(float_t[:, ::1] W_sum, float_t[:, :, ::1] M_mat, float
         for k in range(X):
             y = u[0, j, k] - di
             x = u[1, j, k] - dj
+
             j0 = <int>(y / ds_y) + 1
             k0 = <int>(x / ds_x) + 1
 
@@ -225,14 +216,12 @@ def LOWESS_reference(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None,
     cdef float_t m0 = -min_float(&u[1, 0, 0], Y * X) + max_float(&dj[0], N)
     cdef int Y0 = <int>((max_float(&u[0, 0, 0], Y * X) - min_float(&di[0], N) + n0) / ds_y) + 1
     cdef int X0 = <int>((max_float(&u[1, 0, 0], Y * X) - min_float(&dj[0], N) + m0) / ds_x) + 1
-        
-    cdef np.npy_intp *shape = [num_threads, Y0, X0, 4]
-    cdef float_t[:, :, ::1] W_buf = np.PyArray_ZEROS(3, shape, type_num, 0)
-    cdef float_t[:, :, :, ::1] M_buf = np.PyArray_ZEROS(4, shape, type_num, 0)
-    shape[3] = 3
-    cdef float_t[:, :, :, ::1] I0_buf = np.PyArray_ZEROS(4, shape, type_num, 0)
-    cdef float_t[:, :, :, ::1] W0_buf = np.PyArray_ZEROS(4, shape, type_num, 0)
-    cdef np.ndarray I0 = np.PyArray_SimpleNew(2, shape + 1, type_num)
+
+    cdef float_t[:, :, ::1] W_buf = np.PyArray_ZEROS(3, [num_threads, Y0, X0], type_num, 0)
+    cdef float_t[:, :, :, ::1] M_buf = np.PyArray_ZEROS(4, [num_threads, Y0, X0, 4], type_num, 0)
+    cdef float_t[:, :, :, ::1] I0_buf = np.PyArray_ZEROS(4, [num_threads, Y0, X0, 3], type_num, 0)
+    cdef float_t[:, :, :, ::1] W0_buf = np.PyArray_ZEROS(4, [num_threads, Y0, X0, 3], type_num, 0)
+    cdef np.ndarray I0 = np.PyArray_SimpleNew(2, [Y0, X0], type_num)
 
     if Y0 > 1:
         for i in prange(N, schedule='guided', num_threads=num_threads, nogil=True):
@@ -298,48 +287,53 @@ def LOWESS_reference(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None,
     else:
         return I0
 
-cdef double pm_loss(uint_t[:, :, ::1] I_n, float_t W, float_t sigma, float_t[:, ::1] I0,
-                    float_t[::1] di, float_t[::1] dj, int j, int k, float_t u_y, float_t u_x,
-                    double ds_y, double ds_x) nogil:
+cdef double pm_loss(uint_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] sigma, float_t[:, ::1] I0,
+                    float_t[:, :, ::1] u, float_t[::1] di, float_t[::1] dj, int *pts, int M,
+                    double u_y, double u_x, double cs, double ds_y, double ds_x) noexcept nogil:
     """Return fraction of variance unexplained between the validation set I and trained
     profile I0. Find the predicted values at the points (y, x) with bilinear interpolation.
     """
     cdef int N = I_n.shape[0], Y0 = I0.shape[0], X0 = I0.shape[1]
-    cdef int i, y0, y1, x0, x1
-    cdef double y, x, dy, dx, I0_bi, err = 0.0
+    cdef int i, j, y0, y1, x0, x1
+    cdef double y, x, dy, dx, I0_bi, w, sig, err = 0.0
 
-    for i in range(N):
-        y = (u_y - di[i]) / ds_y
-        x = (u_x - dj[i]) / ds_x
+    for j in range(M):
+        sig = sigma[pts[2 * j], pts[2 * j + 1]] * cs
+        w = W[pts[2 * j], pts[2 * j + 1]]
 
-        if y <= 0.0:
-            dy = 0.0; y0 = 0; y1 = 0
-        elif y >= Y0 - 1.0:
-            dy = 0.0; y0 = Y0 - 1; y1 = Y0 - 1
-        else:
-            dy = y - floor(y)
-            y0 = <int>floor(y); y1 = y0 + 1
+        if w > 0.0 and sig > 0.0:
+            for i in range(N):
+                y = (u_y + u[0, pts[2 * j], pts[2 * j + 1]] - di[i]) / ds_y
+                x = (u_x + u[1, pts[2 * j], pts[2 * j + 1]] - dj[i]) / ds_x
 
-        if x <= 0.0:
-            dx = 0.0; x0 = 0; x1 = 0
-        elif x >= X0 - 1.0:
-            dx = 0.0; x0 = X0 - 1; x1 = X0 - 1
-        else:
-            dx = x - floor(x)
-            x0 = <int>floor(x); x1 = x0 + 1
+                if y <= 0.0:
+                    dy = 0.0; y0 = 0; y1 = 0
+                elif y >= Y0 - 1.0:
+                    dy = 0.0; y0 = Y0 - 1; y1 = Y0 - 1
+                else:
+                    dy = y - floor(y)
+                    y0 = <int>floor(y); y1 = y0 + 1
 
-        I0_bi = (1.0 - dy) * (1.0 - dx) * I0[y0, x0] + \
-                (1.0 - dy) * dx * I0[y0, x1] + \
-                dy * (1.0 - dx) * I0[y1, x0] + \
-                dy * dx * I0[y1, x1]
-        err += sigma + Huber_loss((<double>I_n[i, j, k] - W * I0_bi) / sigma) * sigma
+                if x <= 0.0:
+                    dx = 0.0; x0 = 0; x1 = 0
+                elif x >= X0 - 1.0:
+                    dx = 0.0; x0 = X0 - 1; x1 = X0 - 1
+                else:
+                    dx = x - floor(x)
+                    x0 = <int>floor(x); x1 = x0 + 1
+
+                I0_bi = (1.0 - dy) * (1.0 - dx) * I0[y0, x0] + \
+                        (1.0 - dy) * dx * I0[y0, x1] + \
+                        dy * (1.0 - dx) * I0[y1, x0] + \
+                        dy * dx * I0[y1, x1]
+                err += sig + Huber_loss((<double>I_n[i, pts[2 * j], pts[2 * j + 1]] - w * I0_bi) / sig) * sig
     
     return err / N
 
 cdef double tr_loss(float_t[:, ::1] errors, uint_t[:, ::1] I_n, float_t[:, ::1] W,
                     float_t[:, ::1] sigma,  float_t[:, ::1] I0, float_t[:, :, ::1] u,
                     float_t di0, float_t dj0, float_t di, float_t dj, double ds_y,
-                    double ds_x) nogil:
+                    double ds_x) noexcept nogil:
     """Return fraction of variance unexplained between the validation set I and trained
     profile I0. Find the predicted values at the points (y, x) with bilinear interpolation.
     """
@@ -404,17 +398,16 @@ cdef double tr_loss(float_t[:, ::1] errors, uint_t[:, ::1] I_n, float_t[:, ::1] 
     return err / (Y * X)
 
 cdef void pm_gsearcher(uint_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0, float_t[:, ::1] sigma,
-                       float_t[:, :, ::1] u, float_t[:, ::1] derrs, float_t[::1] di, float_t[::1] dj, int j, int k,
-                       double[::1] sw, int[::1] gsize, double ds_y, double ds_x) nogil:
-    cdef int ii, jj, kk
+                       float_t[:, :, ::1] u, float_t[:, ::1] derrs, float_t[::1] di, float_t[::1] dj,
+                       int *pts, int M, double[::1] sw, int[::1] gsize, double ds_y, double ds_x, double alpha) noexcept nogil:
+    cdef int ii, jj, kk, j
     cdef double err, err0, err_min=FLOAT_MAX
-    cdef double uy_min = 0.0, ux_min = 0.0, sgm_min = sigma[j, k], ux, uy, cs
+    cdef double uy_min = 0.0, ux_min = 0.0, cs_min = 1.0, ux, uy, cs
     cdef double dsw_y = 2.0 * sw[0] / (gsize[0] - 1) if gsize[0] > 1 else 0.0
     cdef double dsw_x = 2.0 * sw[1] / (gsize[1] - 1) if gsize[1] > 1 else 0.0
     cdef double dsw_s = 2.0 * sw[2] / (gsize[2] - 1) if gsize[2] > 1 else 0.0
 
-    err0 = pm_loss(I_n, W[j, k], sigma[j, k], I0, di, dj, j, k, u[0, j, k],
-                   u[1, j, k], ds_y, ds_x)
+    err0 = pm_loss(I_n, W, sigma, I0, u, di, dj, pts, M, uy_min, ux_min, cs_min, ds_y, ds_x)
 
     for ii in range(gsize[0]):
         uy = dsw_y * (ii - 0.5 * (gsize[0] - 1))
@@ -422,90 +415,110 @@ cdef void pm_gsearcher(uint_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1]
             ux = dsw_x * (jj - 0.5 * (gsize[1] - 1))
             for kk in range(gsize[2]):
                 cs = 1.0 + dsw_s * (kk - 0.5 * (gsize[2] - 1))
-                err = pm_loss(I_n, W[j, k], cs * sigma[j, k], I0, di, dj, j, k, u[0, j, k] + uy,
-                              u[1, j, k] + ux, ds_y, ds_x)
+                err = pm_loss(I_n, W, sigma, I0, u, di, dj, pts, M, uy, ux, cs, ds_y, ds_x) + \
+                      alpha * (ux * ux + uy * uy)
 
                 if err < err_min:
-                    uy_min = uy; ux_min = ux; sgm_min = cs * sigma[j, k]; err_min = err
+                    uy_min = uy; ux_min = ux; cs_min = cs; err_min = err
 
-    u[0, j, k] += uy_min; u[1, j, k] += ux_min; sigma[j, k] = sgm_min
-    derrs[j, k] = err0 - err_min if err_min < err0 else 0.0
+    for j in range(M):
+        u[0, pts[2 * j], pts[2 * j + 1]] += uy_min
+        u[1, pts[2 * j], pts[2 * j + 1]] += ux_min
+        sigma[pts[2 * j], pts[2 * j + 1]] *= cs_min
+        derrs[pts[2 * j], pts[2 * j + 1]] = err0 - err_min if err_min < err0 else 0.0
 
 def pm_gsearch(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None, float_t[:, ::1] I0 not None,
                float_t[:, ::1] sigma not None, float_t[:, :, ::1] u0 not None, float_t[::1] di not None,
                float_t[::1] dj not None, object search_window not None, object grid_size not None,
-               double ds_y, double ds_x, unsigned num_threads=1):
+               object strides not None, double ds_y, double ds_x, double alpha=0.0, unsigned num_threads=1):
     if ds_y <= 0.0 or ds_x <= 0.0:
         raise ValueError('Sampling intervals must be positive')
 
-    cdef int type_num = np.PyArray_TYPE(W.base)
-    cdef int Y = I_n.shape[1], X = I_n.shape[2], j, k
-    cdef np.ndarray sw = sim.normalize_sequence(search_window, 3, np.NPY_FLOAT64)
-    cdef np.ndarray gsize = sim.normalize_sequence(grid_size, 3, np.NPY_INT32)
-    cdef double[::1] _sw = sw
-    cdef int[::1] _gsize = gsize
+    cdef double[::1] sw = img.normalize_sequence(search_window, 3, np.NPY_FLOAT64)
+    if sw[0] < 0.0 or sw[1] < 0.0 or sw[2] < 0.0:
+        raise ValueError('Search window must be positive')
+    sw[2] = 1.0 - exp(-sw[2])
 
-    cdef np.npy_intp *u_shape = [2, Y, X]
-    cdef np.ndarray u = np.PyArray_SimpleNew(3, u_shape, type_num)
-    cdef np.ndarray derr = np.PyArray_ZEROS(2, u_shape + 1, type_num, 0)
-    cdef np.ndarray sgm = np.PyArray_ZEROS(2, u_shape + 1, type_num, 0)
+    cdef int type_num = np.PyArray_TYPE(W.base)
+    cdef int Y = I_n.shape[1], X = I_n.shape[2], jj, kk, j, k, n
+    cdef int[::1] gsize = img.normalize_sequence(grid_size, 3, np.NPY_INT32)
+    cdef int[::1] dpts = img.normalize_sequence(strides, 2, np.NPY_INT32)
+
+    cdef np.ndarray u = np.PyArray_SimpleNew(3, [2, Y, X], type_num)
+    cdef np.ndarray derr = np.PyArray_ZEROS(2, [Y, X], type_num, 0)
+    cdef np.ndarray sgm = np.PyArray_ZEROS(2, [Y, X], type_num, 0)
+
     cdef float_t[:, :, ::1] _u = u
     cdef float_t[:, ::1] _sgm = sgm
     cdef float_t[:, ::1] _derr = derr
 
-    for k in prange(X, schedule='guided', num_threads=num_threads, nogil=True):
-        for j in range(Y):
-            _u[0, j, k] = u0[0, j, k]; _u[1, j, k] = u0[1, j, k]; _sgm[j, k] = sigma[j, k]
-            if W[j, k] > 0.0:
-                pm_gsearcher(I_n, W, I0, _sgm, _u, _derr, di, dj, j, k,
-                             _sw, _gsize, ds_y, ds_x)
+    cdef int *pts
+    cdef int J = Y // dpts[0] + (1 if Y % dpts[0] else 0)
+    cdef int K = X // dpts[1] + (1 if X % dpts[1] else 0)
+    with nogil, parallel(num_threads=num_threads):
+        pts = <int *>malloc(2 * dpts[0] * dpts[1] * sizeof(int))
+
+        for kk in prange(K, schedule='guided'):
+            for jj in range(J):
+                n = 0
+                for j in range(dpts[0] * jj, min(dpts[0] * (jj + 1), Y)):
+                    for k in range(dpts[1] * kk, min(dpts[1] * (kk + 1), X)):
+                        pts[2 * n] = j; pts[2 * n + 1] = k; n = n + 1
+                        _u[0, j, k] = u0[0, j, k]; _u[1, j, k] = u0[1, j, k]; _sgm[j, k] = sigma[j, k]
+
+                pm_gsearcher(I_n, W, I0, _sgm, _u, _derr, di, dj, pts, n, sw, gsize, ds_y, ds_x, alpha)
+
+        free(pts)
 
     return u, sgm, derr
 
 cdef void pm_rsearcher(uint_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] sigma,
                        float_t[:, ::1] I0, gsl_rng *r, float_t[:, :, ::1] u, float_t[:, ::1] derrs,
-                       float_t[::1] di, float_t[::1] dj, int j, int k, double[::1] sw,
-                       unsigned N, double ds_y, double ds_x) nogil:
+                       float_t[::1] di, float_t[::1] dj, int *pts, int M, double[::1] sw,
+                       unsigned N, double ds_y, double ds_x, double alpha) noexcept nogil:
     cdef double err, err0, err_min=FLOAT_MAX
-    cdef double uy_min = 0.0, ux_min = 0.0, sig_min = sigma[j, k], ux, uy, cs
-    cdef int ii
+    cdef double uy_min = 0.0, ux_min = 0.0, cs_min = 1.0, ux, uy, cs
+    cdef int ii, j
 
-    err0 = pm_loss(I_n, W[j, k], sigma[j, k], I0, di, dj, j, k,
-                   u[0, j, k], u[1, j, k], ds_y, ds_x)
+    err0 = pm_loss(I_n, W, sigma, I0, u, di, dj, pts, M, uy_min, ux_min, cs_min, ds_y, ds_x)
 
     for ii in range(<int>N):
         uy = 2.0 * sw[0] * (gsl_rng_uniform(r) - 0.5)
         ux = 2.0 * sw[1] * (gsl_rng_uniform(r) - 0.5)
         cs = 1.0 + 2.0 * sw[2] * (gsl_rng_uniform(r) - 0.5)
 
-        err = pm_loss(I_n, W[j, k], cs * sigma[j, k], I0, di, dj, j, k,
-                      u[0, j, k] + uy, u[1, j, k] + ux, ds_y, ds_x)
+        err = pm_loss(I_n, W, sigma, I0, u, di, dj, pts, M, uy, ux, cs, ds_y, ds_x) + \
+              alpha * (ux * ux + uy * uy)
         if err < err_min:
-            uy_min = uy; ux_min = ux; sig_min = cs * sigma[j, k]; err_min = err
+            uy_min = uy; ux_min = ux; cs_min = cs; err_min = err
 
-    u[0, j, k] += uy_min; u[1, j, k] += ux_min; sigma[j, k] = sig_min
-    derrs[j, k] = err0 - err_min if err_min < err0 else 0.0
+    for j in range(M):
+        u[0, pts[2 * j], pts[2 * j + 1]] += uy_min
+        u[1, pts[2 * j], pts[2 * j + 1]] += ux_min
+        sigma[pts[2 * j], pts[2 * j + 1]] *= cs_min
+        derrs[pts[2 * j], pts[2 * j + 1]] = err0 - err_min if err_min < err0 else 0.0
 
-def pm_rsearch(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None,
-               float_t[:, ::1] sigma not None, float_t[:, ::1] I0 not None,
-               float_t[:, :, ::1] u0 not None, float_t[::1] di not None,
-               float_t[::1] dj not None, object search_window not None,
-               unsigned n_trials, unsigned long seed, double ds_y, double ds_x,
+def pm_rsearch(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None, float_t[:, ::1] sigma not None,
+               float_t[:, ::1] I0 not None, float_t[:, :, ::1] u0 not None, float_t[::1] di not None,
+               float_t[::1] dj not None, object search_window not None, object strides not None,
+               unsigned n_trials, unsigned long seed, double ds_y, double ds_x, double alpha=0.0,
                unsigned num_threads=1):
     if ds_y <= 0.0 or ds_x <= 0.0:
         raise ValueError('Sampling intervals must be positive')
     if n_trials <= 1:
-        raise ValueError('n_tirals must be more than 1')
+        raise ValueError('n_trials must be more than 1')
+    cdef double[::1] sw = img.normalize_sequence(search_window, 3, np.NPY_FLOAT64)
+    if sw[0] < 0.0 or sw[1] < 0.0 or sw[2] < 0.0:
+        raise ValueError('Search window must be positive')
+    sw[2] = 1.0 - exp(-sw[2])
 
     cdef int type_num = np.PyArray_TYPE(W.base)
-    cdef int Y = I_n.shape[1], X = I_n.shape[2], j, k
-    cdef np.ndarray sw = sim.normalize_sequence(search_window, 3, np.NPY_FLOAT64)
-    cdef double[::1] _sw = sw
+    cdef int Y = I_n.shape[1], X = I_n.shape[2], jj, kk, j, k, n
+    cdef int[::1] dpts = img.normalize_sequence(strides, 2, np.NPY_INT32)
 
-    cdef np.npy_intp *u_shape = [2, Y, X]
-    cdef np.ndarray u = np.PyArray_SimpleNew(3, u_shape, type_num)
-    cdef np.ndarray derr = np.PyArray_ZEROS(2, u_shape + 1, type_num, 0)
-    cdef np.ndarray sgm = np.PyArray_ZEROS(2, u_shape + 1, type_num, 0)
+    cdef np.ndarray u = np.PyArray_SimpleNew(3, [2, Y, X], type_num)
+    cdef np.ndarray derr = np.PyArray_ZEROS(2, [Y, X], type_num, 0)
+    cdef np.ndarray sgm = np.PyArray_ZEROS(2, [Y, X], type_num, 0)
     cdef float_t[:, :, ::1] _u = u
     cdef float_t[:, ::1] _derr = derr
     cdef float_t[:, ::1] _sgm = sgm
@@ -515,20 +528,27 @@ def pm_rsearch(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None,
     cdef unsigned long thread_seed
     cdef gsl_rng *r
 
+    cdef int *pts
+    cdef int J = Y // dpts[0] + (1 if Y % dpts[0] else 0)
+    cdef int K = X // dpts[1] + (1 if X % dpts[1] else 0)
     with nogil, parallel(num_threads=num_threads):
         r = gsl_rng_alloc(gsl_rng_mt19937)
         thread_seed = gsl_rng_get(r_master)
         gsl_rng_set(r, thread_seed)
+        pts = <int *>malloc(2 * dpts[0] * dpts[1] * sizeof(int))
 
-        for k in prange(X, schedule='guided'):
-            for j in range(Y):
-                _u[0, j, k] = u0[0, j, k]; _u[1, j, k] = u0[1, j, k]
-                _sgm[j, k] = sigma[j, k]
-                if W[j, k] > 0.0:
-                    pm_rsearcher(I_n, W, _sgm, I0, r, _u, _derr, di, dj, j, k,
-                                 _sw, n_trials, ds_y, ds_x)
+        for kk in prange(K, schedule='guided'):
+            for jj in range(J):
+                n = 0
+                for j in range(dpts[0] * jj, min(dpts[0] * (jj + 1), Y)):
+                    for k in range(dpts[1] * kk, min(dpts[1] * (kk + 1), X)):
+                        pts[2 * n] = j; pts[2 * n + 1] = k; n = n + 1
+                        _u[0, j, k] = u0[0, j, k]; _u[1, j, k] = u0[1, j, k]; _sgm[j, k] = sigma[j, k]
+
+                pm_rsearcher(I_n, W, _sgm, I0, r, _u, _derr, di, dj, pts, n, sw, n_trials, ds_y, ds_x, alpha)
 
         gsl_rng_free(r)
+        free(pts)
 
     gsl_rng_free(r_master)
 
@@ -537,26 +557,30 @@ def pm_rsearch(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None,
 cdef void pm_devolver(uint_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] sigma,
                       float_t[:, ::1] I0, gsl_rng *r, float_t[:, :, ::1] u,
                       float_t[:, ::1] derrs, float_t[::1] di, float_t[::1] dj,
-                      int j, int k, double[::1] sw, unsigned NP, unsigned n_iter,
-                      double CR, double F, double ds_y, double ds_x) nogil:
+                      int *pts, int M, double[::1] sw, unsigned NP, unsigned n_iter,
+                      double CR, double F, double ds_y, double ds_x, double alpha) noexcept nogil:
     cdef double err0, err, err_min = FLOAT_MAX
-    cdef int ii, jj, n, a, b
+    cdef int ii, jj, n, a, b, j
     cdef double pt_min[3]
+    cdef double lb[3]
+    cdef double ub[3]
     cdef double *pop = <double *>malloc(3 * NP * sizeof(double))
     cdef double *cost = <double *>malloc(NP * sizeof(double))
     cdef double *new_pop = <double *>malloc(3 * NP * sizeof(double))
 
-    err0 = pm_loss(I_n, W[j, k], sigma[j, k], I0, di, dj, j, k,
-                   u[0, j, k], u[1, j, k], ds_y, ds_x)
+    pt_min[0] = 0.0; pt_min[1] = 0.0; pt_min[2] = 1.0
+    lb[0] = -sw[0]; lb[1] = -sw[1]; lb[2] = 1.0 - sw[2]
+    ub[0] = sw[0]; ub[1] = sw[1]; ub[2] = 1.0 + sw[2]
+    err0 = pm_loss(I_n, W, sigma, I0, u, di, dj, pts, M, pt_min[0], pt_min[1], pt_min[2], ds_y, ds_x)
 
     for ii in range(<int>NP):
         pop[3 * ii] = 2.0 * sw[0] * (gsl_rng_uniform(r) - 0.5)
         pop[3 * ii + 1] = 2.0 * sw[1] * (gsl_rng_uniform(r) - 0.5)
         pop[3 * ii + 2] = 1.0 + 2.0 * sw[2] * (gsl_rng_uniform(r) - 0.5)
 
-        cost[ii] = pm_loss(I_n, W[j, k], pop[3 * ii + 2] * sigma[j, k], I0, di, dj, j, k,
-                           u[0, j, k] + pop[3 * ii], u[1, j, k] + pop[3 * ii + 1],
-                           ds_y, ds_x)
+        cost[ii] = pm_loss(I_n, W, sigma, I0, u, di, dj, pts, M, pop[3 * ii], pop[3 * ii + 1],
+                           pop[3 * ii + 2], ds_y, ds_x) + \
+                   alpha * (pop[3 * ii] * pop[3 * ii] + pop[3 * ii + 1] * pop[3 * ii + 1])
         
         if cost[ii] < err_min:
             pt_min[0] = pop[3 * ii]; pt_min[1] = pop[3 * ii + 1]; pt_min[2] = pop[3 * ii + 2]
@@ -575,27 +599,27 @@ cdef void pm_devolver(uint_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] 
             jj = gsl_rng_uniform_int(r, 3)
             if gsl_rng_uniform(r) < CR:
                 new_pop[3 * ii + jj] = pt_min[jj] + F * (pop[3 * a + jj] - pop[3 * b + jj])
-                if new_pop[3 * ii + jj] > sw[jj]: new_pop[3 * ii + jj] = sw[jj]
-                if new_pop[3 * ii + jj] < -sw[jj]: new_pop[3 * ii + jj] = -sw[jj]
+                if new_pop[3 * ii + jj] > ub[jj]: new_pop[3 * ii + jj] = ub[jj]
+                if new_pop[3 * ii + jj] < lb[jj]: new_pop[3 * ii + jj] = lb[jj]
             else:
                 new_pop[3 * ii + jj] = pop[3 * ii + jj]
 
             jj = (jj + 1) % 3
             if gsl_rng_uniform(r) < CR:
                 new_pop[3 * ii + jj] = pt_min[jj] + F * (pop[3 * a + jj] - pop[3 * b + jj])
-                if new_pop[3 * ii + jj] > sw[jj]: new_pop[3 * ii + jj] = sw[jj]
-                if new_pop[3 * ii + jj] < -sw[jj]: new_pop[3 * ii + jj] = -sw[jj]
+                if new_pop[3 * ii + jj] > ub[jj]: new_pop[3 * ii + jj] = ub[jj]
+                if new_pop[3 * ii + jj] < lb[jj]: new_pop[3 * ii + jj] = lb[jj]
             else:
                 new_pop[3 * ii + jj] = pop[3 * ii + jj]
 
             jj = (jj + 1) % 3
             new_pop[3 * ii + jj] = pt_min[jj] + F * (pop[3 * a + jj] - pop[3 * b + jj])
-            if new_pop[3 * ii + jj] > sw[jj]: new_pop[3 * ii + jj] = sw[jj]
-            if new_pop[3 * ii + jj] < -sw[jj]: new_pop[3 * ii + jj] = -sw[jj]
+            if new_pop[3 * ii + jj] > ub[jj]: new_pop[3 * ii + jj] = ub[jj]
+            if new_pop[3 * ii + jj] < lb[jj]: new_pop[3 * ii + jj] = lb[jj]
 
-            err = pm_loss(I_n, W[j, k], new_pop[3 * ii + 2] * sigma[j, k], I0, di, dj, j, k,
-                          u[0, j, k] + new_pop[3 * ii], u[1, j, k] + new_pop[3 * ii + 1],
-                          ds_y, ds_x)
+            err = pm_loss(I_n, W, sigma, I0, u, di, dj, pts, M, new_pop[3 * ii], new_pop[3 * ii + 1],
+                          new_pop[3 * ii + 2], ds_y, ds_x) + \
+                  alpha * (new_pop[3 * ii] * new_pop[3 * ii] + new_pop[3 * ii + 1] * new_pop[3 * ii + 1])
 
             if err < cost[ii]:
                 cost[ii] = err
@@ -614,15 +638,18 @@ cdef void pm_devolver(uint_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] 
 
     free(pop); free(new_pop); free(cost)
 
-    u[0, j, k] += pt_min[0]; u[1, j, k] += pt_min[1]; sigma[j, k] = pt_min[2] * sigma[j, k]
-    derrs[j, k] = err0 - err_min if err_min < err0 else 0.0
+    for j in range(M):
+        u[0, pts[2 * j], pts[2 * j + 1]] += pt_min[0]
+        u[1, pts[2 * j], pts[2 * j + 1]] += pt_min[1]
+        sigma[pts[2 * j], pts[2 * j + 1]] *= pt_min[2]
+        derrs[pts[2 * j], pts[2 * j + 1]] = err0 - err_min if err_min < err0 else 0.0
 
 def pm_devolution(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None,
                   float_t[:, ::1] sigma not None, float_t[:, ::1] I0 not None,
                   float_t[:, :, ::1] u0 not None, float_t[::1] di not None,
-                  float_t[::1] dj not None, object search_window not None,
+                  float_t[::1] dj not None, object search_window not None, object strides not None,
                   unsigned pop_size, unsigned n_iter, unsigned long seed, double ds_y,
-                  double ds_x, double F=0.75, double CR=0.7, unsigned num_threads=1):
+                  double ds_x, double F=0.75, double CR=0.7, double alpha=0.0, unsigned num_threads=1):
     if ds_y <= 0.0 or ds_x <= 0.0:
         raise ValueError('Sampling intervals must be positive')
     if pop_size < 4:
@@ -631,11 +658,14 @@ def pm_devolution(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None,
         raise ValueError('The mutation constant F must be in the interval [0.0, 2.0].')
     if CR < 0.0 or CR > 1.0:
         raise ValueError('The recombination constant CR must be in the interval [0.0, 1.0].')
+    cdef double[::1] sw = img.normalize_sequence(search_window, 3, np.NPY_FLOAT64)
+    if sw[0] < 0.0 or sw[1] < 0.0 or sw[2] < 0.0:
+        raise ValueError('Search window must be positive')
+    sw[2] = 1.0 - exp(-sw[2])
 
     cdef int type_num = np.PyArray_TYPE(W.base)
-    cdef int Y = I_n.shape[1], X = I_n.shape[2], j, k
-    cdef np.ndarray sw = sim.normalize_sequence(search_window, 3, np.NPY_FLOAT64)
-    cdef double[::1] _sw = sw
+    cdef int Y = I_n.shape[1], X = I_n.shape[2], jj, kk, j, k, n
+    cdef int[::1] dpts = img.normalize_sequence(strides, 2, np.NPY_INT32)
 
     cdef np.npy_intp *u_shape = [2, Y, X]
     cdef np.ndarray u = np.PyArray_SimpleNew(3, u_shape, type_num)
@@ -650,20 +680,28 @@ def pm_devolution(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None,
     cdef unsigned long thread_seed
     cdef gsl_rng *r
 
+    cdef int *pts
+    cdef int J = Y // dpts[0] + (1 if Y % dpts[0] else 0)
+    cdef int K = X // dpts[1] + (1 if X % dpts[1] else 0)
     with nogil, parallel(num_threads=num_threads):
         r = gsl_rng_alloc(gsl_rng_mt19937)
         thread_seed = gsl_rng_get(r_master)
         gsl_rng_set(r, thread_seed)
+        pts = <int *>malloc(2 * dpts[0] * dpts[1] * sizeof(int))
 
-        for k in prange(X, schedule='guided'):
-            for j in range(Y):
-                _u[0, j, k] = u0[0, j, k]; _u[1, j, k] = u0[1, j, k]
-                _sgm[j, k] = sigma[j, k]
-                if W[j, k] > 0.0:
-                    pm_devolver(I_n, W, _sgm, I0, r, _u, _derr, di, dj, j, k,
-                                _sw, pop_size, n_iter, CR, F, ds_y, ds_x)
+        for kk in prange(K, schedule='guided'):
+            for jj in range(J):
+                n = 0
+                for j in range(dpts[0] * jj, min(dpts[0] * (jj + 1), Y)):
+                    for k in range(dpts[1] * kk, min(dpts[1] * (kk + 1), X)):
+                        pts[2 * n] = j; pts[2 * n + 1] = k; n = n + 1
+                        _u[0, j, k] = u0[0, j, k]; _u[1, j, k] = u0[1, j, k]; _sgm[j, k] = sigma[j, k]
+                    
+                pm_devolver(I_n, W, _sgm, I0, r, _u, _derr, di, dj, pts, n, sw, pop_size,
+                            n_iter, CR, F, ds_y, ds_x, alpha)
 
         gsl_rng_free(r)
+        free(pts)
 
     gsl_rng_free(r_master)
 
@@ -672,7 +710,7 @@ def pm_devolution(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None,
 cdef void tr_updater(float_t[:, ::1] errors, uint_t[:, ::1] I_n, float_t[:, ::1] W,
                      float_t[:, ::1] sigma, float_t[:, ::1] I0, float_t[:, :, ::1] u,
                      float_t *di, float_t *dj, double sw_y, double sw_x,
-                     unsigned wsize, double ds_y, double ds_x) nogil:
+                     unsigned wsize, double ds_y, double ds_x) noexcept nogil:
     cdef double di_min = 0.0, dj_min = 0.0, err_min=FLOAT_MAX, dii, djj
     cdef double dsw_y = 2.0 * sw_y / (wsize - 1), dsw_x = 2.0 * sw_x / (wsize - 1)
     cdef int ii, jj
@@ -702,20 +740,21 @@ def tr_gsearch(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None,
     cdef int type_num = np.PyArray_TYPE(W.base)
     cdef int N = I_n.shape[0], Y = I_n.shape[1], X = I_n.shape[2], i, j, k
 
-    cdef np.npy_intp *buf_shape = [Y, X]
-    cdef float_t[:, ::1] errors = np.PyArray_SimpleNew(2, buf_shape, type_num)
-
-    cdef np.npy_intp *dij_shape = [N, 2]
-    cdef np.ndarray dij = np.PyArray_SimpleNew(2, dij_shape, type_num)
+    cdef np.ndarray dij = np.PyArray_SimpleNew(2, [N, 2], type_num)
     cdef float_t[:, ::1] _dij = dij
+    cdef float_t[:, ::1] errors = np.PyArray_SimpleNew(2, [Y, X], type_num)
 
-    for k in prange(X, schedule='guided', num_threads=num_threads, nogil=True):
-        for j in range(Y):
-            if W[j, k] > 0.0:
-                errors[j, k] = pm_loss(I_n, W[j, k], sigma[j, k], I0, di, dj, j, k,
-                                       u[0, j, k], u[1, j, k], ds_y, ds_x)
-            else:
-                errors[j, k] = 0.0
+    cdef int *pts
+    with nogil, parallel(num_threads=num_threads):
+        pts = <int *>malloc(2 * sizeof(int))
+
+        for k in prange(X, schedule='guided'):
+            for j in range(Y):
+                pts[0] = j; pts[1] = k
+                errors[j, k] = pm_loss(I_n, W, sigma, I0, u, di, dj, pts, 1, 0.0, 0.0, 1.0,
+                                       ds_y, ds_x)
+
+        free(pts)
 
     for i in prange(N, schedule='guided', num_threads=num_threads, nogil=True):
         _dij[i, 0] = di[i]; _dij[i, 1] = dj[i]
@@ -724,11 +763,9 @@ def tr_gsearch(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None,
 
     return dij
 
-def pm_errors(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None,
-              float_t[:, ::1] sigma not None, float_t[:, ::1] I0 not None,
-              float_t[:, :, ::1] u not None, float_t[::1] di not None,
-              float_t[::1] dj not None, double ds_y, double ds_x,
-              unsigned num_threads=1):
+def pm_errors(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None, float_t[:, ::1] sigma not None,
+              float_t[:, ::1] I0 not None, float_t[:, :, ::1] u not None, float_t[::1] di not None,
+              float_t[::1] dj not None, double ds_y, double ds_x, unsigned num_threads=1):
     if ds_y <= 0.0 or ds_x <= 0.0:
         raise ValueError('Sampling intervals must be positive')
 
@@ -738,13 +775,17 @@ def pm_errors(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None,
     cdef np.ndarray errs = np.PyArray_SimpleNew(2, <np.npy_intp *>I_n.shape + 1, type_num)
     cdef float_t[:, ::1] _errs = errs
 
-    for k in prange(X, schedule='guided', num_threads=num_threads, nogil=True):
-        for j in range(Y):
-            if W[j, k] > 0.0:
-                _errs[j, k] = pm_loss(I_n, W[j, k], sigma[j, k], I0, di, dj, j, k,
-                                      u[0, j, k], u[1, j, k], ds_y, ds_x)
-            else:
-                _errs[j, k] = 0.0
+    cdef int *pts
+    with nogil, parallel(num_threads=num_threads):
+        pts = <int *>malloc(2 * sizeof(int))
+
+        for k in prange(X, schedule='guided'):
+            for j in range(Y):
+                pts[0] = j; pts[1] = k
+                _errs[j, k] = pm_loss(I_n, W, sigma, I0, u, di, dj, pts, 1, 0.0, 0.0, 1.0,
+                                      ds_y, ds_x)
+
+        free(pts)
 
     return errs
 
@@ -756,19 +797,25 @@ def pm_total_error(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None, f
 
     cdef int type_num = np.PyArray_TYPE(W.base)
     cdef int Y = I_n.shape[1], X = I_n.shape[2], j, k
-    cdef double err
+    cdef double err = 0.0
 
-    for k in prange(X, schedule='guided', num_threads=num_threads, nogil=True):
-        for j in range(Y):
-            if W[j, k] > 0.0:
-                err += pm_loss(I_n, W[j, k], sigma[j, k], I0, di, dj, j, k,
-                               u[0, j, k], u[1, j, k], ds_y, ds_x)
+    cdef int *pts
+    with nogil, parallel(num_threads=num_threads):
+        pts = <int *>malloc(2 * sizeof(int))
+
+        for k in prange(X):
+            for j in range(Y):
+                pts[0] = j; pts[1] = k
+                err += pm_loss(I_n, W, sigma, I0, u, di, dj, pts, 1, 0.0, 0.0, 1.0,
+                               ds_y, ds_x)
+
+        free(pts)
 
     return err / (X * Y)
 
 cdef void ref_loss(float_t[:, ::1] errors, float_t[:, ::1] R, float_t[:, ::1] I0,
                    uint_t[:, ::1] I_n, float_t[:, ::1] W,  float_t[:, :, ::1] u,
-                   float_t di, float_t dj, double ds_y, double ds_x, double h) nogil:
+                   float_t di, float_t dj, double ds_y, double ds_x, double h) noexcept nogil:
     cdef int Y = I_n.shape[0], X = I_n.shape[1]
     cdef int j, k, jj, kk, j0, k0, jj0, jj1, kk0, kk1
     cdef int Y0 = I0.shape[0], X0 = I0.shape[1]
@@ -804,11 +851,10 @@ def ref_errors(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None,
     cdef int type_num = np.PyArray_TYPE(W.base)
     cdef int N = I_n.shape[0], Y0 = I0.shape[0], X0 = I0.shape[1]
     cdef int i, j, k, t
-        
-    cdef np.npy_intp *shape = [num_threads, Y0, X0]
-    cdef float_t[:, :, ::1] err_buf = np.PyArray_ZEROS(3, shape, type_num, 0)
-    cdef float_t[:, :, ::1] R_buf = np.PyArray_ZEROS(3, shape, type_num, 0)
-    cdef np.ndarray err = np.PyArray_SimpleNew(2, shape + 1, type_num)
+
+    cdef float_t[:, :, ::1] err_buf = np.PyArray_ZEROS(3, [num_threads, Y0, X0], type_num, 0)
+    cdef float_t[:, :, ::1] R_buf = np.PyArray_ZEROS(3, [num_threads, Y0, X0], type_num, 0)
+    cdef np.ndarray err = np.PyArray_SimpleNew(2, [Y0, X0], type_num)
 
     for i in prange(N, schedule='guided', num_threads=num_threads, nogil=True):
         t = openmp.omp_get_thread_num()
@@ -838,10 +884,9 @@ def ref_total_error(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None,
     cdef int type_num = np.PyArray_TYPE(W.base)
     cdef int N = I_n.shape[0], Y0 = I0.shape[0], X0 = I0.shape[1]
     cdef int i, j, t, k
-        
-    cdef np.npy_intp *shape = [num_threads, Y0, X0]
-    cdef float_t[:, :, ::1] err_buf = np.PyArray_ZEROS(3, shape, type_num, 0)
-    cdef float_t[:, :, ::1] R_buf = np.PyArray_ZEROS(3, shape, type_num, 0)
+
+    cdef float_t[:, :, ::1] err_buf = np.PyArray_ZEROS(3, [num_threads, Y0, X0], type_num, 0)
+    cdef float_t[:, :, ::1] R_buf = np.PyArray_ZEROS(3, [num_threads, Y0, X0], type_num, 0)
 
     for i in prange(N, schedule='guided', num_threads=num_threads, nogil=True):
         t = openmp.omp_get_thread_num()
@@ -866,9 +911,8 @@ def ct_integrate(float_t[:, ::1] sy_arr not None, float_t[:, ::1] sx_arr not Non
     cdef int type_num = np.PyArray_TYPE(sx_arr.base)
     cdef np.npy_intp a = sx_arr.shape[0], b = sx_arr.shape[1]
     cdef int i, j, ii, jj
-    cdef np.npy_intp *asdi_shape = [2 * a, 2 * b]
     
-    cdef np.ndarray[np.complex128_t, ndim=2] sfy_asdi = np.PyArray_SimpleNew(2, asdi_shape, np.NPY_COMPLEX128)
+    cdef np.ndarray[np.complex128_t, ndim=2] sfy_asdi = np.PyArray_SimpleNew(2, [2 * a, 2 * b], np.NPY_COMPLEX128)
     cdef pyfftw.FFTW fftw_obj = pyfftw.FFTW(sfy_asdi, sfy_asdi, axes=(0, 1), threads=num_threads)
     for i in range(a):
         for j in range(b):
@@ -884,7 +928,7 @@ def ct_integrate(float_t[:, ::1] sy_arr not None, float_t[:, ::1] sx_arr not Non
             sfy_asdi[i + a, j + b] = sy_arr[i, j]
     fftw_obj._execute()
 
-    cdef np.ndarray[np.complex128_t, ndim=2] sfx_asdi = np.PyArray_SimpleNew(2, asdi_shape, np.NPY_COMPLEX128)
+    cdef np.ndarray[np.complex128_t, ndim=2] sfx_asdi = np.PyArray_SimpleNew(2, [2 * a, 2 * b], np.NPY_COMPLEX128)
     fftw_obj._update_arrays(sfx_asdi, sfx_asdi)
     for i in range(a):
         for j in range(b):

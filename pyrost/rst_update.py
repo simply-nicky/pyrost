@@ -119,7 +119,8 @@ class SpeckleTracking(DataContainer):
             shape = ((shape + self.ref_orig) / np.array([self.ds_y, self.ds_x]))
             self.reference_image = np.ones(shape.astype(int) + 1, dtype=self.whitefield.dtype)
         if self.scale_map is None:
-            self.scale_map = np.sqrt(self.whitefield)
+            scale = np.sqrt(self.whitefield).mean()
+            self.scale_map = np.where(self.whitefield, scale, 0.0).astype(self.whitefield.dtype)
 
     def __repr__(self) -> str:
         with np.printoptions(threshold=6, edgeitems=2, suppress=True, precision=3):
@@ -199,7 +200,7 @@ class SpeckleTracking(DataContainer):
             are the horizontal and vertical components of the pixel mapping,
             :math:`\Delta i_n, \Delta j_n` are the sample translation along the
             horizontal and vertical axes in pixels, :math:`I_{nij}` are the measured
-            stack of frames, and `W_{ij}` is the white-field.
+            stack of frames, and :math:`W_{ij}` is the white-field.
 
         See Also:
             :func:`pyrost.bin.make_reference` : Full details of the `reference_image`
@@ -236,8 +237,9 @@ class SpeckleTracking(DataContainer):
         idxs[1] = idxs[1] * self.ds_x - self.ref_orig[1]
         return idxs
 
-    def update_pixel_map(self, search_window: Tuple[float, float, float], blur: float=0.0,
-                         integrate: bool=False, method: str='gsearch',
+    def update_pixel_map(self, search_window: Tuple[float, float, float],
+                         blur: float=0.0, strides: Tuple[int, int]=(1, 1),
+                         integrate: bool=False, method: str='gsearch', alpha: float=0.0,
                          extra_args: Dict[str, Union[int, float]]={}) -> SpeckleTracking:
         r"""Return a new :class:`SpeckleTracking` object with the updated pixel mapping
         (`pixel_map`) and Huber scale mapping (`scale_map`). The update is performed
@@ -257,6 +259,8 @@ class SpeckleTracking(DataContainer):
 
             blur : Smoothing kernel bandwidth used in `pixel_map` regularisation.
                 The value is given in pixels.
+            strides : The size of the rectangular area subject to the update
+                in pixels.
             integrate : Ensure that the updated pixel map is irrotational by
                 integrating and taking the derivative.
             method : `pixel_map` update algorithm. The following keyword
@@ -266,6 +270,7 @@ class SpeckleTracking(DataContainer):
                 * `rsearch` : Random search algorithm.
                 * `de`      : Differential evolution algorithm.
 
+            alpha : L2 regularisation factor.
             extra_args : Extra arguments for pixel map update methods. Accepts the
                 following keyword arguments:
 
@@ -312,7 +317,7 @@ class SpeckleTracking(DataContainer):
             u^y_{ij}` are the horizontal and vertical components of the pixel mapping,
             :math:`\Delta i_n, \Delta j_n` are the sample translation along the
             horizontal and vertical axes in pixels, :math:`I_{nij}` are the measured
-            stack of frames, and `W_{ij}` is the white-field.
+            stack of frames, and :math:`W_{ij}` is the white-field.
 
         See Also:
 
@@ -332,9 +337,9 @@ class SpeckleTracking(DataContainer):
         recombination = extra_args.get('recombination', 0.7)
         seed = extra_args.get('seed', np.random.default_rng().integers(0, np.iinfo(np.int_).max,
                                                                        endpoint=False))
-        grid_size = extra_args.get('grid_size', (int(0.5 * search_window[0]) + 1,
-                                                 int(0.5 * search_window[1]) + 1,
-                                                 int(50.0 * search_window[2]) + 1))
+        grid_size = extra_args.get('grid_size', (np.clip(4 * int(search_window[0]) + 1, 3, 50),
+                                                 np.clip(4 * int(search_window[1]) + 1, 3, 50),
+                                                 np.clip(20 * int(search_window[2]) + 1, 3, 50)))
         n_trials = extra_args.get('n_trials', max(np.prod(grid_size), 2))
         pop_size = extra_args.get('pop_size', max(n_trials / n_iter, 4))
 
@@ -342,21 +347,21 @@ class SpeckleTracking(DataContainer):
             pm, scale, derr = pm_gsearch(I_n=self.data, W=self.whitefield, I0=self.reference_image,
                                          u0=self.pixel_map, di=self.di_pix - self.ref_orig[0],
                                          dj=self.dj_pix - self.ref_orig[1], search_window=search_window,
-                                         grid_size=grid_size, ds_y=self.ds_y, ds_x=self.ds_x,
-                                         sigma=self.scale_map, num_threads=self.num_threads)
+                                         strides=strides, grid_size=grid_size, ds_y=self.ds_y, ds_x=self.ds_x,
+                                         sigma=self.scale_map, alpha=alpha, num_threads=self.num_threads)
         elif method == 'rsearch':
             pm, scale, derr = pm_rsearch(I_n=self.data, W=self.whitefield, I0=self.reference_image,
                                          u0=self.pixel_map, di=self.di_pix - self.ref_orig[0],
                                          dj=self.dj_pix - self.ref_orig[1], search_window=search_window,
-                                         n_trials=n_trials, seed=seed, ds_y=self.ds_y, ds_x=self.ds_x,
-                                         sigma=self.scale_map, num_threads=self.num_threads)
+                                         strides=strides, n_trials=n_trials, seed=seed, ds_y=self.ds_y, ds_x=self.ds_x,
+                                         sigma=self.scale_map, alpha=alpha, num_threads=self.num_threads)
         elif method == 'de':
             pm, scale, derr = pm_devolution(I_n=self.data, W=self.whitefield, I0=self.reference_image,
                                             u0=self.pixel_map, di=self.di_pix - self.ref_orig[0],
                                             dj=self.dj_pix - self.ref_orig[1], search_window=search_window,
-                                            pop_size=pop_size, n_iter=n_iter, seed=seed,
+                                            strides=strides, pop_size=pop_size, n_iter=n_iter, seed=seed,
                                             ds_y=self.ds_y, ds_x=self.ds_x, sigma=self.scale_map,
-                                            F=mutation, CR=recombination, num_threads=self.num_threads)
+                                            F=mutation, CR=recombination, alpha=alpha, num_threads=self.num_threads)
         else:
             raise ValueError('Method keyword is invalid')
 
@@ -365,21 +370,21 @@ class SpeckleTracking(DataContainer):
         if std:
             derr = (derr - derr.min() + 1.0) / std
         else:
-            derr = (derr - derr.min() + 1.0)
+            derr = derr - derr.min() + 1.0
         if blur > 0.0:
             norm = gaussian_filter(derr, (blur, blur))
-            dpm = gaussian_filter(dpm * derr, (0, blur, blur),
-                                  num_threads=self.num_threads) / norm
+            dscl = gaussian_filter(scale - self.scale_map, (blur, blur))
+            dpm = gaussian_filter(dpm * derr, (0, blur, blur)) / norm
 
         uy_avg, ux_avg = dpm.mean(axis=(1, 2))
         pm[0] = (dpm[0] - uy_avg) + self.pixel_map[0]
         pm[1] = (dpm[1] - ux_avg) + self.pixel_map[1]
+        scale = dscl.astype(self.scale_map.dtype) + self.scale_map
 
         if integrate and self.reference_image.shape[0] > 1 and self.reference_image.shape[1] > 1:
             phi = ct_integrate(sy_arr=pm[0], sx_arr=pm[1], num_threads=self.num_threads)
             pm[0] = np.gradient(phi, axis=0)
             pm[1] = np.gradient(phi, axis=1)
-
         return self.replace(pixel_map=pm, scale_map=scale)
 
     def update_errors(self) -> SpeckleTracking:
@@ -609,6 +614,8 @@ class SpeckleTracking(DataContainer):
             pm_args : Pixel map update options. Accepts the following keyword
                 arguments:
 
+                * `strides` : The size of the rectangular area subject to the update
+                  in pixels.
                 * `integrate` : Ensure that the updated pixel map is irrotational
                   by integrating and taking the derivative. False by default.
                 * `grid_size` : Grid size along one of the detector axes for
@@ -663,6 +670,8 @@ class SpeckleTracking(DataContainer):
 
               Only if `return_extra` is True.
         """
+        alpha = pm_args.get('alpha', 0.0)
+        strides = pm_args.get('strides', (1, 1))
         integrate = pm_args.get('integrate', False)
 
         epsilon = options.get('epsilon', 1e-3)
@@ -689,8 +698,8 @@ class SpeckleTracking(DataContainer):
 
         for _ in itor:
             # Update pixel_map
-            new_obj = obj.update_pixel_map(search_window=search_window, blur=blur,
-                                           integrate=integrate, method=pm_method,
+            new_obj = obj.update_pixel_map(search_window=search_window, blur=blur, alpha=alpha, 
+                                           integrate=integrate, method=pm_method, strides=strides,
                                            extra_args=pm_args)
 
             # Update di_pix, dj_pix
@@ -774,6 +783,8 @@ class SpeckleTracking(DataContainer):
             pm_args : Pixel map update options. Accepts the following keyword
                 arguments:
 
+                * `strides` : The size of the rectangular area subject to the update
+                  in pixels.
                 * `integrate` : Ensure that the updated pixel map is irrotational
                   by integrating and taking the derivative. False by default.
                 * `grid_size` : Grid size along one of the detector axes for
@@ -818,6 +829,8 @@ class SpeckleTracking(DataContainer):
             * `errors` : List of average error values for each iteration. Only if
               'return_extra' in `options` is True.
         """
+        alpha = pm_args.get('alpha', 0.0)
+        strides = pm_args.get('strides', (1, 1))
         integrate = pm_args.get('integrate', False)
 
         momentum = options.get('momentum', 0.0)
@@ -838,14 +851,13 @@ class SpeckleTracking(DataContainer):
 
         for _ in itor:
             # Update pixel_map
-            new_obj = obj.update_pixel_map(search_window=search_window, blur=blur,
-                                           integrate=integrate, method=pm_method,
+            new_obj = obj.update_pixel_map(search_window=search_window, blur=blur, alpha=alpha,
+                                           strides=strides, integrate=integrate, method=pm_method,
                                            extra_args=pm_args)
 
             # Update di_pix, dj_pix
             if update_translations:
-                new_obj = new_obj.update_translations(sw_y=search_window[0],
-                                                      sw_x=search_window[1],
+                new_obj = new_obj.update_translations(sw_y=search_window[0], sw_x=search_window[1],
                                                       blur=blur)
 
             # Update reference_image

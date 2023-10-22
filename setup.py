@@ -25,7 +25,9 @@ extension_args = {'language': 'c',
 
 src_files = ["pyrost/include/pocket_fft.c", "pyrost/include/fft_functions.c",
              "pyrost/include/array.c", "pyrost/include/routines.c", "pyrost/include/median.c"]
-extensions = [Extension(name='pyrost.bin.simulation',
+extensions = [Extension(name='pyrost.bin.img_proc',
+                        sources=['pyrost/bin/img_proc' + ext,] + src_files, **extension_args),
+              Extension(name='pyrost.bin.simulation',
                         sources=['pyrost/bin/simulation' + ext,] + src_files, **extension_args),
               Extension(name='pyrost.bin.pyfftw',
                         sources=['pyrost/bin/pyfftw' + ext,], **extension_args),
@@ -44,7 +46,7 @@ with open('README.md', 'r') as readme:
     long_description = readme.read()
 
 setup(name='pyrost',
-      version='0.7.7',
+      version='0.7.8',
       author='Nikolay Ivanov',
       author_email="nikolay.ivanov@desy.de",
       long_description=long_description,

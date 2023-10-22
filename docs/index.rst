@@ -3,36 +3,32 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-******
-pyrost
-******
-
 .. image:: figures/ST_flowchart_article.png
     :width: 100 %
 
 |
 
-Python Robust Speckle Tracking (`pyrost in GitHub <https://github.com/simply-nicky/pyrost>`_)
+**Py**\ thon **Ro**\ bust **S**\ peckle **T**\ racking (`pyrost in GitHub <https://github.com/simply-nicky/pyrost>`_)
 is a library for wavefront metrology and sample imaging based on ptychographic speckle
-tracking algorithm. This project takes over Andrew Morgan's
+tracking algorithm. This project takes over the Andrew Morgan's
 `speckle_tracking <https://github.com/andyofmelbourne/speckle-tracking>`_
 project as an improved version aiming to add robustness to the optimisation
 algorithm in the case of the high noise present in the measured data.
 
 The library is written in Python 3 and uses a C back-end written
 in `Cython <https://cython.org>`_. The library is capable to perform the robust 
-version of speckle tracking algorithm, which yields an unabberated profile of
-the sample and the wavefront of the lens. Also it contains a set of auxiliary
+version of speckle tracking algorithm, which yields an unaberrated profile of
+the sample and the wavefront of the lens. Also, it contains a set of auxiliary
 data processing routines, such as bad pixel masking, defocus sweep scan, wavefront
 reconstruction, phase model fitting, etc. All of them are listed in
 :class:`pyrost.STData`.
 
-pyrost includes a framework to work with CXI files, see :doc:`reference/cxi_ref` for
+**pyrost** includes a framework to work with CXI files, see :doc:`reference/cxi_ref` for
 more information.
 
-.. note::
+.. seealso::
    The theoretical background and technical details behind the machine learning techniques
-   employed in this software are written in the open access article published in
+   employed in this software are written in the open-access article published in
    `Optica Express <https://opg.optica.org/oe/abstract.cfm?URI=oe-30-14-25450>`_.
 
 pyrost.simulation
@@ -40,14 +36,14 @@ pyrost.simulation
 
 **pyrost.simulation** is capable to simulate one-dimensional speckle tracking scans.
 It employs Rayleigh-Sommerfeld convolution and Fraunhofer diffraction to propagate
-the wavefronts. The back-end is written in C to yield the best performance.
+the wavefronts. The back end is written in C to yield the best performance.
 
 pyrost.multislice
 *****************
 
 The multislice simulation package (**pyrost.multislice**) is capable to propagate the wavefront
-through a bulky sample by the dint of multislice beam propagation algorithm.
-The back-end is based on FFTW library.
+through a bulky sample by the dint of the multislice beam propagation algorithm.
+The back-end is based on the FFTW library.
 
 
 Python Reference

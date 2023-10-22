@@ -16,6 +16,9 @@ typedef struct array_s *array;
 array new_array(int ndim, const size_t *dims, size_t item_size, void *data);
 void free_array(array arr);
 
+#define GET(_arr, _type, _idx) ((_type *)(_arr)->data)[(_idx)]
+#define GETP(_arr, _stride, _idx) ((_arr)->data + (_idx) * (_arr)->item_size * (_stride))
+
 #define UNRAVEL_INDEX(_coord, _idx, _arr)               \
     do {int _i = *(_idx), _n;                           \
         for (_n = 0; _n < (_arr)->ndim; _n++)           \
@@ -87,6 +90,34 @@ void extend_line(void *out, size_t osize, line inp, EXTEND_MODE mode, const void
 int extend_point(void *out, int *coord, array arr, array mask, EXTEND_MODE mode, const void *cval);
 
 /*---------------------------------------------------------------------------
+    Portable re-entrant quick sort macro
+----------------------------------------------------------------------------*/
+#if (defined __APPLE__ || defined __MACH__ || defined __DARWIN__ || defined __FREEBSD__ || defined __BSD__)
+    typedef struct sort_r_args
+    {
+        void *arg;
+        int (*compar)(const void *a, const void *b, void *arg);
+    } sort_r_args;
+
+    static int compar_swap(void *args, const void *a, const void *b)
+    {
+        struct sort_r_args *_args = (struct sort_r_args*)args;
+        return (_args->compar)(a, b, _args->arg);
+    }
+
+    #define POSIX_QSORT_R(_base, _nmemb, _size, _compar, _arg) \
+        do {struct sort_r_args _tmp; _tmp.arg = (_arg); _tmp.compar = (_compar); qsort_r((_base), (_nmemb), (_size), &_tmp, compar_swap); } while (0)
+#elif (defined __GNUC__ || defined __linux__)
+    #define POSIX_QSORT_R(_base, _nmemb, _size, _compar, _arg) \
+        do {qsort_r((_base), (_nmemb), (_size), (_compar), (_arg)); } while (0)
+#elif (defined _WIN32 || defined _WIN64 || defined __WINDOWS__)
+    #define POSIX_QSORT_R(_base, _nmemb, _size, _compar, _arg) \
+        do {qsort_s((_base), (_nmemb), (_size), (_compar), (_arg)); } while (0)
+#else
+    #define POSIX_QSORT_R NULL
+#endif
+
+/*---------------------------------------------------------------------------
     Comparing functions
 ----------------------------------------------------------------------------*/
 int compare_double(const void *a, const void *b);
@@ -101,6 +132,14 @@ int indirect_compare_float(const void *a, const void *b, void *data);
 int indirect_search_double(const void *key, const void *base, void *data);
 int indirect_search_float(const void *key, const void *base, void *data);
 
+/*---------------------------------------------------------------------------
+    Getter functions
+----------------------------------------------------------------------------*/
+static inline double get_double(const void *a) {return *(double *)a;}
+static inline double get_float(const void *a) {return *(float *)a;}
+static inline double get_int(const void *a) {return *(int *)a;}
+static inline double get_uint(const void *a) {return *(unsigned *)a;}
+static inline double get_ulong(const void *a) {return *(unsigned long *)a;}
 
 /*---------------------------------------------------------------------------
     Binary search

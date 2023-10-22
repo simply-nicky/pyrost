@@ -8,7 +8,7 @@ pyrost has the following **mandatory** runtime dependencies:
 * `Python <https://www.python.org/>`_ 3.6 or later (Python 2.x is
   **not** supported).
 * `FFTW library <http://www.fftw.org/#documentation>`_ 3.3.8 or later,
-  which is used for fast fourier transform computations.
+  which is used for fast Fourier transform computations.
 * `GNU Scientific Library <https://www.gnu.org/software/gsl/>`_ 2.4
   or later, which is used for pseudo-random number generation.
 * `LLVM's OpenMP library <http://openmp.llvm.org>`_ 10.0.0 or later, which
@@ -29,7 +29,7 @@ conda
 pyrost binary distribution is available via the `conda <https://anaconda.org/conda-forge/pyrost>`_
 package manager for Linux and OSX (Windows is **not** supported) in `conda-forge <https://conda-forge.org/>`_
 channel. In order to install pyrost via conda, you just need to add `conda-forge`
-to the channels, and install as following:
+to the channels, and install as follows:
 
 .. code-block:: console
 
@@ -57,13 +57,13 @@ system-wide, you can do:
 
 Installation from source
 ------------------------
-In order to install pyrost from source you will need:
+In order to install pyrost from the source you will need:
 
 * a C++ compiler (gcc or clang will do).
 * `Python <https://www.python.org/>`_ 3.6 or later (Python 2.x is
   **not** supported).
 * `FFTW library <http://www.fftw.org/#documentation>`_ 3.3.8 or later,
-  which is used for fast fourier transform computations.
+  which is used for fast Fourier transform computations.
 * `GNU Scientific Library <https://www.gnu.org/software/gsl/>`_ 2.4
   or later, which is used for pseudo-random number generation.
 * `LLVM's OpenMP library <http://openmp.llvm.org>`_ 10.0.0 or later, which
@@ -75,7 +75,7 @@ In order to install pyrost from source you will need:
   CXI files.
 * `tqdm <https://github.com/tqdm/tqdm>`_ 4.56.0 or later.
 
-After installing the dependencies, you can download the the source code from
+After installing the dependencies, you can download the source code from
 the `GitHub pyrost repository page <https://github.com/simply-nicky/pyrost>`_.
 Or you can download the last version of pyrost repository with ``git``:
 
@@ -99,6 +99,6 @@ OR
 
 Getting help
 ------------
-If you run into troubles installing pyrost, please do not hesitate
+If you run into troubles when installing pyrost, please do not hesitate
 to contact me either through `my mail <nikolay.ivanov@desy.de>`_
 or by opening an issue report on `github <https://github.com/simply-nicky/pyrost/issues>`_.

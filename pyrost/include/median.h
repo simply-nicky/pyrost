@@ -68,4 +68,8 @@ int median_filter(void *out, void *inp, unsigned char *mask, unsigned char *imas
     size_t item_size, size_t *fsize, unsigned char *fmask, EXTEND_MODE mode, void *cval, int (*compar)(const void*, const void*),
     unsigned threads);
 
+int robust_mean(double *out, void *inp, int ndim, const size_t *dims, size_t item_size, int axis,
+                int (*compar)(const void*, const void*), double (*getter)(const void*),
+                double r0, double r1, int n_iter, double lm, unsigned threads);
+
 #endif

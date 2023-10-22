@@ -90,11 +90,19 @@ cdef extern from "routines.h":
                      int ndim2, unsigned long *dims2, int axis2, unsigned long item_size,
                      void (*dot_func)(void*, line, line), unsigned threads) nogil
 
-cdef extern from "median.h":
+cdef extern from "array.h":
     int compare_double(void *a, void *b) nogil
     int compare_float(void *a, void *b) nogil
     int compare_int(void *a, void *b) nogil
     int compare_uint(void *a, void *b) nogil
+    int compare_ulong(void *a, void *b) nogil
+
+cdef extern from "median.h":
+    double get_double(void *a) nogil
+    double get_float(void *a) nogil
+    double get_int(void *a) nogil
+    double get_uint(void *a) nogil
+    double get_ulong(void *a) nogil
 
     int median_c "median" (void *out, void *data, unsigned char *mask, int ndim, unsigned long *dims,
                  unsigned long item_size, int axis, int (*compar)(void*, void*), unsigned threads) nogil
@@ -102,6 +110,11 @@ cdef extern from "median.h":
     int median_filter_c "median_filter" (void *out, void *data, unsigned char *mask, int ndim,
                         unsigned long *dims, unsigned long item_size, unsigned long *fsize, int mode,
                         void *cval, int (*compar)(void*, void*), unsigned threads) nogil
+
+    int robust_mean_c "robust_mean" (double *out, void *inp, int ndim, unsigned long *dims,
+                      unsigned long item_size, int axis, int (*compar)(void*, void*),
+                      double (*getter)(void*), double r0, double r1, int n_iter, double lm,
+                      unsigned threads) nogil 
 
 cdef extern from "fftw3.h":
     void fftw_init_threads() nogil
@@ -131,6 +144,3 @@ cdef extern from "gsl/gsl_rng.h":
 
     double gsl_rng_uniform(gsl_rng * r) nogil
     unsigned long gsl_rng_uniform_int(gsl_rng * r, unsigned long n) nogil
-
-cdef np.ndarray ml_profile_wrapper(np.ndarray x_arr, np.ndarray layers, complex t0,
-                                   complex t1, double sigma, unsigned num_threads)

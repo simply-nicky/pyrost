@@ -1,7 +1,7 @@
 Generating a speckle tracking dataset
 =====================================
 
-You can simulate one-dimensional speckle tracking scan either using
+You can simulate a one-dimensional speckle tracking scan either using
 Python interface or Terminal.
 
 Python interface
