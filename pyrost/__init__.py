@@ -19,3 +19,4 @@ from .rst_update import SpeckleTracking
 from .bfgs import BFGS
 from .aberrations_fit import AberrationsFit
 from . import bin
+from . import src

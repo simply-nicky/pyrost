@@ -2,6 +2,7 @@ import os
 import sys
 from setuptools import setup, find_namespace_packages
 from distutils.core import Extension
+from pybind11.setup_helpers import Pybind11Extension
 import numpy
 
 try:
@@ -10,6 +11,8 @@ except ImportError:
     USE_CYTHON = False
 else:
     USE_CYTHON = True
+
+__version__ = '0.7.8'
 
 ext = '.pyx' if USE_CYTHON else '.c'
 extension_args = {'language': 'c',
@@ -42,11 +45,30 @@ if USE_CYTHON:
                                                 'binding': True,
                                                 'embedsignature': False})
 
+extension_args = {'extra_compile_args': ['-fopenmp', '-std=c++17'],
+                  'extra_link_args': ['-lgomp'],
+                  'library_dirs': ['/usr/local/lib',
+                                   os.path.join(sys.prefix, 'lib')],
+                  'include_dirs': [numpy.get_include(),
+                                   os.path.join(sys.prefix, 'include'),
+                                   os.path.join(os.path.dirname(__file__), 'pyrost/include')]}
+
+extensions += [Pybind11Extension("pyrost.src.fft_functions",
+                                 sources=["pyrost/src/fft_functions.cpp"],
+                                 define_macros = [('VERSION_INFO', __version__)],
+                                 libraries = ['fftw3', 'fftw3f', 'fftw3l',
+                                              'fftw3_omp', 'fftw3f_omp', 'fftw3l_omp'],
+                                 **extension_args),
+               Pybind11Extension("pyrost.src.median",
+                                 sources=["pyrost/src/median.cpp"],
+                                 define_macros = [('VERSION_INFO', __version__)],
+                                 **extension_args)]
+
 with open('README.md', 'r') as readme:
     long_description = readme.read()
 
 setup(name='pyrost',
-      version='0.7.8',
+      version=__version__,
       author='Nikolay Ivanov',
       author_email="nikolay.ivanov@desy.de",
       long_description=long_description,
