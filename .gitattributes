@@ -2,3 +2,4 @@ dev.ipynb merge=ours
 dev.pxd merge=ours
 dev.pyx merge=ours
 dev.pyxbld merge=ours
+*.ipynb filter=jupyternotebook
