@@ -25,14 +25,14 @@ DEF FLOAT_MAX = 1.7976931348623157e+308
 DEF M_1_SQRT2PI = 0.3989422804014327
 DEF CUTOFF = 3.0
 
-cdef double Huber_loss(double a) nogil:
+cdef double Huber_loss(double a) noexcept nogil:
     cdef double aa = fabs(a)
     if aa < 1.345:
         return a * a
     else:
         return 2.69 * (aa - 0.6725)
 
-cdef float_t min_float(float_t* array, int a) nogil:
+cdef float_t min_float(float_t* array, int a) noexcept nogil:
     cdef:
         int i
         float_t mv = array[0]
@@ -41,7 +41,7 @@ cdef float_t min_float(float_t* array, int a) nogil:
             mv = array[i]
     return mv
 
-cdef float_t max_float(float_t* array, int a) nogil:
+cdef float_t max_float(float_t* array, int a) noexcept nogil:
     cdef:
         int i
         float_t mv = array[0]
@@ -50,12 +50,12 @@ cdef float_t max_float(float_t* array, int a) nogil:
             mv = array[i]
     return mv
 
-cdef double rbf(double dsq, double h) nogil:
+cdef double rbf(double dsq, double h) noexcept nogil:
     return exp(-0.5 * dsq / (h * h)) * M_1_SQRT2PI
 
 cdef void KR_frame_1d(float_t[:, ::1] I0, float_t[:, ::1] w0, uint_t[:, ::1] I_n,
                       float_t[:, ::1] W, float_t[:, :, ::1] u, float_t dj,
-                      double ds_x, double h) nogil:
+                      double ds_x, double h) noexcept nogil:
     cdef int X = I_n.shape[1], X0 = I0.shape[1], k, kk, k0, kk0, kk1
     cdef int dn = <int>ceil((CUTOFF * h) / ds_x)
     cdef double x, r
@@ -74,7 +74,7 @@ cdef void KR_frame_1d(float_t[:, ::1] I0, float_t[:, ::1] w0, uint_t[:, ::1] I_n
 
 cdef void KR_frame_2d(float_t[:, ::1] I0, float_t[:, ::1] w0, uint_t[:, ::1] I_n,
                       float_t[:, ::1] W, float_t[:, :, ::1] u, float_t di, float_t dj,
-                      double ds_y, double ds_x, double h) nogil:
+                      double ds_y, double ds_x, double h) noexcept nogil:
     cdef int Y = I_n.shape[0], X = I_n.shape[1], Y0 = I0.shape[0], X0 = I0.shape[1]
     cdef int j, k, jj, kk, j0, k0, jj0, jj1, kk0, kk1
     cdef int dn_y = <int>ceil((CUTOFF * h) / ds_y), dn_x = <int>ceil((CUTOFF * h) / ds_x)
@@ -145,7 +145,7 @@ def KR_reference(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None, flo
 
 cdef void LOWESS_frame_1d(float_t[:, ::1] W_sum, float_t[:, :, ::1] M_mat, float_t[:, :, ::1] I0_mat,
                           float_t[:, :, ::1] W0_mat, uint_t[:, ::1] I_n, float_t[:, ::1] W,
-                          float_t[:, :, ::1] u, float_t dj, double ds_x, double h) nogil:
+                          float_t[:, :, ::1] u, float_t dj, double ds_x, double h) noexcept nogil:
     cdef int X = I_n.shape[1], X0 = W_sum.shape[1]
     cdef int k, kk, j0, k0, kk0, kk1
     cdef int dn = <int>ceil((CUTOFF * h) / ds_x)
@@ -174,7 +174,7 @@ cdef void LOWESS_frame_1d(float_t[:, ::1] W_sum, float_t[:, :, ::1] M_mat, float
 
 cdef void LOWESS_frame_2d(float_t[:, ::1] W_sum, float_t[:, :, ::1] M_mat, float_t[:, :, ::1] I0_mat,
                           float_t[:, :, ::1] W0_mat, uint_t[:, ::1] I_n, float_t[:, ::1] W,
-                          float_t[:, :, ::1] u, float_t di, float_t dj, double ds_y, double ds_x, double h) nogil:
+                          float_t[:, :, ::1] u, float_t di, float_t dj, double ds_y, double ds_x, double h) noexcept nogil:
     cdef int Y = I_n.shape[0], X = I_n.shape[1], Y0 = W_sum.shape[0], X0 = W_sum.shape[1]
     cdef int j, k, jj, kk, j0, k0, jj0, jj1, kk0, kk1
     cdef int dn_y = <int>ceil((CUTOFF * h) / ds_y), dn_x = <int>ceil((CUTOFF * h) / ds_x)
@@ -300,7 +300,7 @@ def LOWESS_reference(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None,
 
 cdef double pm_loss(uint_t[:, :, ::1] I_n, float_t W, float_t sigma, float_t[:, ::1] I0,
                     float_t[::1] di, float_t[::1] dj, int j, int k, float_t u_y, float_t u_x,
-                    double ds_y, double ds_x) nogil:
+                    double ds_y, double ds_x) noexcept nogil:
     """Return fraction of variance unexplained between the validation set I and trained
     profile I0. Find the predicted values at the points (y, x) with bilinear interpolation.
     """
@@ -339,7 +339,7 @@ cdef double pm_loss(uint_t[:, :, ::1] I_n, float_t W, float_t sigma, float_t[:, 
 cdef double tr_loss(float_t[:, ::1] errors, uint_t[:, ::1] I_n, float_t[:, ::1] W,
                     float_t[:, ::1] sigma,  float_t[:, ::1] I0, float_t[:, :, ::1] u,
                     float_t di0, float_t dj0, float_t di, float_t dj, double ds_y,
-                    double ds_x) nogil:
+                    double ds_x) noexcept nogil:
     """Return fraction of variance unexplained between the validation set I and trained
     profile I0. Find the predicted values at the points (y, x) with bilinear interpolation.
     """
@@ -405,7 +405,7 @@ cdef double tr_loss(float_t[:, ::1] errors, uint_t[:, ::1] I_n, float_t[:, ::1] 
 
 cdef void pm_gsearcher(uint_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] I0, float_t[:, ::1] sigma,
                        float_t[:, :, ::1] u, float_t[:, ::1] derrs, float_t[::1] di, float_t[::1] dj, int j, int k,
-                       double[::1] sw, int[::1] gsize, double ds_y, double ds_x) nogil:
+                       double[::1] sw, int[::1] gsize, double ds_y, double ds_x) noexcept nogil:
     cdef int ii, jj, kk
     cdef double err, err0, err_min=FLOAT_MAX
     cdef double uy_min = 0.0, ux_min = 0.0, sgm_min = sigma[j, k], ux, uy, cs
@@ -465,7 +465,7 @@ def pm_gsearch(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None, float
 cdef void pm_rsearcher(uint_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] sigma,
                        float_t[:, ::1] I0, gsl_rng *r, float_t[:, :, ::1] u, float_t[:, ::1] derrs,
                        float_t[::1] di, float_t[::1] dj, int j, int k, double[::1] sw,
-                       unsigned N, double ds_y, double ds_x) nogil:
+                       unsigned N, double ds_y, double ds_x) noexcept nogil:
     cdef double err, err0, err_min=FLOAT_MAX
     cdef double uy_min = 0.0, ux_min = 0.0, sig_min = sigma[j, k], ux, uy, cs
     cdef int ii
@@ -538,7 +538,7 @@ cdef void pm_devolver(uint_t[:, :, ::1] I_n, float_t[:, ::1] W, float_t[:, ::1] 
                       float_t[:, ::1] I0, gsl_rng *r, float_t[:, :, ::1] u,
                       float_t[:, ::1] derrs, float_t[::1] di, float_t[::1] dj,
                       int j, int k, double[::1] sw, unsigned NP, unsigned n_iter,
-                      double CR, double F, double ds_y, double ds_x) nogil:
+                      double CR, double F, double ds_y, double ds_x) noexcept nogil:
     cdef double err0, err, err_min = FLOAT_MAX
     cdef int ii, jj, n, a, b
     cdef double pt_min[3]
@@ -672,7 +672,7 @@ def pm_devolution(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None,
 cdef void tr_updater(float_t[:, ::1] errors, uint_t[:, ::1] I_n, float_t[:, ::1] W,
                      float_t[:, ::1] sigma, float_t[:, ::1] I0, float_t[:, :, ::1] u,
                      float_t *di, float_t *dj, double sw_y, double sw_x,
-                     unsigned wsize, double ds_y, double ds_x) nogil:
+                     unsigned wsize, double ds_y, double ds_x) noexcept nogil:
     cdef double di_min = 0.0, dj_min = 0.0, err_min=FLOAT_MAX, dii, djj
     cdef double dsw_y = 2.0 * sw_y / (wsize - 1), dsw_x = 2.0 * sw_x / (wsize - 1)
     cdef int ii, jj
@@ -768,7 +768,7 @@ def pm_total_error(uint_t[:, :, ::1] I_n not None, float_t[:, ::1] W not None, f
 
 cdef void ref_loss(float_t[:, ::1] errors, float_t[:, ::1] R, float_t[:, ::1] I0,
                    uint_t[:, ::1] I_n, float_t[:, ::1] W,  float_t[:, :, ::1] u,
-                   float_t di, float_t dj, double ds_y, double ds_x, double h) nogil:
+                   float_t di, float_t dj, double ds_y, double ds_x, double h) noexcept nogil:
     cdef int Y = I_n.shape[0], X = I_n.shape[1]
     cdef int j, k, jj, kk, j0, k0, jj0, jj1, kk0, kk1
     cdef int Y0 = I0.shape[0], X0 = I0.shape[1]

@@ -112,7 +112,7 @@ cdef inline np.ndarray check_array(np.ndarray array, int type_num):
 
     if tn != type_num:
         out = np.PyArray_SimpleNew(array.ndim, <np.npy_intp *>array.shape, type_num)
-        np.PyArray_CastTo(out, array)
+        np.PyArray_CopyInto(out, array)
     else:
         out = array
 

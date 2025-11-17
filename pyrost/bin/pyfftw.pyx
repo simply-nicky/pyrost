@@ -589,7 +589,7 @@ def scheme_functions(scheme):
         raise NotImplementedError(msg)
 
 # Set the cleanup routine
-cdef void _cleanup():
+cdef void _cleanup() noexcept:
     fftw_cleanup()
     fftwf_cleanup()
     fftw_cleanup_threads()
